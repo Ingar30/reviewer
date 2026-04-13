@@ -1,49 +1,47 @@
 # AGENTS.md
 
 ## Project purpose
-This repository builds and runs a multi-agent reviewer for academic economics papers.
+This repository builds and runs a reproducible multi-agent reviewer for academic economics papers.
 
-## Primary learning goal
-This project is also a training environment for learning how to work effectively with Codex:
-- project-scoped instructions
-- reusable Skills
-- custom agents
-- non-interactive runs with `codex exec`
-- structured outputs
-- safe multi-agent orchestration
+The normal workflow is:
+1. Put source PDFs in `inputs/`.
+2. Preprocess each paper into structured artifacts under `work/<paper_id>/parsed/`.
+3. Run specialized reviewer agents on the parsed artifacts.
+4. Store reviewer JSON outputs under `work/<paper_id>/reviews/`.
+5. Compile the final markdown report under `outputs/<paper_id>/report.md`.
 
-## Non-negotiable workflow
-1. Never review a raw PDF directly if parsed artifacts are missing.
-2. Always run `scripts/preprocess_pdf.py` first.
-3. Reviewer agents output strict JSON only.
-4. The final editor is the only component that outputs the final Markdown report.
-5. Use web verification for literature and reference auditing.
-6. If a claim cannot be verified exactly, return `cannot_verify` rather than guessing.
-7. Preserve exact evidence locations whenever possible:
-   - PDF page
-   - section
-   - table / figure / appendix item
-   - reference-list line or entry
-8. Do not rewrite the paper unless a separate repair mode is explicitly requested.
-9. Do not soften findings. If a claim is too strong, flag it.
-10. Do not invent citations, DOIs, URLs, or page numbers.
+## Canonical file locations
+- Source PDFs: `inputs/`
+- Parsed artifacts: `work/<paper_id>/parsed/`
+- Reviewer outputs: `work/<paper_id>/reviews/`
+- Final reports: `outputs/<paper_id>/`
 
-## Output contract
-A successful run produces:
-- parsed artifacts under `work/<paper_id>/parsed/`
-- reviewer JSON files under `work/<paper_id>/reviews/`
-- a final Markdown report at `outputs/<paper_id>/report.md`
-- a manifest at `outputs/<paper_id>/manifest.json`
+## Path conventions
+- If the user refers to `example-paper.pdf`, first resolve it as `inputs/example-paper.pdf`.
+- Prefer project-relative paths over absolute paths when possible.
+- Do not assume a file is outside the repo unless the user explicitly says so.
 
-## Failure policy
-- Invalid JSON output = failed reviewer
-- Missing required fields = failed reviewer
-- `cannot_verify` is allowed and does not count as failure
-- The orchestrator may retry one failed reviewer once
+## Workflow rules
+- Never run reviewer agents directly on a raw PDF if parsed artifacts do not exist.
+- Preprocessing comes before review.
+- Internal reviewer agents return structured JSON only.
+- Only the editor writes the final markdown report.
+- If preprocessing artifacts are missing or clearly poor, fail clearly instead of guessing.
 
-## Done criteria
-A run is done only when:
-- all reviewer JSON files validate against their schemas
-- the final report exists
-- the manifest exists
-- all reviewer commands exited successfully
+## Preprocessing rules
+- Preserve original page numbering.
+- Normalize whitespace carefully.
+- Never silently remove minus signs, decimal points, percent symbols, parentheses, or appendix labels.
+- Save page-level outputs and inventories so downstream reviewers can cite locations precisely.
+- Use OCR only when text extraction clearly fails or the PDF is scanned/image-only.
+
+## Reviewer rules
+- Literature and reference verification require web search when enabled.
+- Never guess missing evidence; use `cannot_verify` or equivalent failure labels.
+- Preserve exact source locations whenever possible.
+- Keep reviewer outputs modular so failed reviewers can be rerun independently.
+
+## Working style
+- Prefer deterministic scripts for file handling, preprocessing, validation, and report assembly.
+- Use Codex for judgment-heavy auditing and synthesis tasks.
+- Keep the workflow reproducible, inspectable, and easy to rerun.

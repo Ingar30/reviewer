@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "properties": {
+    "reviewer": {
+      "type": "string",
+      "enum": [
+        "literature_auditor",
+        "numerical_auditor",
+        "reference_auditor",
+        "crossref_auditor",
+        "claim_evidence_auditor"
+      ]
+    },
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_status": {
+      "type": "string",
+      "enum": ["ok", "partial", "cannot_verify", "failed"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "category": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "page": { "type": ["integer", "null"] },
+              "page_label": { "type": ["string", "null"] },
+              "section": { "type": ["string", "null"] },
+              "text_quote": { "type": ["string", "null"] }
+            },
+            "required": ["page", "page_label", "section", "text_quote"],
+            "additionalProperties": false
+          },
+          "claim_text": { "type": "string" },
+          "assessment": {
+            "type": "string",
+            "enum": ["yes", "no", "partially", "cannot_verify"]
+          },
+          "evidence_summary": { "type": "string" },
+          "suggested_fix": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "location",
+          "claim_text",
+          "assessment",
+          "evidence_summary",
+          "suggested_fix"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "reviewer",
+    "paper_id",
+    "run_status",
+    "summary",
+    "findings",
+    "notes"
+  ],
+  "additionalProperties": false
+}

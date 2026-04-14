@@ -20,6 +20,9 @@ HEADING_RE = re.compile(
     r")$",
     re.IGNORECASE,
 )
+APPENDIX_HEADING_RE = re.compile(
+    r"^(?:[A-Z]\s+[A-Z].{0,120}|[A-Z]\.\d+(?:\.\d+)*\s+[A-Z].{0,120})$"
+)
 
 TABLE_CAPTION_RE = re.compile(
     r"^\s*Table\s+(?P<label>(?:[A-Z]\.)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
@@ -44,11 +47,13 @@ NUMBER_PATTERN = re.compile(
     r"""
     (?<![\w.])
     (?:[$€£]\s*)?
-    -?
+    [-−]?
     (?:
         \d{1,3}(?:,\d{3})+(?:\.\d+)?
         |
         \d+\.\d+
+        |
+        \.\d+
         |
         \d+
     )
@@ -58,17 +63,29 @@ NUMBER_PATTERN = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+CROSSREF_LABEL_RE = r"(?:[A-Z]\.)?\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*|\d+[A-Za-z]?"
 CROSSREF_PATTERN = re.compile(
-    r"\b(?P<kind>Table|Figure|Fig\.|Section|Appendix|Eq\.|Equation)\s+(?P<label>[A-Z]?\d+(?:\.\d+)?)",
+    rf"\b(?P<kind>Table|Figure|Fig\.|Section|Appendix|Eq\.|Equation)"
+    rf"\s+(?:\((?P<label_paren>{CROSSREF_LABEL_RE})\)|(?P<label>{CROSSREF_LABEL_RE}))",
     re.IGNORECASE,
 )
 
 REF_START_RE = re.compile(r"^\s*(references|bibliography)\s*$", re.IGNORECASE)
 REF_ENTRY_START_RE = re.compile(
-    r"^\s*(?:\[\d+\]\s*)?[A-Z][A-Za-zÀ-ÖØ-öø-ÿ'`.\-]+(?:,|\s+and\s+).{2,}"
+    r"^\s*(?:\[\d+\]\s*)?"
+    r"(?:[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'`.\-]+"
+    r"|(?:[Vv]an|[Vv]on|[Dd]e|[Dd]el|[Dd]a|[Dd]i|[Ll]e|[Ll]a)"
+    r"\s+[A-ZÀ-ÖØ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ'`.\-]+)"
+    r"(?:,|\s+and\s+).{2,}",
+)
+REPEATED_AUTHOR_ENTRY_START_RE = re.compile(
+    r"^(?:and\s*,|(?:,\s*)+(?:and\s+)?).{2,}",
+    re.IGNORECASE,
 )
 APPENDIX_START_RE = re.compile(r"^\s*(?:[A-Z]\s+)?(appendix|online appendix)\b", re.IGNORECASE)
 REF_SECTION_END_RE = re.compile(r"^\s*(?:main figures and tables|figures and tables|tables and figures)\s*$", re.IGNORECASE)
+YEAR_RE = re.compile(r"\b(?:19|20)\d{2}[a-z]?\b", re.IGNORECASE)
+REFERENCE_HYPHEN_BREAK_RE = re.compile(r"(?<=[A-Za-zÀ-ÖØ-öø-ÿ])-\s+(?=[a-zà-öø-ÿ])")
 TABLE_CELL_TOKEN_RE = re.compile(
     r"^(?:"
     r"\(\d+\)"
@@ -108,6 +125,28 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def line_number_for_offset(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def context_around(text: str, start: int, end: int, window: int = 100) -> str:
+    before = max(0, start - window)
+    after = min(len(text), end + window)
+    return " ".join(text[before:after].split())
+
+
+def join_reference_chunks(chunks: list[str]) -> str:
+    text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
+    return REFERENCE_HYPHEN_BREAK_RE.sub("", text).strip()
+
+
+def repeated_author_entry_start(text: str, current: dict[str, Any] | None) -> bool:
+    if current is None:
+        return False
+    previous_text = join_reference_chunks(current["chunks"])
+    return bool(YEAR_RE.search(previous_text) and REPEATED_AUTHOR_ENTRY_START_RE.match(text))
+
+
 def is_heading(line: str) -> bool:
     s = " ".join(line.strip().split())
     if not s:
@@ -123,6 +162,8 @@ def is_heading(line: str) -> bool:
     if REF_START_RE.match(s) or APPENDIX_START_RE.match(s):
         return True
     if HEADING_RE.match(s):
+        return True
+    if APPENDIX_HEADING_RE.match(s):
         return True
     numeric_heading = re.match(r"^(?P<num>[0-9]+(?:\.[0-9]+)*)\s+(?P<title>[A-Z].*)", s)
     if numeric_heading:
@@ -235,6 +276,38 @@ def looks_like_table_or_axis_line(text: str) -> bool:
     return False
 
 
+def should_append_heading_continuation(heading_so_far: str, next_line: str) -> bool:
+    text = clean_inline_text(next_line)
+    if not text or len(text) > 80:
+        return False
+    if is_heading(text) or looks_like_table_or_axis_line(text):
+        return False
+    if re.fullmatch(r"\d+", text):
+        return False
+    return heading_so_far.rstrip().endswith(":") or text[:1].islower()
+
+
+def complete_heading(lines: list[str], start_index_0based: int) -> str:
+    heading_parts = [clean_inline_text(lines[start_index_0based])]
+    lookahead = start_index_0based + 1
+    skipped_blank = False
+
+    while lookahead < len(lines):
+        candidate = lines[lookahead]
+        if not candidate.strip():
+            if skipped_blank:
+                break
+            skipped_blank = True
+            lookahead += 1
+            continue
+        if not should_append_heading_continuation(" ".join(heading_parts), candidate):
+            break
+        heading_parts.append(clean_inline_text(candidate))
+        break
+
+    return clean_inline_text(" ".join(heading_parts))
+
+
 def extract_sections(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -244,7 +317,7 @@ def extract_sections(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]
         lines = page["normalized_text"].splitlines()
         for idx, line in enumerate(lines, start=1):
             if is_heading(line):
-                heading = " ".join(line.strip().split())
+                heading = complete_heading(lines, idx - 1)
                 if current is not None:
                     current["end_page"] = page_no
                     current["end_line"] = idx - 1 if idx > 1 else None
@@ -282,8 +355,10 @@ def extract_citations(page_records: list[dict[str, Any]]) -> list[dict[str, Any]
                         "page": page["pdf_page_number"],
                         "page_label": page["page_label"],
                         "match": match.group(0),
+                        "line_number": line_number_for_offset(text, match.start()),
                         "match_start": match.start(),
                         "match_end": match.end(),
+                        "context": context_around(text, match.start(), match.end()),
                         "pattern": pattern.pattern,
                     }
                 )
@@ -308,9 +383,10 @@ def extract_numbers(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "page": page["pdf_page_number"],
                     "page_label": page["page_label"],
                     "number": match.group(0).strip(),
+                    "line_number": line_number_for_offset(text, match.start()),
                     "match_start": match.start(),
                     "match_end": match.end(),
-                    "context": text[start:end].replace("\n", " "),
+                    "context": context_around(text, start, end, window=0),
                 }
             )
     return out
@@ -327,9 +403,11 @@ def extract_crossrefs(page_records: list[dict[str, Any]]) -> list[dict[str, Any]
                     "page_label": page["page_label"],
                     "reference_text": match.group(0),
                     "kind": match.group("kind"),
-                    "label": match.group("label"),
+                    "label": match.group("label") or match.group("label_paren"),
+                    "line_number": line_number_for_offset(text, match.start()),
                     "match_start": match.start(),
                     "match_end": match.end(),
+                    "context": context_around(text, match.start(), match.end()),
                 }
             )
     return out
@@ -377,9 +455,11 @@ def extract_reference_list(page_records: list[dict[str, Any]]) -> list[dict[str,
             and not ANY_CAPTION_RE.match(text)
             and not re.fullmatch(r"\d+", text)
         )
+        if repeated_author_entry_start(text, current):
+            starts_new_entry = True
         if starts_new_entry or (current is None):
             if current is not None:
-                current["text"] = " ".join(current["chunks"]).strip()
+                current["text"] = join_reference_chunks(current["chunks"])
                 del current["chunks"]
                 entries.append(current)
             current = {
@@ -393,7 +473,7 @@ def extract_reference_list(page_records: list[dict[str, Any]]) -> list[dict[str,
             current["chunks"].append(text)
 
     if current is not None:
-        current["text"] = " ".join(current["chunks"]).strip()
+        current["text"] = join_reference_chunks(current["chunks"])
         del current["chunks"]
         entries.append(current)
 

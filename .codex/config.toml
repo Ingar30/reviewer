@@ -7,4 +7,4 @@ personality = "none"
 project_root_markers = [".git"]
 
 [windows]
-sandbox = "elevated"
+sandbox = "unelevated"

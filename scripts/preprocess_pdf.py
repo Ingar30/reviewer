@@ -1,4 +1,4 @@
-from __future__ import annotations
+ï»¿from __future__ import annotations
 
 import argparse
 import json
@@ -31,7 +31,7 @@ CITATION_PATTERNS = [
 NUMBER_PATTERN = re.compile(
     r"""
     (?<![\w.])
-    (?:[$€£]\s*)?
+    (?:[$â‚¬Â£]\s*)?
     -?
     (?:
         \d{1,3}(?:,\d{3})+(?:\.\d+)?

@@ -4,4 +4,5 @@ pandas
 jsonschema
 pydantic
 python-dateutil
-rapidfuzztabulate
+rapidfuzz
+tabulate

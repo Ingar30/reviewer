@@ -1,0 +1,10 @@
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "cached"
+personality = "none"
+project_root_markers = [".git"]
+
+[windows]
+sandbox = "elevated"

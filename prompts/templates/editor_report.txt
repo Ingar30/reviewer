@@ -18,6 +18,9 @@ Hard rules:
 - Separate manuscript issues from parser/preprocessing issues.
 - Separate reference-integrity problems from low-severity reference-maintenance updates.
 - Do not silently soften strong reviewer findings.
+- For every substantive issue, reference item, literature item, parser caveat, and cannot_verify item, include a traceability line with the canonical ID and source finding IDs, for example:
+  **Traceability:** CANON-001; source finding(s): claim_evidence_auditor:CEA-005
+- Use the canonical IDs and source finding IDs exactly as listed in the normalized editor bundle.
 
 Suggested report structure:
 # Multi-Agent Paper Review Report

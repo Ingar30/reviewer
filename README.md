@@ -230,12 +230,19 @@ Get-Content work\example-paper\editor\editor_input.md -Raw |
 ```
 
 The editor must write the actual final markdown report, not a note saying where the report was saved.
+The report must include traceability lines with canonical and source finding IDs, such as:
+
+```markdown
+**Traceability:** CANON-001; source finding(s): claim_evidence_auditor:CEA-005
+```
 
 ### 8. Check Final Report
 
 ```powershell
 python scripts\check_final_report.py --input outputs\example-paper\report.md
 ```
+
+The final report checker rejects reports that are too short, look like run-status notes, omit required headings, or omit canonical/source finding identifiers.
 
 ## Git Hygiene
 

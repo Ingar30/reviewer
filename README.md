@@ -40,7 +40,7 @@ The intended flow is:
 6. build editor input
 7. run the editor
 8. smoke-check the final report
-9. later, wrap the whole flow in one script
+9. use the wrapper as the default fresh-run entry point
 
 ## Current Repo Layout
 
@@ -139,7 +139,7 @@ cd C:\Users\s11378\Dropbox\reviewer
 git status
 ```
 
-## Current Best-Practice Manual Workflow
+## Current Best-Practice Workflow
 
 For a fully automated fresh run, use:
 
@@ -155,7 +155,7 @@ Use an explicit paper ID when needed:
 python scripts\review_paper.py --pdf inputs\example-paper.pdf --paper-id example-paper
 ```
 
-The wrapper currently runs a fresh pipeline and executes the five reviewers in parallel. The manual steps below remain useful for debugging or rerunning one stage by hand.
+The wrapper currently runs a fresh pipeline and executes the five reviewers in parallel. It has passed end-to-end smoke tests on `example-paper` and `example-paper`. The manual steps below remain useful for debugging or rerunning one stage by hand.
 
 ### 1. Preprocess
 

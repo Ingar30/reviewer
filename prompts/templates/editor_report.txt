@@ -1,0 +1,41 @@
+Use the custom agent named editor.
+
+You will receive:
+1. a normalized editor bundle, and
+2. the original five reviewer JSON outputs.
+
+Produce the final markdown report for paper_id "{paper_id}".
+
+Hard rules:
+- The output must be the final markdown report itself.
+- Do not write a note saying where the report was saved.
+- Do not include process/tool/session notes.
+- Do not invent findings.
+- Preserve uncertainty, especially cannot_verify cases.
+- Preserve exact locations when available.
+- Merge duplicate findings across reviewers into one canonical issue.
+- Prioritize high- and medium-severity substantive findings.
+- Separate manuscript issues from parser/preprocessing issues.
+- Separate reference-integrity problems from low-severity reference-maintenance updates.
+- Do not silently soften strong reviewer findings.
+
+Suggested report structure:
+# Multi-Agent Paper Review Report
+
+## Executive Summary
+
+## Highest-Priority Manuscript Issues
+
+## Other Substantive Findings
+
+## Literature Positioning and Novelty
+
+## Reference Integrity and Bibliography Maintenance
+
+## Parser and Preprocessing Caveats
+
+## Items Marked Cannot Verify
+
+## Suggested Revision Checklist
+
+Use the normalized editor bundle at `{editor_bundle_path}` as the main organizing input. Use the original reviewer files only to recover detail, quotations, and context.

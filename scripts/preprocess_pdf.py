@@ -66,9 +66,15 @@ NUMBER_PATTERN = re.compile(
 CROSSREF_LABEL_RE = r"(?:[A-Z]\.)?\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*|\d+[A-Za-z]?"
 CROSSREF_PATTERN = re.compile(
     rf"\b(?P<kind>Table|Figure|Fig\.|Section|Appendix|Eq\.|Equation)"
-    rf"\s+(?:\((?P<label_paren>{CROSSREF_LABEL_RE})\)|(?P<label>{CROSSREF_LABEL_RE}))",
+    rf"\s+(?:\((?P<label_paren>{CROSSREF_LABEL_RE})\)(?![A-Za-z])|(?P<label>{CROSSREF_LABEL_RE})(?![A-Za-z]))",
     re.IGNORECASE,
 )
+FIGURE_TABLE_XREF_LABEL_RE = re.compile(
+    r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.\d+(?:\.\d+)*[A-Za-z]?)$"
+)
+SECTION_XREF_LABEL_RE = re.compile(r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*)$")
+APPENDIX_XREF_LABEL_RE = re.compile(r"^[A-Z](?:\.\d+)*$")
+EQUATION_XREF_LABEL_RE = re.compile(r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.\d+(?:\.\d+)*)$")
 
 REF_START_RE = re.compile(r"^\s*(references|bibliography)\s*$", re.IGNORECASE)
 REF_ENTRY_START_RE = re.compile(
@@ -96,6 +102,7 @@ TABLE_CELL_TOKEN_RE = re.compile(
     r")$",
     re.IGNORECASE,
 )
+PAGE_LABEL_LINE_RE = re.compile(r"^(?:\d{1,4}|[ivxlcdmIVXLCDM]{1,12})$")
 
 
 @dataclass
@@ -220,6 +227,47 @@ def relative_artifact_path(path: Path, repo_root: Path) -> str:
 
 def clean_inline_text(text: str) -> str:
     return " ".join(str(text).replace("\u00a0", " ").split())
+
+
+def normalize_page_label(label: str | None) -> str | None:
+    cleaned = clean_inline_text(label or "")
+    return cleaned or None
+
+
+def plausible_page_label_line(line: str) -> str | None:
+    text = clean_inline_text(line)
+    if not PAGE_LABEL_LINE_RE.fullmatch(text):
+        return None
+    if text.isdigit():
+        page_number = int(text)
+        if page_number == 0 or page_number > 300:
+            return None
+    return text
+
+
+def infer_page_label_from_text(*texts: str) -> str | None:
+    for text in texts:
+        lines = [clean_inline_text(line) for line in text.splitlines()]
+        nonempty = [line for line in lines if line]
+        if not nonempty:
+            continue
+        for line in [*nonempty[-5:], *nonempty[:3]]:
+            candidate = plausible_page_label_line(line)
+            if candidate is not None:
+                return candidate
+    return None
+
+
+def clean_page_label(page: fitz.Page, raw_text: str, sorted_text: str) -> str | None:
+    return normalize_page_label(page.get_label()) or infer_page_label_from_text(raw_text, sorted_text)
+
+
+def page_label_for(page_labels: dict[int, str | None] | None, page_number: int, page: fitz.Page) -> str | None:
+    if page_labels is not None:
+        return page_labels.get(page_number)
+    raw_text = page.get_text("text", sort=False) or ""
+    sorted_text = page.get_text("text", sort=True) or raw_text
+    return clean_page_label(page, raw_text, sorted_text)
 
 
 def group_words_into_lines(words: list[list[Any]], page_height: float) -> list[dict[str, Any]]:
@@ -392,24 +440,80 @@ def extract_numbers(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def valid_crossref_label(kind: str, label: str | None) -> bool:
+    if not label:
+        return False
+    normalized_kind = kind.lower().rstrip(".")
+    if normalized_kind in {"table", "figure", "fig"}:
+        return bool(FIGURE_TABLE_XREF_LABEL_RE.fullmatch(label))
+    if normalized_kind == "section":
+        return bool(SECTION_XREF_LABEL_RE.fullmatch(label))
+    if normalized_kind == "appendix":
+        return bool(APPENDIX_XREF_LABEL_RE.fullmatch(label))
+    if normalized_kind in {"eq", "equation"}:
+        return bool(EQUATION_XREF_LABEL_RE.fullmatch(label))
+    return False
+
+
+def normalized_crossref_kind(kind: str) -> str:
+    normalized = kind.lower().rstrip(".")
+    return "figure" if normalized == "fig" else normalized
+
+
 def extract_crossrefs(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for page in page_records:
+        seen_page_kind_label: set[tuple[int, str, str]] = set()
         text = page["normalized_text"]
         for match in CROSSREF_PATTERN.finditer(text):
+            label = match.group("label") or match.group("label_paren")
+            if not valid_crossref_label(match.group("kind"), label):
+                continue
+            seen_page_kind_label.add(
+                (page["pdf_page_number"], normalized_crossref_kind(match.group("kind")), label)
+            )
             out.append(
                 {
                     "page": page["pdf_page_number"],
                     "page_label": page["page_label"],
                     "reference_text": match.group(0),
                     "kind": match.group("kind"),
-                    "label": match.group("label") or match.group("label_paren"),
+                    "label": label,
                     "line_number": line_number_for_offset(text, match.start()),
                     "match_start": match.start(),
                     "match_end": match.end(),
                     "context": context_around(text, match.start(), match.end()),
                 }
             )
+        raw_text = page.get("raw_text", "")
+        offset = 0
+        for line_number, raw_line in enumerate(raw_text.splitlines(), start=1):
+            line = clean_inline_text(raw_line)
+            for kind, pattern in (("Table", TABLE_CAPTION_RE), ("Figure", FIGURE_CAPTION_RE)):
+                match = pattern.match(line)
+                if not match:
+                    continue
+                label = match.group("label")
+                key = (page["pdf_page_number"], normalized_crossref_kind(kind), label)
+                if key in seen_page_kind_label:
+                    continue
+                reference_text = f"{kind} {label}"
+                out.append(
+                    {
+                        "page": page["pdf_page_number"],
+                        "page_label": page["page_label"],
+                        "reference_text": reference_text,
+                        "kind": kind,
+                        "label": label,
+                        "line_number": line_number,
+                        "match_start": offset,
+                        "match_end": offset + len(raw_line),
+                        "context": line,
+                        "source": "raw_text_caption_fallback",
+                    }
+                )
+                seen_page_kind_label.add(key)
+            offset += len(raw_line) + 1
     return out
 
 
@@ -494,7 +598,77 @@ def should_append_caption_continuation(title_so_far: str, next_text: str, y_gap:
     return title_so_far.rstrip().endswith(":") or text[:1].islower()
 
 
-def extract_captioned_items(doc: fitz.Document, kind: str) -> list[dict[str, Any]]:
+def fallback_caption_crop_bbox(page: fitz.Page) -> list[float]:
+    return [
+        max(0.0, page.rect.x0 + 48),
+        max(0.0, page.rect.y0 + 64),
+        min(float(page.rect.width), page.rect.x1 - 48),
+        min(float(page.rect.height), page.rect.y1 - 42),
+    ]
+
+
+def extract_raw_captioned_items_for_page(
+    page: fitz.Page,
+    kind: str,
+    page_number: int,
+    page_label: str | None,
+) -> list[dict[str, Any]]:
+    pattern = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
+    display_kind = "Table" if kind == "table" else "Figure"
+    raw_lines = [clean_inline_text(line) for line in (page.get_text("text", sort=False) or "").splitlines()]
+    lines = [line for line in raw_lines if line]
+    items: list[dict[str, Any]] = []
+
+    i = 0
+    while i < len(lines):
+        match = pattern.match(lines[i])
+        if not match:
+            i += 1
+            continue
+
+        label = match.group("label")
+        title = clean_inline_text(match.group("title"))
+        next_caption_idx = None
+        for j in range(i + 1, len(lines)):
+            if ANY_CAPTION_RE.match(lines[j]):
+                next_caption_idx = j
+                break
+
+        body_end = next_caption_idx if next_caption_idx is not None else len(lines)
+        content_lines = lines[i:body_end]
+        while content_lines and plausible_page_label_line(content_lines[-1]) is not None:
+            content_lines.pop()
+        if not content_lines:
+            i += 1
+            continue
+
+        crop_bbox = fallback_caption_crop_bbox(page)
+        items.append(
+            {
+                "kind": kind,
+                "label": label,
+                "caption": f"{display_kind} {label}: {title}",
+                "title": title,
+                "page": page_number,
+                "page_label": page_label,
+                "caption_bbox": [crop_bbox[0], crop_bbox[1], crop_bbox[2], min(crop_bbox[3], crop_bbox[1] + 24)],
+                "crop_bbox": crop_bbox,
+                "raw_lines": content_lines,
+                "body_lines": content_lines[1:],
+                "caption_source": "raw_text",
+                "sort_y": float(i),
+            }
+        )
+        i = body_end if next_caption_idx is not None else len(lines)
+
+    return items
+
+
+def extract_captioned_items(
+    doc: fitz.Document,
+    kind: str,
+    page_labels: dict[int, str | None] | None = None,
+) -> list[dict[str, Any]]:
     pattern = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
     display_kind = "Table" if kind == "table" else "Figure"
     items: list[dict[str, Any]] = []
@@ -502,6 +676,7 @@ def extract_captioned_items(doc: fitz.Document, kind: str) -> list[dict[str, Any
     for page_index in range(len(doc)):
         page = doc[page_index]
         page_number = page_index + 1
+        page_label = page_label_for(page_labels, page_number, page)
         lines = group_words_into_lines(page.get_text("words", sort=True) or [], float(page.rect.height))
         lines = [line for line in lines if not line["is_page_footer"]]
 
@@ -549,20 +724,35 @@ def extract_captioned_items(doc: fitz.Document, kind: str) -> list[dict[str, Any
                     "caption": f"{display_kind} {label}: {title}",
                     "title": title,
                     "page": page_number,
-                    "page_label": page.get_label(),
+                    "page_label": page_label,
                     "caption_bbox": lines[i]["bbox"],
                     "crop_bbox": [x0, y0, x1, y1],
                     "raw_lines": [line["text"] for line in content_lines],
                     "body_lines": [line["text"] for line in lines[body_start:body_end]],
+                    "caption_source": "word_lines",
+                    "sort_y": float(lines[i]["bbox"][1]),
                 }
             )
 
             i = body_end if next_caption_idx is not None else len(lines)
 
+        existing = {(item["kind"], item["label"], item["page"]) for item in items}
+        for item in extract_raw_captioned_items_for_page(page, kind, page_number, page_label):
+            key = (item["kind"], item["label"], item["page"])
+            if key not in existing:
+                items.append(item)
+                existing.add(key)
+
+    items.sort(key=lambda item: (item["page"], item.get("sort_y", 0.0), item["label"]))
+    for item in items:
+        item.pop("sort_y", None)
     return items
 
 
-def extract_embedded_images(doc: fitz.Document) -> list[dict[str, Any]]:
+def extract_embedded_images(
+    doc: fitz.Document,
+    page_labels: dict[int, str | None] | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for i, page in enumerate(doc, start=1):
         page_images = page.get_images(full=True)
@@ -578,7 +768,7 @@ def extract_embedded_images(doc: fitz.Document) -> list[dict[str, Any]]:
                 {
                     "image_id": f"page_{i:03d}_image_{j:02d}",
                     "page": i,
-                    "page_label": page.get_label(),
+                    "page_label": page_label_for(page_labels, i, page),
                     "xref": img[0],
                     "width": img[2] if len(img) > 2 else None,
                     "height": img[3] if len(img) > 3 else None,
@@ -613,9 +803,10 @@ def save_figures(
     repo_root: Path,
     dpi: int,
     embedded_images: list[dict[str, Any]],
+    page_labels: dict[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
     inventory: list[dict[str, Any]] = []
-    captioned_figures = extract_captioned_items(doc, "figure")
+    captioned_figures = extract_captioned_items(doc, "figure", page_labels)
 
     for figure_counter, item in enumerate(captioned_figures, start=1):
         crop_path = figures_dir / f"figure_{figure_counter}.png"
@@ -625,6 +816,7 @@ def save_figures(
         text_path.write_text("\n".join(item["raw_lines"]).strip() + "\n", encoding="utf-8")
 
         associated_images = associated_embedded_images(embedded_images, item["page"], item["crop_bbox"])
+        source = "raw_text_caption_fallback" if item.get("caption_source") == "raw_text" else "caption"
         inventory.append(
             {
                 "figure_id": figure_counter,
@@ -633,7 +825,7 @@ def save_figures(
                 "title": item["title"],
                 "page": item["page"],
                 "page_label": item["page_label"],
-                "source": "caption",
+                "source": source,
                 "status": "captioned_with_embedded_image" if associated_images else "captioned_visual_crop_only",
                 "crop_bbox": item["crop_bbox"],
                 "crop_path": relative_artifact_path(crop_path, repo_root) if crop_saved else None,
@@ -721,9 +913,10 @@ def save_captioned_tables(
     tables_dir: Path,
     repo_root: Path,
     dpi: int,
+    page_labels: dict[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
     inventory: list[dict[str, Any]] = []
-    captioned_tables = extract_captioned_items(doc, "table")
+    captioned_tables = extract_captioned_items(doc, "table", page_labels)
 
     for table_counter, item in enumerate(captioned_tables, start=1):
         csv_path = tables_dir / f"table_{table_counter}.csv"
@@ -762,7 +955,11 @@ def save_captioned_tables(
         write_json(
             raw_json_path,
             {
-                "source": "caption_text_fallback",
+                "source": (
+                    "caption_text_fallback_raw_text"
+                    if item.get("caption_source") == "raw_text"
+                    else "caption_text_fallback"
+                ),
                 "table_label": item["label"],
                 "caption": item["caption"],
                 "title": item["title"],
@@ -785,7 +982,11 @@ def save_captioned_tables(
                 "caption": item["caption"],
                 "page": item["page"],
                 "page_label": item["page_label"],
-                "source": "caption_text_fallback",
+                "source": (
+                    "caption_text_fallback_raw_text"
+                    if item.get("caption_source") == "raw_text"
+                    else "caption_text_fallback"
+                ),
                 "csv_path": relative_artifact_path(csv_path, repo_root),
                 "markdown_path": relative_artifact_path(markdown_path, repo_root),
                 "raw_json_path": relative_artifact_path(raw_json_path, repo_root),
@@ -806,6 +1007,7 @@ def save_auto_tables(
     pdf_path: Path,
     tables_dir: Path,
     repo_root: Path,
+    page_labels: dict[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
     inventory: list[dict[str, Any]] = []
     table_counter = 1
@@ -844,7 +1046,7 @@ def save_auto_tables(
                 {
                     "table_id": table_counter,
                     "page": page_number,
-                    "page_label": page.get_label(),
+                    "page_label": page_label_for(page_labels, page_number, page),
                     "source": t.get("source"),
                     "table_index_on_page": t.get("table_index_on_page"),
                     "bbox": t.get("bbox"),
@@ -868,11 +1070,12 @@ def save_tables(
     tables_dir: Path,
     repo_root: Path,
     dpi: int,
+    page_labels: dict[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
-    captioned_tables = save_captioned_tables(doc, tables_dir, repo_root, dpi)
+    captioned_tables = save_captioned_tables(doc, tables_dir, repo_root, dpi, page_labels)
     if captioned_tables:
         return captioned_tables
-    return save_auto_tables(doc, pdf_path, tables_dir, repo_root)
+    return save_auto_tables(doc, pdf_path, tables_dir, repo_root, page_labels)
 
 
 def build_full_text(page_records: list[dict[str, Any]]) -> str:
@@ -934,8 +1137,8 @@ def main() -> int:
     with fitz.open(pdf_path) as doc:
         for page_index, page in enumerate(doc):
             pdf_page_number = page_index + 1
-            page_label = page.get_label()
             raw_text, sorted_text, words, blocks = extract_page_text(page)
+            page_label = clean_page_label(page, raw_text, sorted_text)
             normalized_text = normalize_page_text(sorted_text)
 
             raw_text_path = raw_pages_dir / f"page_{pdf_page_number:03d}.txt"
@@ -991,15 +1194,18 @@ def main() -> int:
             copy = {k: v for k, v in rec.items() if k not in {"raw_text", "normalized_text"}}
             page_index_json.append(copy)
         write_json(parsed_dir / "page_index.json", page_index_json)
+        page_labels = {rec["pdf_page_number"]: rec["page_label"] for rec in page_records}
 
         sections = extract_sections(page_records)
         citations = extract_citations(page_records)
         numbers = extract_numbers(page_records)
         crossrefs = extract_crossrefs(page_records)
         references = extract_reference_list(page_records)
-        tables_inventory = save_tables(doc, pdf_path, tables_dir, repo_root, args.dpi)
-        embedded_images_inventory = extract_embedded_images(doc)
-        figures_inventory = save_figures(doc, figures_dir, repo_root, args.dpi, embedded_images_inventory)
+        tables_inventory = save_tables(doc, pdf_path, tables_dir, repo_root, args.dpi, page_labels)
+        embedded_images_inventory = extract_embedded_images(doc, page_labels)
+        figures_inventory = save_figures(
+            doc, figures_dir, repo_root, args.dpi, embedded_images_inventory, page_labels
+        )
 
     write_json(parsed_dir / "sections.json", sections)
     write_json(parsed_dir / "in_text_citations.json", citations)

@@ -1,0 +1,25 @@
+Use the custom agent named crossref_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "crossref_auditor"
+- paper_id = "{paper_id}"
+
+Focus on:
+- whether internal references resolve
+- numbering consistency
+- appendix-label consistency
+
+Classification rule:
+- Use parser_artifact for extraction/caption/OCR/false-positive issues.
+- Use manuscript_crossref_issue only for genuine broken or inconsistent paper references.
+- Prioritize genuine manuscript_crossref_issue findings over parser_artifact findings.
+
+Do not include process notes about skill availability, tooling, or session state.

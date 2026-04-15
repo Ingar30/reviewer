@@ -1,0 +1,24 @@
+Use the custom agent named claim_evidence_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "claim_evidence_auditor"
+- paper_id = "{paper_id}"
+
+Focus on:
+- whether major textual claims are supported by displayed evidence
+- overstatement
+- weak support
+- missing support
+- cannot_verify when artifacts do not allow a check
+
+If a finding overlaps with a numerical issue, focus on the interpretation/evidence problem and avoid repeating the full arithmetic diagnosis unless it adds new value.
+
+Do not include process notes about skill availability, tooling, or session state.

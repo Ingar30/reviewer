@@ -1,0 +1,26 @@
+Use the custom agent named literature_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "literature_auditor"
+- paper_id = "{paper_id}"
+
+Focus on:
+- novelty claims
+- literature positioning
+- characterization of prior work
+- conservative verification
+- cannot_verify when verification is not possible
+
+Distinguish clearly between:
+1. cannot_verify because proving novelty requires proving absence, and
+2. overbroad positioning even without proving novelty.
+
+Do not include process notes about skill availability, tooling, or session state.

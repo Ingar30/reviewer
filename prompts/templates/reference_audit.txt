@@ -1,0 +1,25 @@
+Use the custom agent named reference_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "reference_auditor"
+- paper_id = "{paper_id}"
+
+Prioritize citation/reference integrity issues:
+- missing citation/reference pair
+- wrong author/year/title identity
+- duplicate entries
+- wrong in-text key
+
+Treat publication-status updates as secondary maintenance items unless they change the cited work's identity or materially affect the in-text year.
+
+Keep the main summary focused on integrity defects, not bibliography housekeeping.
+
+Do not include process notes about skill availability, tooling, or session state.

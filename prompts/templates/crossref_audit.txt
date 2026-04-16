@@ -11,6 +11,7 @@ Return one JSON object that strictly conforms to:
 For this run:
 - reviewer = "crossref_auditor"
 - paper_id = "{paper_id}"
+- finding IDs must be stable and formatted CROSSREF-001, CROSSREF-002, ...
 
 Focus on:
 - whether internal references resolve
@@ -18,8 +19,14 @@ Focus on:
 - appendix-label consistency
 
 Classification rule:
-- Use parser_artifact for extraction/caption/OCR/false-positive issues.
-- Use manuscript_crossref_issue only for genuine broken or inconsistent paper references.
+- Set issue_type = "parser_artifact" for extraction/caption/OCR/false-positive issues.
+- Set issue_type = "manuscript_issue" and category = "manuscript_crossref_issue" only for genuine broken or inconsistent paper references.
 - Prioritize genuine manuscript_crossref_issue findings over parser_artifact findings.
+
+For every finding:
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for referenced tables, figures, equations, sections, appendices, or parsed artifacts when available.
+- Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
 
 Do not include process notes about skill availability, tooling, or session state.

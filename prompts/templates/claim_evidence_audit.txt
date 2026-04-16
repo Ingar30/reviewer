@@ -11,6 +11,7 @@ Return one JSON object that strictly conforms to:
 For this run:
 - reviewer = "claim_evidence_auditor"
 - paper_id = "{paper_id}"
+- finding IDs must be stable and formatted CEA-001, CEA-002, ...
 
 Focus on:
 - whether major textual claims are supported by displayed evidence
@@ -18,6 +19,14 @@ Focus on:
 - weak support
 - missing support
 - cannot_verify when artifacts do not allow a check
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the claim location and the tables, figures, or results used as evidence.
+- Include claim_evidence_links connecting the claim to source_objects with relation supports, contradicts, partial, or cannot_verify.
+- Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
 
 If a finding overlaps with a numerical issue, focus on the interpretation/evidence problem and avoid repeating the full arithmetic diagnosis unless it adds new value.
 

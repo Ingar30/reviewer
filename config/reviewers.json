@@ -4,6 +4,7 @@
       "name": "crossref_auditor",
       "prompt": "crossref_audit.txt",
       "output": "crossref_auditor.json",
+      "id_prefix": "CROSSREF",
       "search": false,
       "enabled": true,
       "normalization_role": "crossref"
@@ -12,6 +13,7 @@
       "name": "numerical_auditor",
       "prompt": "numerical_audit.txt",
       "output": "numerical_auditor.json",
+      "id_prefix": "NUM",
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript"
@@ -20,6 +22,7 @@
       "name": "claim_evidence_auditor",
       "prompt": "claim_evidence_audit.txt",
       "output": "claim_evidence_auditor.json",
+      "id_prefix": "CEA",
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript"
@@ -28,6 +31,7 @@
       "name": "literature_auditor",
       "prompt": "literature_audit.txt",
       "output": "literature_auditor.json",
+      "id_prefix": "LIT",
       "search": true,
       "enabled": true,
       "normalization_role": "manuscript"
@@ -36,6 +40,7 @@
       "name": "reference_auditor",
       "prompt": "reference_audit.txt",
       "output": "reference_auditor.json",
+      "id_prefix": "REF",
       "search": true,
       "enabled": true,
       "normalization_role": "reference"

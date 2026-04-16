@@ -11,6 +11,7 @@ Return one JSON object that strictly conforms to:
 For this run:
 - reviewer = "reference_auditor"
 - paper_id = "{paper_id}"
+- finding IDs must be stable and formatted REF-001, REF-002, ...
 
 Prioritize citation/reference integrity issues:
 - missing citation/reference pair
@@ -19,6 +20,13 @@ Prioritize citation/reference integrity issues:
 - wrong in-text key
 
 Treat publication-status updates as secondary maintenance items unless they change the cited work's identity or materially affect the in-text year.
+
+For every finding:
+- Set issue_type to reference_integrity, bibliography_maintenance, parser_artifact, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for in-text citations, reference-list entries, parsed reference artifacts, or external sources used.
+- Use cannot_verify only when verification is not possible, and then include cannot_verify_reason.
 
 Keep the main summary focused on integrity defects, not bibliography housekeeping.
 

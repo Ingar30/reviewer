@@ -113,7 +113,7 @@ work/<paper_id>/prompts/
 
 ### `config/reviewers.json`
 
-The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, whether web search is required, and the normalizer role used during editor-bundle construction.
+The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, stable finding-ID prefix, whether web search is required, and the normalizer role used during editor-bundle construction.
 
 Valid `normalization_role` values are:
 - `manuscript`: default substantive manuscript findings
@@ -123,6 +123,15 @@ Valid `normalization_role` values are:
 ### `schemas/`
 
 JSON schemas used for stable reviewer outputs.
+
+Reviewer outputs use `schemas/reviewer_output.schema.json` plus semantic checks in `scripts/validate_review_json.py`. New reviewer findings must include:
+- stable IDs matching the configured `id_prefix`, such as `NUM-001`
+- explicit `issue_type`, `severity`, and `confidence`
+- `location.precision` as `exact`, `partial`, or `missing`
+- `source_objects` for verifiable findings
+- `cannot_verify_reason` for cannot-verify findings
+- `numeric_check` for verifiable numerical-auditor findings
+- `claim_evidence_links` when a claim is compared with source evidence
 
 ### `scripts/`
 

@@ -11,12 +11,21 @@ Return one JSON object that strictly conforms to:
 For this run:
 - reviewer = "numerical_auditor"
 - paper_id = "{paper_id}"
+- finding IDs must be stable and formatted NUM-001, NUM-002, ...
 
 Focus on:
 - numeric claims in text versus tables/figures/appendix
 - sign, scale, units, rounding
 - percentage versus percentage-point distinctions
 - cannot_verify when parsed artifacts are insufficient
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the text/table/figure/appendix material used as evidence.
+- For verifiable numerical findings, include numeric_check with reported_value, expected_value, method, inputs, and recomputation_notes.
+- Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
 
 When a finding may overlap with claim_evidence_auditor, state the numeric defect cleanly so the editor can deduplicate it.
 

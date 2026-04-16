@@ -13,6 +13,8 @@ from reviewer_config import ReviewerConfig, load_reviewers_config
 
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 ASSESSMENT_RANK = {"yes": 1, "cannot_verify": 2, "partially": 3, "no": 4}
+CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
+ISSUE_CLASSES = {"manuscript_issue", "parser_artifact", "reference_integrity", "bibliography_maintenance", "cannot_verify"}
 PROCESS_NOTE_RE = re.compile(
     r"\b(?:skill|tool|session|local checks|no files were written|no files were edited|requested custom agent)\b",
     re.IGNORECASE,
@@ -53,6 +55,9 @@ def location_page(finding: dict[str, Any]) -> int | None:
 
 
 def issue_class(reviewer: ReviewerConfig, finding: dict[str, Any]) -> str:
+    explicit = finding.get("issue_type")
+    if explicit in ISSUE_CLASSES:
+        return explicit
     category = compact_text(finding.get("category"))
     assessment = finding.get("assessment")
     if assessment == "cannot_verify" or "cannot_verify" in category:
@@ -103,6 +108,10 @@ def stronger_assessment(left: str, right: str) -> str:
     return left if ASSESSMENT_RANK.get(left, 0) >= ASSESSMENT_RANK.get(right, 0) else right
 
 
+def weaker_confidence(left: str, right: str) -> str:
+    return left if CONFIDENCE_RANK.get(left, 2) <= CONFIDENCE_RANK.get(right, 2) else right
+
+
 def add_to_group(group: dict[str, Any], reviewer: str, finding: dict[str, Any]) -> None:
     finding_id = finding["id"]
     location = finding.get("location") or {}
@@ -113,6 +122,7 @@ def add_to_group(group: dict[str, Any], reviewer: str, finding: dict[str, Any]) 
         group["categories"].append(finding.get("category"))
     group["severity"] = stronger_severity(group["severity"], finding.get("severity", "low"))
     group["assessment"] = stronger_assessment(group["assessment"], finding.get("assessment", "yes"))
+    group["confidence"] = weaker_confidence(group["confidence"], finding.get("confidence", "medium"))
     if location and location not in group["locations"]:
         group["locations"].append(location)
     if location.get("text_quote") and location.get("text_quote") not in group["quotes"]:
@@ -121,6 +131,16 @@ def add_to_group(group: dict[str, Any], reviewer: str, finding: dict[str, Any]) 
         group["evidence_summaries"].append(
             {"reviewer": reviewer, "id": finding_id, "text": finding["evidence_summary"]}
         )
+    if finding.get("cannot_verify_reason"):
+        group["cannot_verify_reasons"].append(
+            {"reviewer": reviewer, "id": finding_id, "text": finding["cannot_verify_reason"]}
+        )
+    for source_object in finding.get("source_objects", []) or []:
+        group["source_objects"].append({"reviewer": reviewer, "id": finding_id, "source_object": source_object})
+    for link in finding.get("claim_evidence_links", []) or []:
+        group["claim_evidence_links"].append({"reviewer": reviewer, "id": finding_id, "link": link})
+    if finding.get("numeric_check"):
+        group["numeric_checks"].append({"reviewer": reviewer, "id": finding_id, "numeric_check": finding["numeric_check"]})
     if finding.get("suggested_fix"):
         group["suggested_fixes"].append(
             {"reviewer": reviewer, "id": finding_id, "text": finding["suggested_fix"]}
@@ -134,6 +154,7 @@ def new_group(reviewer: str, finding: dict[str, Any], klass: str) -> dict[str, A
         "issue_class": klass,
         "severity": finding.get("severity", "low"),
         "assessment": finding.get("assessment", "yes"),
+        "confidence": finding.get("confidence", "medium"),
         "source_reviewers": [],
         "source_findings": [],
         "categories": [],
@@ -143,6 +164,10 @@ def new_group(reviewer: str, finding: dict[str, Any], klass: str) -> dict[str, A
         "locations": [],
         "quotes": [],
         "evidence_summaries": [],
+        "cannot_verify_reasons": [],
+        "source_objects": [],
+        "claim_evidence_links": [],
+        "numeric_checks": [],
         "suggested_fixes": [],
     }
     add_to_group(group, reviewer, finding)

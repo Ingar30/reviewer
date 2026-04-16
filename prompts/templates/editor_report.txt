@@ -13,6 +13,7 @@ Hard rules:
 - Do not invent findings.
 - Preserve uncertainty, especially cannot_verify cases.
 - Preserve exact locations when available.
+- Use confidence, source_objects, claim_evidence_links, numeric_check, and cannot_verify_reason fields when they are present in the normalized bundle.
 - Merge duplicate findings across reviewers into one canonical issue.
 - Prioritize high- and medium-severity substantive findings.
 - Separate manuscript issues from parser/preprocessing issues.

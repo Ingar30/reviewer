@@ -14,6 +14,7 @@ class ReviewerConfig:
     name: str
     prompt: str
     output: str
+    id_prefix: str
     search: bool
     enabled: bool
     normalization_role: str
@@ -42,6 +43,7 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
     names: set[str] = set()
     outputs: set[str] = set()
     prompts: set[str] = set()
+    id_prefixes: set[str] = set()
 
     for index, item in enumerate(reviewers):
         if not isinstance(item, dict):
@@ -49,6 +51,7 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
         name = _require_string(item, "name", index)
         prompt = _require_string(item, "prompt", index)
         output = _require_string(item, "output", index)
+        id_prefix = _require_string(item, "id_prefix", index)
         role = _require_string(item, "normalization_role", index)
         if role not in VALID_NORMALIZATION_ROLES:
             valid = ", ".join(sorted(VALID_NORMALIZATION_ROLES))
@@ -65,14 +68,18 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
             raise ValueError(f"Duplicate reviewer output in {config_path}: {output}")
         if prompt in prompts:
             raise ValueError(f"Duplicate reviewer prompt in {config_path}: {prompt}")
+        if id_prefix in id_prefixes:
+            raise ValueError(f"Duplicate reviewer id_prefix in {config_path}: {id_prefix}")
         names.add(name)
         outputs.add(output)
         prompts.add(prompt)
+        id_prefixes.add(id_prefix)
         parsed.append(
             ReviewerConfig(
                 name=name,
                 prompt=prompt,
                 output=output,
+                id_prefix=id_prefix,
                 search=search,
                 enabled=enabled,
                 normalization_role=role,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -20,6 +21,7 @@ META_NOTE_RE = re.compile(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check that an editor output is a real report.")
     parser.add_argument("--input", required=True)
+    parser.add_argument("--bundle", default=None, help="Optional normalized bundle for traceability coverage checks.")
     parser.add_argument("--min-chars", type=int, default=2000)
     args = parser.parse_args()
 
@@ -38,6 +40,21 @@ def main() -> int:
             failures.append(f"missing required heading: {heading}")
     if not re.search(r"\b(?:CANON-\d{3}|[A-Z]+-[A-Z]+-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b", text):
         failures.append("report does not mention canonical or source finding identifiers")
+
+    if args.bundle:
+        bundle_path = Path(args.bundle)
+        if not bundle_path.exists():
+            raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        for finding in bundle.get("canonical_findings", []):
+            canonical_id = finding.get("canonical_id")
+            if canonical_id and canonical_id not in text:
+                failures.append(f"missing canonical identifier from bundle: {canonical_id}")
+            for source in finding.get("source_findings", []):
+                reviewer = source.get("reviewer")
+                source_id = source.get("id")
+                if reviewer and source_id and f"{reviewer}:{source_id}" not in text:
+                    failures.append(f"missing source finding identifier from bundle: {reviewer}:{source_id}")
 
     if failures:
         print("INVALID")

@@ -8,7 +8,8 @@
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript",
-      "stage": "preflight"
+      "stage": "preflight",
+      "selection_policy": "mandatory"
     },
     {
       "name": "crossref_auditor",
@@ -17,7 +18,8 @@
       "id_prefix": "CROSSREF",
       "search": false,
       "enabled": true,
-      "normalization_role": "crossref"
+      "normalization_role": "crossref",
+      "selection_policy": "mandatory"
     },
     {
       "name": "numerical_auditor",
@@ -26,7 +28,8 @@
       "id_prefix": "NUM",
       "search": false,
       "enabled": true,
-      "normalization_role": "manuscript"
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
     },
     {
       "name": "claim_evidence_auditor",
@@ -35,7 +38,8 @@
       "id_prefix": "CEA",
       "search": false,
       "enabled": true,
-      "normalization_role": "manuscript"
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
     },
     {
       "name": "literature_auditor",
@@ -44,7 +48,8 @@
       "id_prefix": "LIT",
       "search": true,
       "enabled": true,
-      "normalization_role": "manuscript"
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
     },
     {
       "name": "reference_auditor",
@@ -53,7 +58,88 @@
       "id_prefix": "REF",
       "search": true,
       "enabled": true,
-      "normalization_role": "reference"
+      "normalization_role": "reference",
+      "selection_policy": "mandatory"
+    },
+    {
+      "name": "grammar_auditor",
+      "prompt": "grammar_audit.txt",
+      "output": "grammar_auditor.json",
+      "id_prefix": "GRAM",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "copyedit",
+      "selection_policy": "mandatory"
+    },
+    {
+      "name": "identification_auditor",
+      "prompt": "identification_audit.txt",
+      "output": "identification_auditor.json",
+      "id_prefix": "ID",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "robustness_auditor",
+      "prompt": "robustness_audit.txt",
+      "output": "robustness_auditor.json",
+      "id_prefix": "ROB",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "sample_construction_auditor",
+      "prompt": "sample_construction_audit.txt",
+      "output": "sample_construction_auditor.json",
+      "id_prefix": "SAMPLE",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "abstract_conclusion_consistency_auditor",
+      "prompt": "abstract_conclusion_consistency_audit.txt",
+      "output": "abstract_conclusion_consistency_auditor.json",
+      "id_prefix": "CONSIST",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "limitations_external_validity_auditor",
+      "prompt": "limitations_external_validity_audit.txt",
+      "output": "limitations_external_validity_auditor.json",
+      "id_prefix": "VALID",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "model_equation_auditor",
+      "prompt": "model_equation_audit.txt",
+      "output": "model_equation_auditor.json",
+      "id_prefix": "MODEL",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "data_availability_replication_auditor",
+      "prompt": "data_availability_replication_audit.txt",
+      "output": "data_availability_replication_auditor.json",
+      "id_prefix": "REPL",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
     }
   ]
 }

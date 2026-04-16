@@ -1,0 +1,31 @@
+Use the custom agent named identification_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit identification and causal interpretation only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "identification_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted ID-001, ID-002, ...
+
+Focus on:
+- causal language and whether the design supports it
+- stated and unstated identifying assumptions
+- threats to validity, confounding, selection, spillovers, timing, and measurement
+- whether limitations and interpretation match the identification strategy
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to causal_claim_mismatch, identification_assumption, threat_to_validity, interpretation_overreach, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the claim, design description, table, figure, appendix, or parsed artifact used as evidence.
+- Include claim_evidence_links when comparing a claim to design/evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "properties": {
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paper_type": {
+      "type": "string",
+      "enum": [
+        "empirical_causal",
+        "empirical_descriptive",
+        "theory",
+        "methods",
+        "literature_review",
+        "mixed",
+        "unknown"
+      ]
+    },
+    "selection_confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "selected_optional_reviewers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "required": ["name", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "skipped_optional_reviewers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "required": ["name", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "paper_id",
+    "paper_type",
+    "selection_confidence",
+    "selected_optional_reviewers",
+    "skipped_optional_reviewers",
+    "notes"
+  ],
+  "additionalProperties": false
+}

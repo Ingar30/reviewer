@@ -1,0 +1,31 @@
+Use the custom agent named data_availability_replication_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit data availability, code availability, replication, and reproducibility statements only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "data_availability_replication_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted REPL-001, REPL-002, ...
+
+Focus on:
+- data and code availability statements
+- replication package claims
+- consistency between reproducibility statements and empirical analysis
+- missing or vague reproducibility details when the paper claims empirical results can be replicated
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to data_availability_unclear, code_availability_unclear, replication_claim_mismatch, reproducibility_detail_missing, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for data/code statements, empirical sections, appendix material, or parsed artifacts.
+- Include claim_evidence_links when comparing reproducibility claims to manuscript evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

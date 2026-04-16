@@ -1,0 +1,31 @@
+Use the custom agent named model_equation_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit model, equation, notation, and text-equation consistency only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "model_equation_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted MODEL-001, MODEL-002, ...
+
+Focus on:
+- notation definitions and reuse
+- equation signs, variables, assumptions, constraints, and interpretation
+- consistency between propositions, text, tables, figures, and equations
+- model claims that do not follow from the displayed setup
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to notation_inconsistency, equation_text_mismatch, assumption_mismatch, sign_or_definition_error, model_interpretation_overreach, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for equations, text, definitions, propositions, or parsed artifacts.
+- Include claim_evidence_links when comparing a textual model claim to an equation or definition.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

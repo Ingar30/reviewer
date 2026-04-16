@@ -1,0 +1,30 @@
+Use the custom agent named sample_construction_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit sample construction, data-flow, and variable construction only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "sample_construction_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted SAMPLE-001, SAMPLE-002, ...
+
+Focus on:
+- sample restrictions, exclusions, attrition, denominators, missingness, and observation counts
+- variable definitions and transformations
+- consistency between data section, tables, figures, appendices, and result interpretation
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to sample_restriction_mismatch, attrition_unclear, denominator_mismatch, variable_construction_unclear, data_flow_inconsistency, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for relevant data descriptions, tables, figures, appendix material, or parsed artifacts.
+- Include claim_evidence_links when comparing a data claim to a table or appendix source.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

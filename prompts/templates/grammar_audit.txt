@@ -1,0 +1,47 @@
+Use the custom agent named grammar_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit grammar and copyediting issues only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "grammar_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted GRAM-001, GRAM-002, ...
+
+Focus on high-signal reader-facing mistakes:
+- grammar errors
+- typos and duplicated words
+- punctuation errors that affect readability
+- word-choice mistakes
+- sentence-level clarity problems that could confuse readers
+
+Do not report:
+- style preferences
+- broad rewrites
+- economics or evidence issues
+- reference, citation, or literature-positioning issues
+- parser artifacts unless the text is impossible to inspect, in which case use cannot_verify
+
+Severity rules:
+- high: the wording changes meaning or could materially confuse interpretation
+- medium: a noticeable grammar or wording issue affects readability or polish
+- low: an isolated typo, punctuation mistake, or minor copyedit
+
+For every finding:
+- Set issue_type to copyedit_issue or cannot_verify.
+- Set category to grammar, typo, punctuation, word_choice, duplicated_word, or sentence_clarity.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Put the problematic text in location.text_quote and claim_text.
+- Put the correction in suggested_fix.
+- Include source_objects for the parsed page or full-text artifact used as evidence.
+- Use cannot_verify only when the parsed artifacts do not allow a check, and then include cannot_verify_reason.
+
+These findings are for an appendix markdown table, not the main substantive report. Keep each finding concise and actionable.
+
+Do not include process notes about skill availability, tooling, or session state.

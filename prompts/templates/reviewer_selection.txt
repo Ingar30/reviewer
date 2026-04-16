@@ -1,0 +1,38 @@
+Use the custom agent named reviewer_selector.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Classify paper_id "{paper_id}" using parsed artifacts under:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{selection_schema_path}`
+
+Select optional reviewers only from this catalog:
+
+```json
+{optional_reviewer_catalog}
+```
+
+Classification guidance:
+- empirical_causal: empirical paper making causal, treatment-effect, identification, quasi-experimental, experimental, or policy-effect claims.
+- empirical_descriptive: empirical paper mainly describing patterns, correlations, measurement, forecasting, or facts without causal identification as the main contribution.
+- theory: theoretical, conceptual, or model-driven paper with little or no empirical analysis.
+- methods: paper introducing an estimator, measurement method, dataset construction method, or computational procedure.
+- literature_review: survey or literature review paper.
+- mixed: multiple major paper types are central.
+- unknown: parsed artifacts are too limited to classify confidently.
+
+Selection rules:
+- Select numerical_auditor for papers with important numeric claims, tables, figures, or appendix estimates.
+- Select claim_evidence_auditor for papers with substantive empirical, policy, or interpretive claims tied to displayed evidence.
+- Select literature_auditor for papers with novelty, positioning, or prior-work characterization claims.
+- Select identification_auditor for empirical_causal papers or mixed papers with causal/identification claims.
+- Select robustness_auditor for empirical papers with robustness checks, alternative specifications, subsamples, placebo tests, or appendix validations.
+- Select sample_construction_auditor for empirical papers with nontrivial sample restrictions, attrition, variable construction, exclusions, or denominators.
+- Select abstract_conclusion_consistency_auditor when abstract/introduction/conclusion claims appear important enough to check against the body.
+- Select limitations_external_validity_auditor for papers making policy, welfare, generalizability, or scope claims.
+- Select model_equation_auditor for theory, structural, model-heavy, equation-heavy, or methods papers.
+- Select data_availability_replication_auditor for empirical papers with data/code availability, replication, or reproducibility claims.
+
+When unsure, prefer selecting a reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect.

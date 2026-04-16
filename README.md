@@ -115,16 +115,21 @@ work/<paper_id>/prompts/
 
 ### `config/reviewers.json`
 
-The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, stable finding-ID prefix, whether web search is required, the normalizer role used during editor-bundle construction, and the run stage.
+The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, stable finding-ID prefix, whether web search is required, the normalizer role used during editor-bundle construction, the run stage, and the selection policy used by the dynamic wrapper.
 
 Valid `normalization_role` values are:
 - `manuscript`: default substantive manuscript findings
 - `crossref`: cross-reference findings, including parser-artifact classification for parser/false-positive categories
 - `reference`: reference-integrity findings, including bibliography-maintenance classification for outdated or metadata-typo categories
+- `copyedit`: grammar and copyediting findings routed to the report appendix
 
 Valid `stage` values are:
 - `preflight`: run after preprocessing and before other reviewers; currently used by `parser_quality_auditor`
 - `review`: normal reviewer stage; this is the default for older config entries without `stage`
+
+Valid `selection_policy` values are:
+- `mandatory`: always run when enabled; used for parser preflight and baseline reviewers
+- `optional`: available to the selector for paper-type-dependent review
 
 ### `schemas/`
 
@@ -138,6 +143,19 @@ Reviewer outputs use `schemas/reviewer_output.schema.json` plus semantic checks 
 - `cannot_verify_reason` for cannot-verify findings
 - `numeric_check` for verifiable numerical-auditor findings
 - `claim_evidence_links` when a claim is compared with source evidence
+- `copyedit_issue` for grammar/copyediting findings intended for the appendix table
+
+Reviewer selection uses `schemas/reviewer_selection.schema.json`. In dynamic mode, the selector writes its decision to:
+
+```text
+work/<paper_id>/selection/reviewer_selection.json
+```
+
+The wrapper then writes the run-specific selected roster to:
+
+```text
+work/<paper_id>/selection/selected_reviewers.json
+```
 
 ### `scripts/`
 
@@ -179,12 +197,18 @@ For a fully automated fresh run, use:
 python scripts\review_paper.py --pdf inputs\example-paper.pdf
 ```
 
-This derives `paper_id` from the PDF filename, writes intermediate artifacts under `work/<paper_id>/`, writes the final report to `outputs/<paper_id>/report.md`, and stores subprocess logs under `work/<paper_id>/logs/`.
+This derives `paper_id` from the PDF filename, writes intermediate artifacts under `work/<paper_id>/`, writes the final report to `outputs/<paper_id>/report.md`, and stores subprocess logs under `work/<paper_id>/logs/`. By default, the wrapper uses dynamic reviewer selection: parser preflight runs first, mandatory baseline reviewers always run, and optional reviewers are selected for the paper type.
 
 Use an explicit paper ID when needed:
 
 ```powershell
 python scripts\review_paper.py --pdf inputs\example-paper.pdf --paper-id example-paper
+```
+
+Use static mode to run all enabled reviewers without selector filtering:
+
+```powershell
+python scripts\review_paper.py --pdf inputs\example-paper.pdf --reviewer-selection static
 ```
 
 ### 1. Preprocess
@@ -213,12 +237,20 @@ python scripts\render_prompts.py `
 ### 3. Run Reviewers
 
 The default reviewer agents are configured in `config/reviewers.json`:
-- `parser_quality_auditor` (preflight)
-- `crossref_auditor`
-- `numerical_auditor`
-- `claim_evidence_auditor`
-- `literature_auditor`
-- `reference_auditor`
+- `parser_quality_auditor` (preflight, mandatory)
+- `crossref_auditor` (mandatory)
+- `reference_auditor` (mandatory)
+- `grammar_auditor` (mandatory)
+- `numerical_auditor` (optional)
+- `claim_evidence_auditor` (optional)
+- `literature_auditor` (optional)
+- `identification_auditor` (optional)
+- `robustness_auditor` (optional)
+- `sample_construction_auditor` (optional)
+- `abstract_conclusion_consistency_auditor` (optional)
+- `limitations_external_validity_auditor` (optional)
+- `model_equation_auditor` (optional)
+- `data_availability_replication_auditor` (optional)
 
 Each reviewer reads from `work/<paper_id>/parsed/` and writes one JSON file under `work/<paper_id>/reviews/`.
 
@@ -267,6 +299,8 @@ python scripts\build_editor_input.py `
   --output work\example-paper\editor\editor_input.md
 ```
 
+This writes a deterministic editor brief before the raw JSON inputs. The brief summarizes active reviewers, reviewer-selection context when available, finding counts, high-priority synthesis candidates, section routing, and agent-by-agent finding indexes.
+
 ### 7. Run Editor
 
 ```powershell
@@ -280,6 +314,14 @@ The report must include traceability lines with canonical and source finding IDs
 ```markdown
 **Traceability:** CANON-001; source finding(s): claim_evidence_auditor:CEA-005
 ```
+
+The intended report structure starts with synthesis and then preserves the audit trail:
+- `## Executive Summary`
+- `## Review Configuration`
+- `## Highest-Priority Cross-Agent Findings`
+- `## Suggested Revision Priorities`
+- `## Agent-by-Agent Findings`
+- domain-specific sections for literature, references, parser caveats, cannot-verify items, and grammar appendix when applicable
 
 ### 8. Check Final Report
 

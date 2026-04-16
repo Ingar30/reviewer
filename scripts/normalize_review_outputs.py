@@ -14,7 +14,14 @@ from reviewer_config import ReviewerConfig, load_reviewers_config
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 ASSESSMENT_RANK = {"yes": 1, "cannot_verify": 2, "partially": 3, "no": 4}
 CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
-ISSUE_CLASSES = {"manuscript_issue", "parser_artifact", "reference_integrity", "bibliography_maintenance", "cannot_verify"}
+ISSUE_CLASSES = {
+    "manuscript_issue",
+    "parser_artifact",
+    "reference_integrity",
+    "bibliography_maintenance",
+    "copyedit_issue",
+    "cannot_verify",
+}
 PROCESS_NOTE_RE = re.compile(
     r"\b(?:skill|tool|session|local checks|no files were written|no files were edited|requested custom agent)\b",
     re.IGNORECASE,
@@ -70,6 +77,8 @@ def issue_class(reviewer: ReviewerConfig, finding: dict[str, Any]) -> str:
         if "outdated" in category or "metadata_typo" in category:
             return "bibliography_maintenance"
         return "reference_integrity"
+    if reviewer.normalization_role == "copyedit":
+        return "copyedit_issue"
     return "manuscript_issue"
 
 
@@ -218,6 +227,7 @@ def normalize(paper_id: str, reviews_dir: Path, reviewers: list[ReviewerConfig])
         "cannot_verify": 2,
         "bibliography_maintenance": 3,
         "parser_artifact": 4,
+        "copyedit_issue": 5,
     }
     groups.sort(
         key=lambda group: (

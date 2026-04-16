@@ -1,0 +1,30 @@
+Use the custom agent named limitations_external_validity_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit limitations, scope, and external validity only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "limitations_external_validity_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted VALID-001, VALID-002, ...
+
+Focus on:
+- policy, welfare, scope, and generalizability claims
+- limitations that are missing, understated, or inconsistent with the design/data
+- external-validity language that exceeds the sampled population or setting
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to external_validity_overreach, limitation_understated, scope_mismatch, policy_overstatement, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for claims and limiting evidence.
+- Include claim_evidence_links when comparing scope claims to evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

@@ -10,7 +10,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from reviewer_config import ReviewerConfig, load_reviewers_config
+from render_prompts import render_template
+from reviewer_config import ReviewerConfig, load_reviewers_config, write_reviewers_config
+
+
+SELECTOR_TEMPLATE = "reviewer_selection.txt"
+SELECTOR_OUTPUT = "reviewer_selection.json"
+SELECTED_REVIEWERS_CONFIG = "selected_reviewers.json"
 
 
 @dataclass
@@ -186,6 +192,160 @@ def enforce_preflight_gate(reviewer: ReviewerConfig, output_path: Path) -> None:
         raise RuntimeError(f"blocking parser-quality findings: {blocker_text}")
 
 
+def reviewer_catalog(reviewers: list[ReviewerConfig]) -> list[dict[str, object]]:
+    return [
+        {
+            "name": reviewer.name,
+            "id_prefix": reviewer.id_prefix,
+            "prompt": reviewer.prompt,
+            "search": reviewer.search,
+            "normalization_role": reviewer.normalization_role,
+        }
+        for reviewer in reviewers
+    ]
+
+
+def render_selector_prompt(
+    repo: Path,
+    paper_id: str,
+    parsed_dir: Path,
+    optional_reviewers: list[ReviewerConfig],
+    selection_schema_path: Path,
+) -> str:
+    template = (repo / "prompts" / "templates" / SELECTOR_TEMPLATE).read_text(encoding="utf-8")
+    catalog = json.dumps(reviewer_catalog(optional_reviewers), indent=2)
+    return render_template(
+        template,
+        {
+            "paper_id": paper_id,
+            "parsed_dir": str(parsed_dir.relative_to(repo)),
+            "selection_schema_path": str(selection_schema_path.relative_to(repo)),
+            "optional_reviewer_catalog": catalog,
+        },
+    )
+
+
+def run_reviewer_selector(
+    repo: Path,
+    paper_id: str,
+    parsed_dir: Path,
+    optional_reviewers: list[ReviewerConfig],
+    selection_dir: Path,
+    selection_schema_path: Path,
+    log_dir: Path,
+) -> tuple[dict, float]:
+    selection_dir.mkdir(parents=True, exist_ok=True)
+    output_path = selection_dir / SELECTOR_OUTPUT
+    prompt_text = render_selector_prompt(repo, paper_id, parsed_dir, optional_reviewers, selection_schema_path)
+    started_at = time.time() - 1.0
+    run_required(
+        "reviewer-selector",
+        [
+            codex_command(),
+            "exec",
+            "--output-schema",
+            str(selection_schema_path.relative_to(repo)),
+            "--output-last-message",
+            str(output_path.relative_to(repo)),
+            "-",
+        ],
+        repo,
+        log_dir,
+        input_text=prompt_text,
+    )
+    require_fresh_file(output_path, started_at, "reviewer selector output")
+    return json.loads(output_path.read_text(encoding="utf-8")), started_at
+
+
+def validate_selection_output(
+    selection: dict,
+    paper_id: str,
+    mandatory_reviewers: list[ReviewerConfig],
+    optional_reviewers: list[ReviewerConfig],
+) -> list[str]:
+    errors = []
+    if selection.get("paper_id") != paper_id:
+        errors.append(f"selection paper_id={selection.get('paper_id')!r}, expected {paper_id!r}")
+    valid_paper_types = {
+        "empirical_causal",
+        "empirical_descriptive",
+        "theory",
+        "methods",
+        "literature_review",
+        "mixed",
+        "unknown",
+    }
+    if selection.get("paper_type") not in valid_paper_types:
+        errors.append("selection paper_type is invalid")
+    if selection.get("selection_confidence") not in {"high", "medium", "low"}:
+        errors.append("selection_confidence is invalid")
+
+    optional_by_name = {reviewer.name: reviewer for reviewer in optional_reviewers if reviewer.enabled}
+    mandatory_names = {reviewer.name for reviewer in mandatory_reviewers}
+    selected_items = selection.get("selected_optional_reviewers", [])
+    skipped_items = selection.get("skipped_optional_reviewers", [])
+    if not isinstance(selected_items, list):
+        errors.append("selected_optional_reviewers must be a list")
+        selected_items = []
+    if not isinstance(skipped_items, list):
+        errors.append("skipped_optional_reviewers must be a list")
+        skipped_items = []
+
+    selected_names = []
+    for index, item in enumerate(selected_items):
+        if not isinstance(item, dict):
+            errors.append(f"selected_optional_reviewers[{index}] must be an object")
+            continue
+        name = item.get("name")
+        reason = item.get("reason")
+        if not isinstance(name, str) or not name:
+            errors.append(f"selected_optional_reviewers[{index}].name must be a non-empty string")
+            continue
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"selected_optional_reviewers[{index}].reason must be a non-empty string")
+        if name in mandatory_names:
+            errors.append(f"selected reviewer is mandatory, not optional: {name}")
+        if name not in optional_by_name:
+            errors.append(f"selected reviewer is not an enabled optional reviewer: {name}")
+        selected_names.append(name)
+
+    duplicates = sorted({name for name in selected_names if selected_names.count(name) > 1})
+    for name in duplicates:
+        errors.append(f"selected reviewer is duplicated: {name}")
+
+    skipped_names = []
+    for index, item in enumerate(skipped_items):
+        if not isinstance(item, dict):
+            errors.append(f"skipped_optional_reviewers[{index}] must be an object")
+            continue
+        name = item.get("name")
+        reason = item.get("reason")
+        if not isinstance(name, str) or not name:
+            errors.append(f"skipped_optional_reviewers[{index}].name must be a non-empty string")
+            continue
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"skipped_optional_reviewers[{index}].reason must be a non-empty string")
+        if name not in optional_by_name:
+            errors.append(f"skipped reviewer is not an enabled optional reviewer: {name}")
+        skipped_names.append(name)
+
+    overlap = sorted(set(selected_names) & set(skipped_names))
+    for name in overlap:
+        errors.append(f"reviewer cannot be both selected and skipped: {name}")
+    return errors
+
+
+def selected_reviewers_from_selection(
+    selection: dict,
+    mandatory_reviewers: list[ReviewerConfig],
+    optional_reviewers: list[ReviewerConfig],
+) -> list[ReviewerConfig]:
+    optional_by_name = {reviewer.name: reviewer for reviewer in optional_reviewers}
+    selected_names = [item["name"] for item in selection.get("selected_optional_reviewers", [])]
+    selected_optional = [optional_by_name[name] for name in selected_names]
+    return [*mandatory_reviewers, *selected_optional]
+
+
 def run_reviewer_batch(
     reviewers: list[ReviewerConfig],
     repo: Path,
@@ -259,6 +419,12 @@ def main() -> int:
         help="Continue validating remaining reviewer outputs after a reviewer-output validation error.",
     )
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
+    parser.add_argument(
+        "--reviewer-selection",
+        choices=["dynamic", "static"],
+        default="dynamic",
+        help="Use dynamic optional-reviewer selection or run all enabled reviewers.",
+    )
     args = parser.parse_args()
 
     repo = repo_root()
@@ -277,15 +443,25 @@ def main() -> int:
     prompts_dir = work_root / "prompts"
     reviews_dir = work_root / "reviews"
     editor_dir = work_root / "editor"
+    selection_dir = work_root / "selection"
     log_dir = work_root / "logs"
     outputs_dir = repo / "outputs" / paper_id
     report_path = outputs_dir / "report.md"
     schema_path = repo / "schemas" / "reviewer_output.schema.json"
+    selection_schema_path = repo / "schemas" / "reviewer_selection.schema.json"
     bundle_path = editor_dir / "normalized_bundle.json"
     editor_input_path = editor_dir / "editor_input.md"
-    reviewers = load_reviewers_config(repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else args.reviewers_config)
+    reviewers_config_path = repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else Path(args.reviewers_config)
+    reviewers = load_reviewers_config(reviewers_config_path)
     preflight_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "preflight"]
     standard_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "review"]
+    mandatory_reviewers = [
+        reviewer for reviewer in standard_reviewers if reviewer.selection_policy == "mandatory"
+    ]
+    optional_reviewers = [
+        reviewer for reviewer in standard_reviewers if reviewer.selection_policy == "optional"
+    ]
+    selected_reviewers_config_path = selection_dir / SELECTED_REVIEWERS_CONFIG
 
     log_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -346,6 +522,48 @@ def main() -> int:
     if preflight_errors:
         raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
 
+    active_reviewers_config = args.reviewers_config
+    if args.reviewer_selection == "dynamic":
+        selection, _selection_started_at = run_reviewer_selector(
+            repo,
+            paper_id,
+            parsed_dir,
+            optional_reviewers,
+            selection_dir,
+            selection_schema_path,
+            log_dir,
+        )
+        selection_errors = validate_selection_output(selection, paper_id, mandatory_reviewers, optional_reviewers)
+        if selection_errors:
+            raise RuntimeError("Reviewer selection failed: " + "; ".join(selection_errors))
+        standard_reviewers = selected_reviewers_from_selection(selection, mandatory_reviewers, optional_reviewers)
+        write_reviewers_config(selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers])
+        active_reviewers_config = str(selected_reviewers_config_path.relative_to(repo))
+        print("[selection] selected reviewers: " + ", ".join(reviewer.name for reviewer in standard_reviewers))
+        run_required(
+            "render-selected-prompts",
+            [
+                sys.executable,
+                "scripts/render_prompts.py",
+                "--paper-id",
+                paper_id,
+                "--parsed-dir",
+                str(parsed_dir.relative_to(repo)),
+                "--reviews-dir",
+                str(reviews_dir.relative_to(repo)),
+                "--schema-path",
+                str(schema_path.relative_to(repo)),
+                "--output-dir",
+                str(prompts_dir.relative_to(repo)),
+                "--reviewers-config",
+                active_reviewers_config,
+            ],
+            repo,
+            log_dir,
+        )
+    else:
+        write_reviewers_config(selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers])
+
     reviewer_started_at = run_reviewer_batch(
         standard_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir
     )
@@ -356,7 +574,7 @@ def main() -> int:
         paper_id,
         reviews_dir,
         schema_path,
-        args.reviewers_config,
+        active_reviewers_config,
         log_dir,
         args.keep_going,
     )
@@ -375,7 +593,7 @@ def main() -> int:
             "--output",
             str(bundle_path.relative_to(repo)),
             "--reviewers-config",
-            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
+            active_reviewers_config,
         ],
         repo,
         log_dir,
@@ -397,7 +615,7 @@ def main() -> int:
             "--output",
             str(editor_input_path.relative_to(repo)),
             "--reviewers-config",
-            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
+            active_reviewers_config,
         ],
         repo,
         log_dir,

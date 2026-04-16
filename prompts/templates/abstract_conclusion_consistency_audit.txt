@@ -1,0 +1,31 @@
+Use the custom agent named abstract_conclusion_consistency_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit consistency between summary sections and the manuscript body:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "abstract_conclusion_consistency_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted CONSIST-001, CONSIST-002, ...
+
+Focus on:
+- abstract, introduction, and conclusion claims that overstate or contradict the body
+- stale summary language after edits
+- missing caveats in summary sections
+- conclusion or policy statements that exceed the reported evidence
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to abstract_overstatement, conclusion_overstatement, stale_summary_claim, section_inconsistency, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for both the summary claim and the body evidence where possible.
+- Include claim_evidence_links when comparing summary language to body evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

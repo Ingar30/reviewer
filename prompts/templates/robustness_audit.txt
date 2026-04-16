@@ -1,0 +1,30 @@
+Use the custom agent named robustness_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit robustness and sensitivity support only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "robustness_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted ROB-001, ROB-002, ...
+
+Focus on:
+- robustness checks versus main claims
+- alternative specifications, controls, subsamples, placebo tests, sensitivity analysis, and appendix validations
+- cases where a paper says results are robust but the supporting evidence is mixed, missing, or narrower
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to robustness_overstatement, missing_robustness_support, specification_sensitivity, appendix_mismatch, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for main claims and robustness evidence.
+- Include claim_evidence_links when comparing claims to robustness evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

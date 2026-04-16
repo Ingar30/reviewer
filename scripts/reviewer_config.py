@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
-VALID_NORMALIZATION_ROLES = {"manuscript", "crossref", "reference"}
+VALID_NORMALIZATION_ROLES = {"manuscript", "crossref", "reference", "copyedit"}
 VALID_REVIEWER_STAGES = {"preflight", "review"}
+VALID_SELECTION_POLICIES = {"mandatory", "optional"}
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,20 @@ class ReviewerConfig:
     enabled: bool
     normalization_role: str
     stage: str
+    selection_policy: str
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "prompt": self.prompt,
+            "output": self.output,
+            "id_prefix": self.id_prefix,
+            "search": self.search,
+            "enabled": self.enabled,
+            "normalization_role": self.normalization_role,
+            "stage": self.stage,
+            "selection_policy": self.selection_policy,
+        }
 
 
 def default_reviewers_config_path(repo_root: Path | None = None) -> Path:
@@ -65,6 +80,13 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
         if stage not in VALID_REVIEWER_STAGES:
             valid = ", ".join(sorted(VALID_REVIEWER_STAGES))
             raise ValueError(f"reviewers[{index}].stage must be one of: {valid}")
+        selection_policy = item.get("selection_policy", "mandatory")
+        if not isinstance(selection_policy, str) or not selection_policy.strip():
+            raise ValueError(f"reviewers[{index}].selection_policy must be a non-empty string")
+        selection_policy = selection_policy.strip()
+        if selection_policy not in VALID_SELECTION_POLICIES:
+            valid = ", ".join(sorted(VALID_SELECTION_POLICIES))
+            raise ValueError(f"reviewers[{index}].selection_policy must be one of: {valid}")
         search = item.get("search", False)
         enabled = item.get("enabled", True)
         if not isinstance(search, bool):
@@ -93,6 +115,7 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
                 enabled=enabled,
                 normalization_role=role,
                 stage=stage,
+                selection_policy=selection_policy,
             )
         )
 
@@ -101,3 +124,10 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
     if not parsed:
         raise ValueError(f"{config_path} has no enabled reviewers")
     return parsed
+
+
+def write_reviewers_config(path: Path | str, reviewers: list[ReviewerConfig]) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"reviewers": [reviewer.to_json_dict() for reviewer in reviewers]}
+    output_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

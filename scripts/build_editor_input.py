@@ -2,23 +2,26 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from reviewer_config import load_reviewers_config
 
 HIGHEST_PRIORITY_SECTION = "Highest-Priority Cross-Agent Findings"
-AGENT_SECTION = "Agent-by-Agent Findings"
+ADDITIONAL_FINDINGS_SECTION = "Additional Findings"
+AGENT_SECTION = ADDITIONAL_FINDINGS_SECTION
 LITERATURE_SECTION = "Literature Positioning and Novelty"
 REFERENCE_SECTION = "Reference Integrity and Bibliography Maintenance"
 PARSER_SECTION = "Parser and Preprocessing Caveats"
 CANNOT_VERIFY_SECTION = "Items Marked Cannot Verify"
 GRAMMAR_APPENDIX_SECTION = "Appendix: Grammar and Copyediting Issues"
+TRACEABILITY_APPENDIX_SECTION = "Appendix: Traceability Map"
 
 SEVERITY_POINTS = {"high": 60, "medium": 35, "low": 10}
 CONFIDENCE_POINTS = {"high": 15, "medium": 8, "low": 0}
 TOP_SYNTHESIS_SCORE = 55
+MAX_SYNTHESIS_FINDINGS = 5
 
 
 def read(path: Path) -> str:
@@ -46,6 +49,10 @@ def source_id_text(finding: dict[str, Any]) -> str:
         for source in finding.get("source_findings", [])
         if source.get("reviewer") and source.get("id")
     )
+
+
+def canonical_id_text(finding: dict[str, Any]) -> str:
+    return str(finding.get("canonical_id") or "")
 
 
 def primary_location_text(finding: dict[str, Any]) -> str:
@@ -117,6 +124,37 @@ def reviewer_names(finding: dict[str, Any]) -> set[str]:
     return names
 
 
+def finding_area(finding: dict[str, Any]) -> str:
+    issue_class = finding.get("issue_class")
+    if issue_class == "manuscript_issue":
+        reviewers = reviewer_names(finding)
+        area_by_reviewer = [
+            ("crossref_auditor", "Cross-reference"),
+            ("numerical_auditor", "Numerical"),
+            ("claim_evidence_auditor", "Claim/evidence"),
+            ("identification_auditor", "Identification"),
+            ("robustness_auditor", "Robustness"),
+            ("sample_construction_auditor", "Sample construction"),
+            ("abstract_conclusion_consistency_auditor", "Abstract/conclusion consistency"),
+            ("limitations_external_validity_auditor", "External validity"),
+        ]
+        for reviewer, area in area_by_reviewer:
+            if reviewer in reviewers:
+                return area
+        return "Manuscript"
+    if issue_class == "reference_integrity":
+        return "Reference integrity"
+    if issue_class == "bibliography_maintenance":
+        return "Bibliography maintenance"
+    if issue_class == "parser_artifact":
+        return "Parser/preprocessing"
+    if issue_class == "cannot_verify":
+        return "Cannot verify"
+    if issue_class == "copyedit_issue":
+        return "Grammar/copyediting"
+    return "Other"
+
+
 def route_finding(finding: dict[str, Any]) -> tuple[str, str]:
     issue_class = finding.get("issue_class")
     reviewers = reviewer_names(finding)
@@ -134,7 +172,31 @@ def route_finding(finding: dict[str, Any]) -> tuple[str, str]:
         return LITERATURE_SECTION, "literature-auditor findings belong in the literature section"
     if issue_class == "manuscript_issue" and score >= TOP_SYNTHESIS_SCORE:
         return HIGHEST_PRIORITY_SECTION, "high-scoring substantive issue for cross-agent synthesis"
-    return AGENT_SECTION, "lower-priority substantive item for agent-by-agent coverage"
+    return ADDITIONAL_FINDINGS_SECTION, "lower-priority substantive item for the additional-findings table"
+
+
+def cap_synthesis_routes(
+    routed: list[tuple[dict[str, Any], str, str, int]],
+) -> list[tuple[dict[str, Any], str, str, int]]:
+    synthesis = sorted(
+        [item for item in routed if item[1] == HIGHEST_PRIORITY_SECTION],
+        key=lambda item: (-item[3], item[0].get("canonical_id", "")),
+    )
+    keep_ids = {item[0].get("canonical_id") for item in synthesis[:MAX_SYNTHESIS_FINDINGS]}
+    capped = []
+    for finding, section, reason, score in routed:
+        if section == HIGHEST_PRIORITY_SECTION and finding.get("canonical_id") not in keep_ids:
+            capped.append(
+                (
+                    finding,
+                    ADDITIONAL_FINDINGS_SECTION,
+                    f"substantive issue below the top {MAX_SYNTHESIS_FINDINGS} synthesis findings",
+                    score,
+                )
+            )
+        else:
+            capped.append((finding, section, reason, score))
+    return capped
 
 
 def selector_path_for_bundle(bundle_path: Path) -> Path:
@@ -183,6 +245,25 @@ def active_reviewer_rows(
     return rows
 
 
+def optional_reviewer_rows(selection_json: dict[str, Any] | None) -> list[list[str]]:
+    if not selection_json:
+        return []
+    return [
+        [str(item.get("name") or ""), str(item.get("reason") or "selected by reviewer selector")]
+        for item in selection_json.get("selected_optional_reviewers", [])
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+
+def reviewer_status_caveats(rows: list[dict[str, str]]) -> list[list[str]]:
+    caveats = []
+    for row in rows:
+        status = row.get("status", "unknown")
+        if status != "ok":
+            caveats.append([row["reviewer"], status, row["selection_reason"]])
+    return caveats
+
+
 def markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
     if not rows:
         return "_None._\n"
@@ -203,13 +284,10 @@ def editor_brief_markdown(
     selection_json: dict[str, Any] | None = None,
 ) -> str:
     findings = [item for item in bundle_json.get("canonical_findings", []) if isinstance(item, dict)]
-    routed = [(finding, *route_finding(finding), finding_score(finding)) for finding in findings]
-    source_counts = Counter()
+    routed = cap_synthesis_routes([(finding, *route_finding(finding), finding_score(finding)) for finding in findings])
     confidence_counts = Counter()
     for finding in findings:
         confidence_counts[finding_confidence(finding)] += 1
-        for reviewer in reviewer_names(finding):
-            source_counts[reviewer] += 1
 
     synthesis_candidates = sorted(
         [
@@ -220,50 +298,29 @@ def editor_brief_markdown(
         key=lambda item: (-item[3], item[0].get("canonical_id", "")),
     )
 
-    by_reviewer: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: {"elevated": [], "additional": []})
-    for finding, section, _reason, _score in routed:
-        bucket = "elevated" if section == HIGHEST_PRIORITY_SECTION else "additional"
-        for reviewer in sorted(reviewer_names(finding)):
-            by_reviewer[reviewer][bucket].append(finding)
+    active_rows = active_reviewer_rows(reviewers, bundle_json, review_json_by_name, selection_json)
+    baseline_reviewers = ", ".join(row["reviewer"] for row in active_rows if row["selection_policy"] == "mandatory")
+    optional_rows = optional_reviewer_rows(selection_json)
 
     chunks = ["# Deterministic Editor Brief\n\n"]
-    chunks.append("Use this brief as the organizing map for the report. The normalized bundle remains authoritative for details and traceability.\n\n")
+    chunks.append("Use this brief as the organizing map for the report. The normalized bundle remains authoritative for details and traceability. This brief is internal guidance; do not reproduce run summaries, scoring tables, routing tables, reviewer-count tables, or this wording in the final report.\n\n")
     chunks.append("## Run Summary\n\n")
     chunks.append(f"- paper_id: `{paper_id}`\n")
     chunks.append(f"- canonical findings: `{len(findings)}`\n")
     chunks.append(f"- issue classes: `{json.dumps(bundle_json.get('summary', {}).get('issue_class_counts', {}), sort_keys=True)}`\n")
     chunks.append(f"- severities: `{json.dumps(bundle_json.get('summary', {}).get('severity_counts', {}), sort_keys=True)}`\n")
     chunks.append(f"- confidences: `{json.dumps(dict(confidence_counts), sort_keys=True)}`\n\n")
+    chunks.append("## Review Configuration Guidance\n\n")
+    chunks.append(f"- Mandatory baseline reviewers: {baseline_reviewers or 'none recorded'}.\n")
     if selection_json:
-        chunks.append("## Reviewer Selection\n\n")
-        chunks.append(f"- paper_type: `{selection_json.get('paper_type', 'unknown')}`\n")
-        chunks.append(f"- selection_confidence: `{selection_json.get('selection_confidence', 'unknown')}`\n")
-        selected = [
-            f"{item.get('name')} ({item.get('reason')})"
-            for item in selection_json.get("selected_optional_reviewers", [])
-            if isinstance(item, dict)
-        ]
-        chunks.append(f"- selected optional reviewers: `{'; '.join(selected) if selected else 'none'}`\n\n")
-
-    chunks.append("## Active Reviewers\n\n")
-    chunks.append(
-        markdown_table(
-            ["Reviewer", "Status", "Finding count", "Role", "Selection policy", "Selection reason"],
-            [
-                [
-                    row["reviewer"],
-                    row["status"],
-                    row["finding_count"],
-                    row["role"],
-                    row["selection_policy"],
-                    row["selection_reason"],
-                ]
-                for row in active_reviewer_rows(reviewers, bundle_json, review_json_by_name, selection_json)
-            ],
-        )
-    )
-    chunks.append("\n## Reviewer Finding Counts\n\n")
-    chunks.append(markdown_table(["Reviewer", "Canonical findings"], sorted(source_counts.items())))
+        chunks.append(f"- Reviewer selector classified the paper as `{selection_json.get('paper_type', 'unknown')}` with `{selection_json.get('selection_confidence', 'unknown')}` confidence.\n")
+    chunks.append("- In the final report, summarize reviewer selection in prose only; do not print reviewer-count or active-reviewer tables.\n\n")
+    chunks.append("Optional reviewers used and why:\n")
+    chunks.append(markdown_table(["Reviewer", "Selection reason"], optional_rows))
+    status_caveats = reviewer_status_caveats(active_rows)
+    if status_caveats:
+        chunks.append("\nReviewer status caveats to mention only if they materially limit confidence:\n")
+        chunks.append(markdown_table(["Reviewer", "Status", "Selection reason"], status_caveats))
 
     chunks.append("\n## Findings Recommended For Cross-Agent Synthesis\n\n")
     chunks.append(
@@ -283,41 +340,57 @@ def editor_brief_markdown(
         )
     )
 
-    chunks.append("\n## Section Routing\n\n")
+    chunks.append("\n## Additional Findings Candidates\n\n")
     chunks.append(
         markdown_table(
-            ["Canonical ID", "Recommended section", "Reason", "Location", "Source IDs"],
+            ["Area", "Canonical ID", "Location", "Issue"],
+            [
+                [
+                    finding_area(finding),
+                    canonical_id_text(finding),
+                    primary_location_text(finding),
+                    short_text(finding.get("claim_text")),
+                ]
+                for finding, section, _reason, score in sorted(
+                    routed,
+                    key=lambda item: (-item[3], item[0].get("canonical_id", "")),
+                )
+                if section == ADDITIONAL_FINDINGS_SECTION
+            ],
+        )
+    )
+
+    chunks.append("\n## Section Routing Guidance\n\n")
+    chunks.append(
+        markdown_table(
+            ["Canonical ID", "Recommended section", "Reason", "Location"],
             [
                 [
                     finding.get("canonical_id"),
                     section,
                     reason,
                     primary_location_text(finding),
-                    source_id_text(finding),
                 ]
                 for finding, section, reason, _score in routed
             ],
         )
     )
 
-    chunks.append("\n## Agent-by-Agent Finding Index\n\n")
-    for reviewer in reviewers:
-        buckets = by_reviewer.get(reviewer.name, {"elevated": [], "additional": []})
-        chunks.append(f"### {reviewer.name}\n\n")
-        chunks.append("Elevated to cross-agent synthesis:\n")
-        if buckets["elevated"]:
-            for finding in buckets["elevated"]:
-                chunks.append(f"- {finding.get('canonical_id')}: {short_text(finding.get('claim_text'))}\n")
-        else:
-            chunks.append("- None.\n")
-        chunks.append("\nAdditional findings:\n")
-        if buckets["additional"]:
-            for finding in buckets["additional"]:
-                section, _reason = route_finding(finding)
-                chunks.append(f"- {finding.get('canonical_id')} ({section}): {short_text(finding.get('claim_text'))}\n")
-        else:
-            chunks.append("- None.\n")
-        chunks.append("\n")
+    chunks.append("\n## Traceability Map Rows\n\n")
+    chunks.append(
+        markdown_table(
+            ["Report section", "Finding", "Canonical ID", "Source finding IDs"],
+            [
+                [
+                    section,
+                    short_text(finding.get("claim_text")),
+                    canonical_id_text(finding),
+                    source_id_text(finding),
+                ]
+                for finding, section, _reason, _score in routed
+            ],
+        )
+    )
 
     return "".join(chunks).rstrip() + "\n"
 

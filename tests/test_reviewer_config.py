@@ -11,9 +11,9 @@ TEMP_ROOT = REPO_ROOT / "work" / "test-tmp"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from check_final_report import GRAMMAR_APPENDIX_HEADING, report_failures  # noqa: E402
+from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures  # noqa: E402
 from build_editor_input import (  # noqa: E402
-    AGENT_SECTION,
+    ADDITIONAL_FINDINGS_SECTION,
     GRAMMAR_APPENDIX_SECTION,
     HIGHEST_PRIORITY_SECTION,
     PARSER_SECTION,
@@ -57,7 +57,12 @@ def reviewer(
     }
 
 
-def reviewer_config(name: str = "numerical_auditor", prefix: str = "NUM", role: str = "manuscript") -> ReviewerConfig:
+def reviewer_config(
+    name: str = "numerical_auditor",
+    prefix: str = "NUM",
+    role: str = "manuscript",
+    selection_policy: str = "mandatory",
+) -> ReviewerConfig:
     return ReviewerConfig(
         name=name,
         prompt=f"{name}.txt",
@@ -67,7 +72,7 @@ def reviewer_config(name: str = "numerical_auditor", prefix: str = "NUM", role: 
         enabled=True,
         normalization_role=role,
         stage="review",
-        selection_policy="mandatory",
+        selection_policy=selection_policy,
     )
 
 
@@ -123,11 +128,15 @@ def finding(**overrides: object) -> dict[str, object]:
     return base
 
 
-def review_output(findings: list[dict[str, object]], reviewer_name: str = "numerical_auditor") -> dict[str, object]:
+def review_output(
+    findings: list[dict[str, object]],
+    reviewer_name: str = "numerical_auditor",
+    run_status: str = "ok",
+) -> dict[str, object]:
     return {
         "reviewer": reviewer_name,
         "paper_id": "paper-x",
-        "run_status": "ok",
+        "run_status": run_status,
         "summary": "summary",
         "findings": findings,
         "notes": [],
@@ -135,12 +144,18 @@ def review_output(findings: list[dict[str, object]], reviewer_name: str = "numer
 
 
 class ReviewerConfigTests(unittest.TestCase):
+    def cleanup_path(self, path: Path) -> None:
+        try:
+            if path.exists():
+                path.unlink()
+        except PermissionError:
+            pass
+
     def config_path(self, name: str) -> Path:
         TEMP_ROOT.mkdir(parents=True, exist_ok=True)
         path = TEMP_ROOT / name
-        if path.exists():
-            path.unlink()
-        self.addCleanup(lambda: path.exists() and path.unlink())
+        self.cleanup_path(path)
+        self.addCleanup(self.cleanup_path, path)
         return path
 
     def test_default_config_loads_enabled_reviewers(self) -> None:
@@ -596,17 +611,21 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(route_finding(copyedit)[0], GRAMMAR_APPENDIX_SECTION)
         self.assertEqual(route_finding(parser)[0], PARSER_SECTION)
         self.assertEqual(route_finding(reference)[0], REFERENCE_SECTION)
-        self.assertEqual(route_finding(low_manuscript)[0], AGENT_SECTION)
+        self.assertEqual(route_finding(low_manuscript)[0], ADDITIONAL_FINDINGS_SECTION)
 
-    def test_editor_brief_lists_active_reviewers_and_agent_index(self) -> None:
+    def test_editor_brief_guides_concise_configuration_and_traceability(self) -> None:
         reviewer = reviewer_config("claim_evidence_auditor", "CEA")
+        crossref = reviewer_config("crossref_auditor", "CROSSREF", role="crossref", selection_policy="mandatory")
+        grammar = reviewer_config("grammar_auditor", "GRAM", role="copyedit", selection_policy="mandatory")
         bundle = {
             "summary": {
-                "issue_class_counts": {"manuscript_issue": 1},
-                "severity_counts": {"high": 1},
+                "issue_class_counts": {"manuscript_issue": 2, "copyedit_issue": 1},
+                "severity_counts": {"high": 1, "low": 2},
             },
             "source_reviewer_outputs": [
-                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 1}
+                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 1},
+                {"reviewer": "crossref_auditor", "run_status": "partial", "finding_count": 1},
+                {"reviewer": "grammar_auditor", "run_status": "ok", "finding_count": 1},
             ],
             "canonical_findings": [
                 {
@@ -619,15 +638,41 @@ class ReviewerConfigTests(unittest.TestCase):
                     "source_findings": [{"reviewer": "claim_evidence_auditor", "id": "CEA-001"}],
                     "claim_text": "A central claim is not supported.",
                     "primary_location": {"page": 1, "page_label": "1", "section": "Abstract", "text_quote": "claim"},
-                }
+                },
+                {
+                    "canonical_id": "CANON-002",
+                    "issue_class": "manuscript_issue",
+                    "severity": "low",
+                    "confidence": "high",
+                    "assessment": "partial",
+                    "source_reviewers": ["crossref_auditor"],
+                    "source_findings": [{"reviewer": "crossref_auditor", "id": "CROSSREF-001"}],
+                    "claim_text": "A minor cross-reference is imprecise.",
+                    "primary_location": {"page": 2, "page_label": "2", "section": "Results", "text_quote": "claim"},
+                },
+                {
+                    "canonical_id": "CANON-003",
+                    "issue_class": "copyedit_issue",
+                    "severity": "low",
+                    "confidence": "high",
+                    "assessment": "partial",
+                    "source_reviewers": ["grammar_auditor"],
+                    "source_findings": [{"reviewer": "grammar_auditor", "id": "GRAM-001"}],
+                    "claim_text": "A sentence has a typo.",
+                    "primary_location": {"page": 3, "page_label": "3", "section": "Conclusion", "text_quote": "typo"},
+                },
             ],
         }
 
         brief = editor_brief_markdown(
             "paper-x",
             bundle,
-            [reviewer],
-            {"claim_evidence_auditor": review_output([], "claim_evidence_auditor")},
+            [crossref, grammar, reviewer],
+            {
+                "claim_evidence_auditor": review_output([], "claim_evidence_auditor"),
+                "crossref_auditor": review_output([], "crossref_auditor", "partial"),
+                "grammar_auditor": review_output([], "grammar_auditor"),
+            },
             {
                 "paper_type": "empirical_causal",
                 "selection_confidence": "high",
@@ -638,13 +683,61 @@ class ReviewerConfigTests(unittest.TestCase):
         )
 
         self.assertIn("# Deterministic Editor Brief", brief)
-        self.assertIn("Reviewer Selection", brief)
+        self.assertIn("Review Configuration Guidance", brief)
         self.assertIn("empirical_causal", brief)
         self.assertIn("Important displayed-evidence claims.", brief)
         self.assertIn("claim_evidence_auditor", brief)
         self.assertIn("Findings Recommended For Cross-Agent Synthesis", brief)
-        self.assertIn("Elevated to cross-agent synthesis", brief)
+        self.assertIn("Additional Findings Candidates", brief)
+        self.assertIn("Traceability Map Rows", brief)
+        self.assertIn("CROSSREF-001", brief)
+        self.assertIn("GRAM-001", brief)
+        self.assertNotIn("Agent-by-Agent Finding Index", brief)
         self.assertIn("CANON-001", brief)
+
+    def test_editor_brief_caps_highest_priority_candidates(self) -> None:
+        reviewer = reviewer_config("claim_evidence_auditor", "CEA")
+        findings = []
+        for index in range(1, 7):
+            findings.append(
+                {
+                    "canonical_id": f"CANON-{index:03d}",
+                    "issue_class": "manuscript_issue",
+                    "severity": "high",
+                    "confidence": "high",
+                    "assessment": "no",
+                    "source_reviewers": ["claim_evidence_auditor"],
+                    "source_findings": [{"reviewer": "claim_evidence_auditor", "id": f"CEA-{index:03d}"}],
+                    "claim_text": f"High priority claim {index}.",
+                    "primary_location": {"page": index, "page_label": str(index), "section": "Results"},
+                }
+            )
+        bundle = {
+            "summary": {
+                "issue_class_counts": {"manuscript_issue": 6},
+                "severity_counts": {"high": 6},
+            },
+            "source_reviewer_outputs": [
+                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 6}
+            ],
+            "canonical_findings": findings,
+        }
+
+        brief = editor_brief_markdown(
+            "paper-x",
+            bundle,
+            [reviewer],
+            {"claim_evidence_auditor": review_output([], "claim_evidence_auditor")},
+        )
+
+        synthesis = brief.split("## Findings Recommended For Cross-Agent Synthesis", 1)[1].split(
+            "## Additional Findings Candidates", 1
+        )[0]
+        additional = brief.split("## Additional Findings Candidates", 1)[1].split("## Section Routing Guidance", 1)[0]
+
+        self.assertIn("CANON-005", synthesis)
+        self.assertNotIn("CANON-006", synthesis)
+        self.assertIn("CANON-006", additional)
 
     def test_report_checker_requires_grammar_appendix_when_copyedit_exists(self) -> None:
         bundle = {
@@ -667,8 +760,8 @@ class ReviewerConfigTests(unittest.TestCase):
                 "No substantive issues.",
                 "## Suggested Revision Priorities",
                 "Revise grammar appendix items.",
-                "## Agent-by-Agent Findings",
-                "grammar_auditor:GRAM-001",
+                "## Additional Findings",
+                "No additional findings.",
             ]
         )
 
@@ -676,8 +769,11 @@ class ReviewerConfigTests(unittest.TestCase):
         fixed = report_failures(
             base_report
             + f"\n{GRAMMAR_APPENDIX_HEADING}\n"
-            + "| Location | Current text | Issue | Suggested correction | Traceability |\n"
-            + "| Page 1 | text | typo | correction | CANON-001; grammar_auditor:GRAM-001 |\n",
+            + "| Location | Current text | Issue | Suggested correction |\n"
+            + "| Page 1 | text | typo | correction |\n"
+            + f"\n{TRACEABILITY_APPENDIX_HEADING}\n"
+            + "| Report section | Finding | Canonical ID | Source finding IDs |\n"
+            + "| Grammar | typo | CANON-001 | grammar_auditor:GRAM-001 |\n",
             bundle=bundle,
             min_chars=0,
         )

@@ -299,7 +299,7 @@ python scripts\build_editor_input.py `
   --output work\example-paper\editor\editor_input.md
 ```
 
-This writes a deterministic editor brief before the raw JSON inputs. The brief summarizes active reviewers, reviewer-selection context when available, finding counts, high-priority synthesis candidates, section routing, and agent-by-agent finding indexes.
+This writes a deterministic editor brief before the raw JSON inputs. The brief gives the editor internal guidance on optional reviewer selection, the top five high-priority synthesis candidates, additional-finding candidates, section routing, and traceability-map rows. The brief is not intended to be reproduced as report text.
 
 ### 7. Run Editor
 
@@ -309,27 +309,34 @@ Get-Content work\example-paper\editor\editor_input.md -Raw |
 ```
 
 The editor must write the actual final markdown report, not a note saying where the report was saved.
-The report must include traceability lines with canonical and source finding IDs, such as:
+The report should keep canonical and source finding IDs out of the main prose and collect them in a final traceability appendix, such as:
 
 ```markdown
-**Traceability:** CANON-001; source finding(s): claim_evidence_auditor:CEA-005
+| Report section | Finding | Canonical ID | Source finding IDs |
+| --- | --- | --- | --- |
+| Highest-Priority Cross-Agent Findings | Mechanism language is too strong | CANON-001 | claim_evidence_auditor:CEA-005 |
 ```
 
-The intended report structure starts with synthesis and then preserves the audit trail:
+The intended report structure starts with synthesis and keeps audit metadata compact:
 - `## Executive Summary`
 - `## Review Configuration`
 - `## Highest-Priority Cross-Agent Findings`
 - `## Suggested Revision Priorities`
-- `## Agent-by-Agent Findings`
+- `## Additional Findings`
 - domain-specific sections for literature, references, parser caveats, cannot-verify items, and grammar appendix when applicable
+- `## Appendix: Traceability Map`
+
+The highest-priority section should stay selective. Lower-priority substantive issues and cannot-verify items should use compact tables where possible.
 
 ### 8. Check Final Report
 
 ```powershell
-python scripts\check_final_report.py --input outputs\example-paper\report.md
+python scripts\check_final_report.py `
+  --input outputs\example-paper\report.md `
+  --bundle work\example-paper\editor\normalized_bundle.json
 ```
 
-The final report checker rejects reports that are too short, look like run-status notes, omit required headings, or omit canonical/source finding identifiers.
+The final report checker rejects reports that are too short, look like run-status notes, omit required headings, omit the grammar appendix when copyedit findings exist, omit the traceability appendix when a normalized bundle is supplied, or omit canonical/source finding identifiers.
 
 ## Git Hygiene
 

@@ -11,9 +11,10 @@ DEFAULT_REQUIRED_HEADINGS = [
     "## Review Configuration",
     "## Highest-Priority Cross-Agent Findings",
     "## Suggested Revision Priorities",
-    "## Agent-by-Agent Findings",
+    "## Additional Findings",
 ]
 GRAMMAR_APPENDIX_HEADING = "## Appendix: Grammar and Copyediting Issues"
+TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
 
 META_NOTE_RE = re.compile(
     r"\b(?:done\.|wrote the final|report (?:is|was) saved|saved to|appears only under ignored status)\b",
@@ -42,6 +43,8 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
         failures.append("report does not mention canonical or source finding identifiers")
 
     if bundle:
+        if TRACEABILITY_APPENDIX_HEADING not in text:
+            failures.append(f"missing traceability appendix heading: {TRACEABILITY_APPENDIX_HEADING}")
         if bundle_has_copyedit_findings(bundle) and GRAMMAR_APPENDIX_HEADING not in text:
             failures.append(f"missing grammar appendix heading: {GRAMMAR_APPENDIX_HEADING}")
         for finding in bundle.get("canonical_findings", []):

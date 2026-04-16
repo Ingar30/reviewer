@@ -5,14 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-
-REVIEWER_FILES = [
-    "crossref_auditor.json",
-    "numerical_auditor.json",
-    "claim_evidence_auditor.json",
-    "literature_auditor.json",
-    "reference_auditor.json",
-]
+from reviewer_config import load_reviewers_config
 
 
 def read(path: Path) -> str:
@@ -37,12 +30,14 @@ def main() -> int:
     parser.add_argument("--bundle", required=True)
     parser.add_argument("--reviews-dir", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--reviewers-config", default="config/reviewers.json")
     args = parser.parse_args()
 
     editor_prompt = Path(args.editor_prompt)
     bundle = Path(args.bundle)
     reviews_dir = Path(args.reviews_dir)
     output = Path(args.output)
+    reviewers = load_reviewers_config(args.reviewers_config)
 
     require_file(editor_prompt, "editor prompt")
     require_file(bundle, "normalized editor bundle")
@@ -51,10 +46,13 @@ def main() -> int:
         raise ValueError(f"{bundle} has paper_id={bundle_json.get('paper_id')!r}, expected {args.paper_id!r}")
 
     review_paths = []
-    for filename in REVIEWER_FILES:
+    for reviewer in reviewers:
+        filename = reviewer.output
         path = reviews_dir / filename
         require_file(path, f"reviewer output {filename}")
         review_json = read_json(path)
+        if review_json.get("reviewer") != reviewer.name:
+            raise ValueError(f"{path} has reviewer={review_json.get('reviewer')!r}, expected {reviewer.name!r}")
         if review_json.get("paper_id") != args.paper_id:
             raise ValueError(f"{path} has paper_id={review_json.get('paper_id')!r}, expected {args.paper_id!r}")
         review_paths.append(path)
@@ -69,7 +67,7 @@ def main() -> int:
     chunks.append(read(bundle))
     chunks.append("\n```\n")
 
-    chunks.append("\n\n# Original Reviewer Outputs\n")
+    chunks.append("\n\n# Original Configured Reviewer Outputs\n")
     for path in review_paths:
         chunks.append(f"\n\n## {path.name}\n\n```json\n")
         chunks.append(read(path))

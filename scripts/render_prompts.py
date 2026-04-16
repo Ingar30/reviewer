@@ -4,15 +4,9 @@ import argparse
 import re
 from pathlib import Path
 
+from reviewer_config import load_reviewers_config
 
-TEMPLATE_FILES = {
-    "crossref_audit.txt": "crossref_audit.txt",
-    "numerical_audit.txt": "numerical_audit.txt",
-    "claim_evidence_audit.txt": "claim_evidence_audit.txt",
-    "literature_audit.txt": "literature_audit.txt",
-    "reference_audit.txt": "reference_audit.txt",
-    "editor_report.txt": "editor_report.txt",
-}
+EDITOR_TEMPLATE = "editor_report.txt"
 
 PLACEHOLDER_RE = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 
@@ -34,11 +28,13 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--templates-dir", default="prompts/templates")
     parser.add_argument("--editor-bundle-path", default=None)
+    parser.add_argument("--reviewers-config", default="config/reviewers.json")
     args = parser.parse_args()
 
     templates_dir = Path(args.templates_dir)
     output_dir = Path(args.output_dir)
     editor_bundle_path = args.editor_bundle_path or f"work/{args.paper_id}/editor/normalized_bundle.json"
+    reviewers = load_reviewers_config(args.reviewers_config)
 
     values = {
         "paper_id": args.paper_id,
@@ -48,13 +44,15 @@ def main() -> int:
         "editor_bundle_path": editor_bundle_path,
     }
 
-    missing = [name for name in TEMPLATE_FILES if not (templates_dir / name).exists()]
+    template_files = {reviewer.prompt: reviewer.prompt for reviewer in reviewers}
+    template_files[EDITOR_TEMPLATE] = EDITOR_TEMPLATE
+    missing = [name for name in template_files if not (templates_dir / name).exists()]
     if missing:
         raise FileNotFoundError(f"Missing prompt templates in {templates_dir}: {', '.join(missing)}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for template_name, output_name in TEMPLATE_FILES.items():
+    for template_name, output_name in template_files.items():
         template_path = templates_dir / template_name
         output_path = output_dir / output_name
         rendered = render_template(template_path.read_text(encoding="utf-8"), values)

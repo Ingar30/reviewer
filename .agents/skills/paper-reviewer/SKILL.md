@@ -29,12 +29,7 @@ This skill runs a reproducible multi-agent paper-review workflow for academic PD
 2. Derive `paper_id` from the filename stem unless explicitly provided.
 3. Ensure parsed artifacts exist under `work/<paper_id>/parsed/`.
 4. If not, run `scripts/preprocess_pdf.py`.
-5. Launch the five reviewers:
-   - literature_auditor
-   - numerical_auditor
-   - reference_auditor
-   - crossref_auditor
-   - claim_evidence_auditor
+5. Launch the configured reviewers from `config/reviewers.json`.
 6. Validate each reviewer JSON output.
 7. Launch `editor` on the validated reviewer outputs.
 8. Write the final report to `outputs/<paper_id>/report.md`.

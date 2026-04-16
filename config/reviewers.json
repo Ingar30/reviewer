@@ -1,0 +1,44 @@
+{
+  "reviewers": [
+    {
+      "name": "crossref_auditor",
+      "prompt": "crossref_audit.txt",
+      "output": "crossref_auditor.json",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "crossref"
+    },
+    {
+      "name": "numerical_auditor",
+      "prompt": "numerical_audit.txt",
+      "output": "numerical_auditor.json",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript"
+    },
+    {
+      "name": "claim_evidence_auditor",
+      "prompt": "claim_evidence_audit.txt",
+      "output": "claim_evidence_auditor.json",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript"
+    },
+    {
+      "name": "literature_auditor",
+      "prompt": "literature_audit.txt",
+      "output": "literature_auditor.json",
+      "search": true,
+      "enabled": true,
+      "normalization_role": "manuscript"
+    },
+    {
+      "name": "reference_auditor",
+      "prompt": "reference_audit.txt",
+      "output": "reference_auditor.json",
+      "search": true,
+      "enabled": true,
+      "normalization_role": "reference"
+    }
+  ]
+}

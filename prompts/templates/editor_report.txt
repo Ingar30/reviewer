@@ -2,7 +2,7 @@ Use the custom agent named editor.
 
 You will receive:
 1. a normalized editor bundle, and
-2. the original five reviewer JSON outputs.
+2. the original configured reviewer JSON outputs.
 
 Produce the final markdown report for paper_id "{paper_id}".
 

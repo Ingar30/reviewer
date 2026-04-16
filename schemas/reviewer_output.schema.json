@@ -3,13 +3,7 @@
   "properties": {
     "reviewer": {
       "type": "string",
-      "enum": [
-        "literature_auditor",
-        "numerical_auditor",
-        "reference_auditor",
-        "crossref_auditor",
-        "claim_evidence_auditor"
-      ]
+      "minLength": 1
     },
     "paper_id": {
       "type": "string",

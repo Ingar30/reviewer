@@ -9,14 +9,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-
-REVIEWER_FILES = [
-    "crossref_auditor.json",
-    "numerical_auditor.json",
-    "claim_evidence_auditor.json",
-    "literature_auditor.json",
-    "reference_auditor.json",
-]
+from reviewer_config import ReviewerConfig, load_reviewers_config
 
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 ASSESSMENT_RANK = {"yes": 1, "cannot_verify": 2, "partially": 3, "no": 4}
@@ -59,16 +52,16 @@ def location_page(finding: dict[str, Any]) -> int | None:
     return page if isinstance(page, int) else None
 
 
-def issue_class(reviewer: str, finding: dict[str, Any]) -> str:
+def issue_class(reviewer: ReviewerConfig, finding: dict[str, Any]) -> str:
     category = compact_text(finding.get("category"))
     assessment = finding.get("assessment")
     if assessment == "cannot_verify" or "cannot_verify" in category:
         return "cannot_verify"
-    if reviewer == "crossref_auditor":
+    if reviewer.normalization_role == "crossref":
         if "parser" in category or "false_positive" in category or "numbering_consistency" in category:
             return "parser_artifact"
         return "manuscript_issue"
-    if reviewer == "reference_auditor":
+    if reviewer.normalization_role == "reference":
         if "outdated" in category or "metadata_typo" in category:
             return "bibliography_maintenance"
         return "reference_integrity"
@@ -156,8 +149,8 @@ def new_group(reviewer: str, finding: dict[str, Any], klass: str) -> dict[str, A
     return group
 
 
-def normalize(paper_id: str, reviews_dir: Path) -> dict[str, Any]:
-    missing = [filename for filename in REVIEWER_FILES if not (reviews_dir / filename).exists()]
+def normalize(paper_id: str, reviews_dir: Path, reviewers: list[ReviewerConfig]) -> dict[str, Any]:
+    missing = [reviewer.output for reviewer in reviewers if not (reviews_dir / reviewer.output).exists()]
     if missing:
         raise FileNotFoundError(f"Missing reviewer outputs in {reviews_dir}: {', '.join(missing)}")
 
@@ -165,10 +158,12 @@ def normalize(paper_id: str, reviews_dir: Path) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
     process_notes_removed = 0
 
-    for filename in REVIEWER_FILES:
-        path = reviews_dir / filename
+    for reviewer_config in reviewers:
+        path = reviews_dir / reviewer_config.output
         data = read_json(path)
         reviewer = data.get("reviewer")
+        if reviewer != reviewer_config.name:
+            raise ValueError(f"{path} has reviewer={reviewer!r}, expected {reviewer_config.name!r}")
         if data.get("paper_id") != paper_id:
             raise ValueError(f"{path} has paper_id={data.get('paper_id')!r}, expected {paper_id!r}")
         reviewer_outputs.append(
@@ -182,7 +177,7 @@ def normalize(paper_id: str, reviews_dir: Path) -> dict[str, Any]:
         process_notes_removed += sum(1 for note in data.get("notes", []) if PROCESS_NOTE_RE.search(note))
 
         for finding in data.get("findings", []):
-            klass = issue_class(reviewer, finding)
+            klass = issue_class(reviewer_config, finding)
             target = next((group for group in groups if should_merge(group, reviewer, finding, klass)), None)
             if target is None:
                 groups.append(new_group(reviewer, finding, klass))
@@ -228,9 +223,11 @@ def main() -> int:
     parser.add_argument("--paper-id", required=True)
     parser.add_argument("--reviews-dir", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--reviewers-config", default="config/reviewers.json")
     args = parser.parse_args()
 
-    bundle = normalize(args.paper_id, Path(args.reviews_dir))
+    reviewers = load_reviewers_config(args.reviewers_config)
+    bundle = normalize(args.paper_id, Path(args.reviews_dir), reviewers)
     write_json(Path(args.output), bundle)
     print(f"Wrote normalized bundle: {args.output}")
     return 0

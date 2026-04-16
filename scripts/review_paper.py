@@ -10,39 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-
-REVIEWERS = [
-    {
-        "name": "crossref_auditor",
-        "prompt": "crossref_audit.txt",
-        "output": "crossref_auditor.json",
-        "search": False,
-    },
-    {
-        "name": "numerical_auditor",
-        "prompt": "numerical_audit.txt",
-        "output": "numerical_auditor.json",
-        "search": False,
-    },
-    {
-        "name": "claim_evidence_auditor",
-        "prompt": "claim_evidence_audit.txt",
-        "output": "claim_evidence_auditor.json",
-        "search": False,
-    },
-    {
-        "name": "literature_auditor",
-        "prompt": "literature_audit.txt",
-        "output": "literature_auditor.json",
-        "search": True,
-    },
-    {
-        "name": "reference_auditor",
-        "prompt": "reference_audit.txt",
-        "output": "reference_auditor.json",
-        "search": True,
-    },
-]
+from reviewer_config import ReviewerConfig, load_reviewers_config
 
 
 @dataclass
@@ -105,21 +73,21 @@ def run_required(label: str, command: list[str], cwd: Path, log_dir: Path, input
 
 
 def start_reviewer(
-    reviewer: dict[str, object],
+    reviewer: ReviewerConfig,
     repo: Path,
     prompts_dir: Path,
     reviews_dir: Path,
     schema_path: Path,
     log_dir: Path,
-) -> tuple[dict[str, object], subprocess.Popen[str], Path, Path]:
-    prompt_path = prompts_dir / str(reviewer["prompt"])
-    output_path = reviews_dir / str(reviewer["output"])
-    stdout_path = log_dir / f"{reviewer['name']}.stdout.log"
-    stderr_path = log_dir / f"{reviewer['name']}.stderr.log"
+) -> tuple[ReviewerConfig, subprocess.Popen[str], Path, Path]:
+    prompt_path = prompts_dir / reviewer.prompt
+    output_path = reviews_dir / reviewer.output
+    stdout_path = log_dir / f"{reviewer.name}.stdout.log"
+    stderr_path = log_dir / f"{reviewer.name}.stderr.log"
     prompt_text = prompt_path.read_text(encoding="utf-8")
 
     command = [codex_command()]
-    if reviewer["search"]:
+    if reviewer.search:
         command.append("--search")
     command.extend(
         [
@@ -134,7 +102,7 @@ def start_reviewer(
 
     stdout_handle = stdout_path.open("w", encoding="utf-8")
     stderr_handle = stderr_path.open("w", encoding="utf-8")
-    print(f"[start] {reviewer['name']}")
+    print(f"[start] {reviewer.name}")
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -154,7 +122,7 @@ def start_reviewer(
 
 
 def wait_reviewer(
-    reviewer: dict[str, object],
+    reviewer: ReviewerConfig,
     process: subprocess.Popen[str],
     stdout_path: Path,
     stderr_path: Path,
@@ -163,10 +131,10 @@ def wait_reviewer(
     process._reviewer_stdout_handle.close()  # type: ignore[attr-defined]
     process._reviewer_stderr_handle.close()  # type: ignore[attr-defined]
     if returncode == 0:
-        print(f"[ok] {reviewer['name']}")
+        print(f"[ok] {reviewer.name}")
     else:
-        print(f"[fail] {reviewer['name']} exited {returncode}; see {stderr_path}")
-    return RunResult(str(reviewer["name"]), returncode, stdout_path, stderr_path)
+        print(f"[fail] {reviewer.name} exited {returncode}; see {stderr_path}")
+    return RunResult(reviewer.name, returncode, stdout_path, stderr_path)
 
 
 def require_fresh_file(path: Path, started_at: float, label: str) -> None:
@@ -193,6 +161,7 @@ def main() -> int:
         action="store_true",
         help="Collect reviewer failures after all parallel reviewers finish before exiting.",
     )
+    parser.add_argument("--reviewers-config", default="config/reviewers.json")
     args = parser.parse_args()
 
     repo = repo_root()
@@ -217,6 +186,7 @@ def main() -> int:
     schema_path = repo / "schemas" / "reviewer_output.schema.json"
     bundle_path = editor_dir / "normalized_bundle.json"
     editor_input_path = editor_dir / "editor_input.md"
+    reviewers = load_reviewers_config(repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else args.reviewers_config)
 
     log_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -253,6 +223,8 @@ def main() -> int:
             str(schema_path.relative_to(repo)),
             "--output-dir",
             str(prompts_dir.relative_to(repo)),
+            "--reviewers-config",
+            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
         ],
         repo,
         log_dir,
@@ -261,7 +233,7 @@ def main() -> int:
     reviewer_started_at = time.time() - 1.0
     running = [
         start_reviewer(reviewer, repo, prompts_dir, reviews_dir, schema_path.relative_to(repo), log_dir)
-        for reviewer in REVIEWERS
+        for reviewer in reviewers
     ]
     reviewer_results = [wait_reviewer(*item) for item in running]
     failed_reviewers = [result for result in reviewer_results if result.returncode != 0]
@@ -270,13 +242,13 @@ def main() -> int:
         raise RuntimeError(f"Reviewer run failed: {failures}")
 
     validation_errors = []
-    for reviewer in REVIEWERS:
-        output_path = reviews_dir / str(reviewer["output"])
+    for reviewer in reviewers:
+        output_path = reviews_dir / reviewer.output
         try:
-            require_fresh_file(output_path, reviewer_started_at, f"{reviewer['name']} output")
-            validate_reviewer_json(output_path, str(reviewer["name"]), paper_id)
+            require_fresh_file(output_path, reviewer_started_at, f"{reviewer.name} output")
+            validate_reviewer_json(output_path, reviewer.name, paper_id)
             result = run_required(
-                f"validate-{reviewer['name']}",
+                f"validate-{reviewer.name}",
                 [
                     sys.executable,
                     "scripts/validate_review_json.py",
@@ -289,7 +261,7 @@ def main() -> int:
                 log_dir,
             )
         except Exception as exc:
-            validation_errors.append(f"{reviewer['name']}: {exc}")
+            validation_errors.append(f"{reviewer.name}: {exc}")
             if not args.keep_going:
                 break
     if validation_errors:
@@ -306,6 +278,8 @@ def main() -> int:
             str(reviews_dir.relative_to(repo)),
             "--output",
             str(bundle_path.relative_to(repo)),
+            "--reviewers-config",
+            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
         ],
         repo,
         log_dir,
@@ -326,6 +300,8 @@ def main() -> int:
             str(reviews_dir.relative_to(repo)),
             "--output",
             str(editor_input_path.relative_to(repo)),
+            "--reviewers-config",
+            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
         ],
         repo,
         log_dir,

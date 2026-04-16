@@ -36,13 +36,15 @@ For PDF-heavy review work, bad extraction is usually the largest source of downs
 The intended flow is:
 1. preprocess the PDF into structured artifacts
 2. render run-specific prompts
-3. run reviewer agents on parsed artifacts
-4. validate reviewer JSON
-5. normalize and deduplicate reviewer outputs
-6. build editor input
-7. run the editor
-8. write the final markdown report
-9. smoke-check the final report
+3. run the parser-quality preflight auditor
+4. validate preflight JSON and fail only on high-confidence blocking parser defects
+5. run reviewer agents on parsed artifacts
+6. validate reviewer JSON
+7. normalize and deduplicate reviewer outputs
+8. build editor input
+9. run the editor
+10. write the final markdown report
+11. smoke-check the final report
 
 For fresh runs, `scripts/review_paper.py` is the default entry point for this flow.
 
@@ -113,12 +115,16 @@ work/<paper_id>/prompts/
 
 ### `config/reviewers.json`
 
-The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, stable finding-ID prefix, whether web search is required, and the normalizer role used during editor-bundle construction.
+The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, stable finding-ID prefix, whether web search is required, the normalizer role used during editor-bundle construction, and the run stage.
 
 Valid `normalization_role` values are:
 - `manuscript`: default substantive manuscript findings
 - `crossref`: cross-reference findings, including parser-artifact classification for parser/false-positive categories
 - `reference`: reference-integrity findings, including bibliography-maintenance classification for outdated or metadata-typo categories
+
+Valid `stage` values are:
+- `preflight`: run after preprocessing and before other reviewers; currently used by `parser_quality_auditor`
+- `review`: normal reviewer stage; this is the default for older config entries without `stage`
 
 ### `schemas/`
 
@@ -181,8 +187,6 @@ Use an explicit paper ID when needed:
 python scripts\review_paper.py --pdf inputs\example-paper.pdf --paper-id example-paper
 ```
 
-The wrapper currently runs a fresh pipeline and executes the configured reviewers in parallel. It has passed end-to-end smoke tests on `example-paper` and `example-paper`. The manual steps below remain useful for debugging or rerunning one stage by hand.
-
 ### 1. Preprocess
 
 ```powershell
@@ -209,6 +213,7 @@ python scripts\render_prompts.py `
 ### 3. Run Reviewers
 
 The default reviewer agents are configured in `config/reviewers.json`:
+- `parser_quality_auditor` (preflight)
 - `crossref_auditor`
 - `numerical_auditor`
 - `claim_evidence_auditor`

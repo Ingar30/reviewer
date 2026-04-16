@@ -152,6 +152,103 @@ def validate_reviewer_json(path: Path, expected_reviewer: str, paper_id: str) ->
         raise ValueError(f"{path} has paper_id={data.get('paper_id')!r}, expected {paper_id!r}")
 
 
+def parser_quality_gate_findings(data: dict) -> tuple[list[dict], list[dict]]:
+    blockers = []
+    warnings = []
+    for finding in data.get("findings", []):
+        if finding.get("issue_type") != "parser_artifact":
+            continue
+        severity = finding.get("severity")
+        confidence = finding.get("confidence")
+        assessment = finding.get("assessment")
+        if severity == "high" and confidence == "high" and assessment in {"no", "partially"}:
+            blockers.append(finding)
+        elif severity in {"high", "medium"}:
+            warnings.append(finding)
+    return blockers, warnings
+
+
+def finding_label(finding: dict) -> str:
+    finding_id = finding.get("id", "unknown-id")
+    claim = " ".join(str(finding.get("claim_text", "")).split())
+    return f"{finding_id}: {claim}" if claim else str(finding_id)
+
+
+def enforce_preflight_gate(reviewer: ReviewerConfig, output_path: Path) -> None:
+    if reviewer.name != "parser_quality_auditor":
+        return
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    blockers, warnings = parser_quality_gate_findings(data)
+    for finding in warnings:
+        print(f"[warn] parser quality: {finding_label(finding)}")
+    if blockers:
+        blocker_text = "; ".join(finding_label(finding) for finding in blockers)
+        raise RuntimeError(f"blocking parser-quality findings: {blocker_text}")
+
+
+def run_reviewer_batch(
+    reviewers: list[ReviewerConfig],
+    repo: Path,
+    prompts_dir: Path,
+    reviews_dir: Path,
+    schema_path: Path,
+    log_dir: Path,
+) -> float:
+    if not reviewers:
+        return time.time() - 1.0
+    reviewer_started_at = time.time() - 1.0
+    running = [
+        start_reviewer(reviewer, repo, prompts_dir, reviews_dir, schema_path.relative_to(repo), log_dir)
+        for reviewer in reviewers
+    ]
+    reviewer_results = [wait_reviewer(*item) for item in running]
+    failed_reviewers = [result for result in reviewer_results if result.returncode != 0]
+    if failed_reviewers:
+        failures = ", ".join(f"{result.label} ({result.returncode})" for result in failed_reviewers)
+        raise RuntimeError(f"Reviewer run failed: {failures}")
+    return reviewer_started_at
+
+
+def validate_reviewer_batch(
+    reviewers: list[ReviewerConfig],
+    reviewer_started_at: float,
+    repo: Path,
+    paper_id: str,
+    reviews_dir: Path,
+    schema_path: Path,
+    reviewers_config: str,
+    log_dir: Path,
+    keep_going: bool,
+) -> list[str]:
+    validation_errors = []
+    for reviewer in reviewers:
+        output_path = reviews_dir / reviewer.output
+        try:
+            require_fresh_file(output_path, reviewer_started_at, f"{reviewer.name} output")
+            validate_reviewer_json(output_path, reviewer.name, paper_id)
+            run_required(
+                f"validate-{reviewer.name}",
+                [
+                    sys.executable,
+                    "scripts/validate_review_json.py",
+                    "--schema",
+                    str(schema_path.relative_to(repo)),
+                    "--input",
+                    str(output_path.relative_to(repo)),
+                    "--reviewers-config",
+                    str((repo / reviewers_config).relative_to(repo) if not Path(reviewers_config).is_absolute() else reviewers_config),
+                ],
+                repo,
+                log_dir,
+            )
+            enforce_preflight_gate(reviewer, output_path)
+        except Exception as exc:
+            validation_errors.append(f"{reviewer.name}: {exc}")
+            if not keep_going:
+                break
+    return validation_errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the full paper-review pipeline for one PDF.")
     parser.add_argument("--pdf", required=True, help="Path to source PDF, usually under inputs/")
@@ -187,6 +284,8 @@ def main() -> int:
     bundle_path = editor_dir / "normalized_bundle.json"
     editor_input_path = editor_dir / "editor_input.md"
     reviewers = load_reviewers_config(repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else args.reviewers_config)
+    preflight_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "preflight"]
+    standard_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "review"]
 
     log_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -230,42 +329,37 @@ def main() -> int:
         log_dir,
     )
 
-    reviewer_started_at = time.time() - 1.0
-    running = [
-        start_reviewer(reviewer, repo, prompts_dir, reviews_dir, schema_path.relative_to(repo), log_dir)
-        for reviewer in reviewers
-    ]
-    reviewer_results = [wait_reviewer(*item) for item in running]
-    failed_reviewers = [result for result in reviewer_results if result.returncode != 0]
-    if failed_reviewers:
-        failures = ", ".join(f"{result.label} ({result.returncode})" for result in failed_reviewers)
-        raise RuntimeError(f"Reviewer run failed: {failures}")
+    preflight_started_at = run_reviewer_batch(
+        preflight_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir
+    )
+    preflight_errors = validate_reviewer_batch(
+        preflight_reviewers,
+        preflight_started_at,
+        repo,
+        paper_id,
+        reviews_dir,
+        schema_path,
+        args.reviewers_config,
+        log_dir,
+        args.keep_going,
+    )
+    if preflight_errors:
+        raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
 
-    validation_errors = []
-    for reviewer in reviewers:
-        output_path = reviews_dir / reviewer.output
-        try:
-            require_fresh_file(output_path, reviewer_started_at, f"{reviewer.name} output")
-            validate_reviewer_json(output_path, reviewer.name, paper_id)
-            result = run_required(
-                f"validate-{reviewer.name}",
-                [
-                    sys.executable,
-                    "scripts/validate_review_json.py",
-                    "--schema",
-                    str(schema_path.relative_to(repo)),
-                    "--input",
-                    str(output_path.relative_to(repo)),
-                    "--reviewers-config",
-                    str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
-                ],
-                repo,
-                log_dir,
-            )
-        except Exception as exc:
-            validation_errors.append(f"{reviewer.name}: {exc}")
-            if not args.keep_going:
-                break
+    reviewer_started_at = run_reviewer_batch(
+        standard_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir
+    )
+    validation_errors = validate_reviewer_batch(
+        standard_reviewers,
+        reviewer_started_at,
+        repo,
+        paper_id,
+        reviews_dir,
+        schema_path,
+        args.reviewers_config,
+        log_dir,
+        args.keep_going,
+    )
     if validation_errors:
         raise RuntimeError("Reviewer validation failed: " + "; ".join(validation_errors))
 

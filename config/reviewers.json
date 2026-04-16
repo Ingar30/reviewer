@@ -1,6 +1,16 @@
 {
   "reviewers": [
     {
+      "name": "parser_quality_auditor",
+      "prompt": "parser_quality_audit.txt",
+      "output": "parser_quality_auditor.json",
+      "id_prefix": "PARSER",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "stage": "preflight"
+    },
+    {
       "name": "crossref_auditor",
       "prompt": "crossref_audit.txt",
       "output": "crossref_auditor.json",

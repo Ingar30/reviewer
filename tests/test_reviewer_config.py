@@ -13,6 +13,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from normalize_review_outputs import issue_class, normalize  # noqa: E402
+from review_paper import parser_quality_gate_findings  # noqa: E402
 from reviewer_config import ReviewerConfig, load_reviewers_config  # noqa: E402
 from validate_review_json import semantic_errors  # noqa: E402
 
@@ -49,6 +50,7 @@ def reviewer_config(name: str = "numerical_auditor", prefix: str = "NUM") -> Rev
         search=False,
         enabled=True,
         normalization_role="manuscript",
+        stage="review",
     )
 
 
@@ -130,6 +132,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(
             [item.name for item in reviewers],
             [
+                "parser_quality_auditor",
                 "crossref_auditor",
                 "numerical_auditor",
                 "claim_evidence_auditor",
@@ -138,6 +141,7 @@ class ReviewerConfigTests(unittest.TestCase):
             ],
         )
         self.assertEqual([item.output for item in reviewers], [f"{item.name}.json" for item in reviewers])
+        self.assertEqual(next(item for item in reviewers if item.name == "parser_quality_auditor").stage, "preflight")
         self.assertEqual(next(item for item in reviewers if item.name == "numerical_auditor").id_prefix, "NUM")
         self.assertTrue(next(item for item in reviewers if item.name == "literature_auditor").search)
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").normalization_role, "crossref")
@@ -151,6 +155,7 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual([item.name for item in enabled], ["enabled_agent"])
         self.assertEqual([item.name for item in all_reviewers], ["enabled_agent", "disabled_agent"])
+        self.assertEqual(enabled[0].stage, "review")
 
     def test_duplicate_outputs_are_rejected(self) -> None:
         path = self.config_path("duplicate_outputs.json")
@@ -176,6 +181,15 @@ class ReviewerConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "normalization_role"):
             load_reviewers_config(path)
 
+    def test_invalid_stage_is_rejected(self) -> None:
+        path = self.config_path("invalid_stage.json")
+        item = reviewer("agent_a")
+        item["stage"] = "later"
+        write_config(path, [item])
+
+        with self.assertRaisesRegex(ValueError, "stage"):
+            load_reviewers_config(path)
+
     def test_issue_class_uses_manifest_role(self) -> None:
         finding = {"category": "outdated_working_paper", "assessment": "yes"}
         reference = ReviewerConfig(
@@ -186,6 +200,7 @@ class ReviewerConfigTests(unittest.TestCase):
             search=True,
             enabled=True,
             normalization_role="reference",
+            stage="review",
         )
         manuscript = ReviewerConfig(
             name="robustness_auditor",
@@ -195,6 +210,7 @@ class ReviewerConfigTests(unittest.TestCase):
             search=False,
             enabled=True,
             normalization_role="manuscript",
+            stage="review",
         )
 
         self.assertEqual(issue_class(reference, finding), "bibliography_maintenance")
@@ -271,6 +287,46 @@ class ReviewerConfigTests(unittest.TestCase):
         errors = semantic_errors(data, [reviewer_config()])
 
         self.assertTrue(any("undeclared source object ids" in error for error in errors))
+
+    def test_parser_quality_gate_blocks_only_high_confidence_blockers(self) -> None:
+        high_blocker = finding(
+            id="PARSER-001",
+            issue_type="parser_artifact",
+            severity="high",
+            confidence="high",
+            assessment="no",
+        )
+        medium_warning = finding(
+            id="PARSER-002",
+            issue_type="parser_artifact",
+            severity="medium",
+            confidence="high",
+            assessment="no",
+        )
+        high_medium_confidence_warning = finding(
+            id="PARSER-003",
+            issue_type="parser_artifact",
+            severity="high",
+            confidence="medium",
+            assessment="no",
+        )
+        low_finding = finding(
+            id="PARSER-004",
+            issue_type="parser_artifact",
+            severity="low",
+            confidence="high",
+            assessment="no",
+        )
+
+        blockers, warnings = parser_quality_gate_findings(
+            review_output(
+                [high_blocker, medium_warning, high_medium_confidence_warning, low_finding],
+                reviewer_name="parser_quality_auditor",
+            )
+        )
+
+        self.assertEqual([finding["id"] for finding in blockers], ["PARSER-001"])
+        self.assertEqual([finding["id"] for finding in warnings], ["PARSER-002", "PARSER-003"])
 
     def test_normalize_preserves_structured_contract_fields(self) -> None:
         reviews_dir = self.config_path("reviews_marker.json").parent / "reviews"

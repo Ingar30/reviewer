@@ -7,6 +7,7 @@ from typing import Any
 
 
 VALID_NORMALIZATION_ROLES = {"manuscript", "crossref", "reference"}
+VALID_REVIEWER_STAGES = {"preflight", "review"}
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class ReviewerConfig:
     search: bool
     enabled: bool
     normalization_role: str
+    stage: str
 
 
 def default_reviewers_config_path(repo_root: Path | None = None) -> Path:
@@ -56,6 +58,13 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
         if role not in VALID_NORMALIZATION_ROLES:
             valid = ", ".join(sorted(VALID_NORMALIZATION_ROLES))
             raise ValueError(f"reviewers[{index}].normalization_role must be one of: {valid}")
+        stage = item.get("stage", "review")
+        if not isinstance(stage, str) or not stage.strip():
+            raise ValueError(f"reviewers[{index}].stage must be a non-empty string")
+        stage = stage.strip()
+        if stage not in VALID_REVIEWER_STAGES:
+            valid = ", ".join(sorted(VALID_REVIEWER_STAGES))
+            raise ValueError(f"reviewers[{index}].stage must be one of: {valid}")
         search = item.get("search", False)
         enabled = item.get("enabled", True)
         if not isinstance(search, bool):
@@ -83,6 +92,7 @@ def load_reviewers_config(path: Path | str | None = None, *, enabled_only: bool 
                 search=search,
                 enabled=enabled,
                 normalization_role=role,
+                stage=stage,
             )
         )
 

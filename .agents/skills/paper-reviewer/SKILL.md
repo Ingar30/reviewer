@@ -32,12 +32,14 @@ The pipeline stages are:
 2. Derive `paper_id` from the filename stem unless explicitly provided.
 3. Preprocess the PDF into `work/<paper_id>/parsed/`.
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
-5. Launch the configured reviewers from `config/reviewers.json`.
-6. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
-7. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
-8. Build editor input at `work/<paper_id>/editor/editor_input.md`.
-9. Run the editor to write `outputs/<paper_id>/report.md`.
-10. Smoke-check the final report with `scripts/check_final_report.py`.
+5. Launch preflight reviewers from `config/reviewers.json`.
+6. Validate preflight JSON and stop on blocking parser-quality failures.
+7. Launch the configured review-stage reviewers from `config/reviewers.json`.
+8. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
+9. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
+10. Build editor input at `work/<paper_id>/editor/editor_input.md`.
+11. Run the editor to write `outputs/<paper_id>/report.md`.
+12. Smoke-check the final report with `scripts/check_final_report.py`.
 
 ## Critical rules
 - Internal reviewers return JSON only.
@@ -46,6 +48,7 @@ The pipeline stages are:
 - Never guess missing evidence; use `cannot_verify`.
 - Preserve exact source locations whenever possible.
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
+- Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`

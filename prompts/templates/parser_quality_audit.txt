@@ -1,0 +1,37 @@
+Use the custom agent named parser_quality_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit parser quality only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "parser_quality_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted PARSER-001, PARSER-002, ...
+
+Focus on parser defects that could poison downstream reviewers:
+- missing page artifacts or likely scanned pages
+- scrambled reading order in normalized page text
+- suspicious OCR or text-extraction artifacts
+- broken table extraction
+- missing or detached table/figure captions
+- figure/table extraction failures
+- inventory contradictions, such as visible captions or embedded images missing from structured inventories
+
+Use these severity rules:
+- high: downstream reviewers cannot safely operate on a major evidence class or substantial page range
+- medium: reviewers can proceed, but one evidence class or important object may be incomplete or misleading
+- low: localized parser defect or cleanup issue
+
+For every finding:
+- Set issue_type to parser_artifact or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for manifest, page text, raw text, word/block files, inventories, page images, table crops, figure crops, or embedded-image inventory entries used as evidence.
+- Use cannot_verify only when the parsed artifacts do not allow a check, and then include cannot_verify_reason.
+- Do not judge manuscript correctness, numerical correctness, reference correctness, or literature positioning.
+- Do not include process notes about skill availability, tooling, or session state.

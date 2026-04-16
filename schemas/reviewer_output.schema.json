@@ -106,7 +106,7 @@
                 "enum": ["exact", "partial", "missing"]
               }
             },
-            "required": ["page", "page_label", "section", "text_quote"],
+            "required": ["page", "page_label", "section", "text_quote", "precision"],
             "additionalProperties": false
           },
           "claim_text": { "type": "string" },
@@ -135,11 +135,17 @@
         "required": [
           "id",
           "category",
+          "issue_type",
           "severity",
+          "confidence",
           "location",
           "claim_text",
           "assessment",
+          "cannot_verify_reason",
           "evidence_summary",
+          "source_objects",
+          "claim_evidence_links",
+          "numeric_check",
           "suggested_fix"
         ],
         "additionalProperties": false

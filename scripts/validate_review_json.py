@@ -61,8 +61,9 @@ def semantic_errors(data: dict[str, Any], reviewers: list[ReviewerConfig]) -> li
                 errors.append(f"{label}.location.precision is required by the hardened reviewer contract")
             if precision == "missing" and any(location.get(key) is not None for key in ["page", "page_label", "section", "text_quote"]):
                 errors.append(f"{label}.location has precision=missing but still includes concrete location fields")
-            if precision == "exact" and (location.get("page") is None or not location.get("text_quote")):
-                errors.append(f"{label}.location has precision=exact but lacks page or text_quote")
+            concrete_location = any(location.get(key) is not None for key in ["page", "page_label", "section", "text_quote"])
+            if precision == "exact" and not concrete_location:
+                errors.append(f"{label}.location has precision=exact but lacks concrete location fields")
 
         if is_cannot_verify(finding) and not finding.get("cannot_verify_reason"):
             errors.append(f"{label}.cannot_verify_reason is required for cannot_verify findings")

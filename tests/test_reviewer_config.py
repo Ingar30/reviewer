@@ -233,6 +233,25 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(any("numeric_check is required" in error for error in errors))
 
+    def test_semantic_errors_accept_exact_artifact_location_without_page(self) -> None:
+        data = review_output(
+            [
+                finding(
+                    location={
+                        "page": None,
+                        "page_label": None,
+                        "section": "manifest summary",
+                        "text_quote": "table_count: 0",
+                        "precision": "exact",
+                    }
+                )
+            ]
+        )
+
+        errors = semantic_errors(data, [reviewer_config()])
+
+        self.assertFalse(any("precision=exact" in error for error in errors))
+
     def test_semantic_errors_validate_claim_evidence_links(self) -> None:
         data = review_output(
             [

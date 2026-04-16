@@ -10,6 +10,7 @@ Hard rules:
 - The output must be the final markdown report itself.
 - Do not write a note saying where the report was saved.
 - Do not include process/tool/session notes.
+- Do not emit replacement-question sequences such as ?? or ???; if source text contains characters that may render unreliably, paraphrase or normalize the quote to readable ASCII.
 - Do not invent findings.
 - Preserve uncertainty, especially cannot_verify cases.
 - Preserve exact locations when available.

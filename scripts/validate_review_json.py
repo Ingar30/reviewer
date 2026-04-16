@@ -82,7 +82,12 @@ def semantic_errors(data: dict[str, Any], reviewers: list[ReviewerConfig]) -> li
             if missing:
                 errors.append(f"{label}.claim_evidence_links.{link_index} references undeclared source object ids: {', '.join(missing)}")
 
-        if reviewer and reviewer.name == "numerical_auditor" and not is_cannot_verify(finding):
+        if (
+            reviewer
+            and reviewer.name == "numerical_auditor"
+            and finding.get("issue_type") != "parser_artifact"
+            and not is_cannot_verify(finding)
+        ):
             if not finding.get("numeric_check"):
                 errors.append(f"{label}.numeric_check is required for verifiable numerical_auditor findings")
 

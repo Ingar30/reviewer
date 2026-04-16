@@ -23,8 +23,8 @@ Focus on parser defects that could poison downstream reviewers:
 - inventory contradictions, such as visible captions or embedded images missing from structured inventories
 
 Use these severity rules:
-- high: downstream reviewers cannot safely operate on a major evidence class or substantial page range
-- medium: reviewers can proceed, but one evidence class or important object may be incomplete or misleading
+- high: downstream reviewers cannot safely operate on a major evidence class or substantial page range, and no usable page-text/image fallback exists
+- medium: reviewers can proceed, but one evidence class or important object may be incomplete or misleading; use this for missing table/figure inventories when page text or page images still provide usable fallback evidence
 - low: localized parser defect or cleanup issue
 
 For every finding:
@@ -33,5 +33,6 @@ For every finding:
 - Set location.precision to exact, partial, or missing.
 - Include source_objects for manifest, page text, raw text, word/block files, inventories, page images, table crops, figure crops, or embedded-image inventory entries used as evidence.
 - Use cannot_verify only when the parsed artifacts do not allow a check, and then include cannot_verify_reason.
+- Do not flag terminal display mojibake as an encoding defect. Only report encoding/OCR corruption when the file contents themselves contain replacement characters, repeated question-mark substitutions, or verified corrupted text. Normal Unicode such as en dashes, curly quotes, ligatures, accented names, or copyright symbols is not a parser defect by itself.
 - Do not judge manuscript correctness, numerical correctness, reference correctness, or literature positioning.
 - Do not include process notes about skill availability, tooling, or session state.

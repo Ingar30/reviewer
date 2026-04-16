@@ -249,6 +249,22 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(any("numeric_check is required" in error for error in errors))
 
+    def test_semantic_errors_allow_parser_artifacts_without_numeric_check(self) -> None:
+        data = review_output(
+            [
+                finding(
+                    issue_type="parser_artifact",
+                    category="structured_table_missing",
+                    assessment="yes",
+                    numeric_check=None,
+                )
+            ]
+        )
+
+        errors = semantic_errors(data, [reviewer_config()])
+
+        self.assertFalse(any("numeric_check is required" in error for error in errors))
+
     def test_semantic_errors_accept_exact_artifact_location_without_page(self) -> None:
         data = review_output(
             [

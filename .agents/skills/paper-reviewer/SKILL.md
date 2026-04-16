@@ -25,14 +25,19 @@ This skill runs a reproducible multi-agent paper-review workflow for academic PD
 - If the user gives an absolute path, use it as provided.
 
 ## Workflow
+For fresh runs, use `scripts/review_paper.py` as the primary entry point.
+
+The pipeline stages are:
 1. Resolve the input PDF path.
 2. Derive `paper_id` from the filename stem unless explicitly provided.
-3. Ensure parsed artifacts exist under `work/<paper_id>/parsed/`.
-4. If not, run `scripts/preprocess_pdf.py`.
+3. Preprocess the PDF into `work/<paper_id>/parsed/`.
+4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch the configured reviewers from `config/reviewers.json`.
-6. Validate each reviewer JSON output.
-7. Launch `editor` on the validated reviewer outputs.
-8. Write the final report to `outputs/<paper_id>/report.md`.
+6. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
+7. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
+8. Build editor input at `work/<paper_id>/editor/editor_input.md`.
+9. Run the editor to write `outputs/<paper_id>/report.md`.
+10. Smoke-check the final report with `scripts/check_final_report.py`.
 
 ## Critical rules
 - Internal reviewers return JSON only.

@@ -41,8 +41,10 @@ The intended flow is:
 5. normalize and deduplicate reviewer outputs
 6. build editor input
 7. run the editor
-8. smoke-check the final report
-9. use the wrapper as the default fresh-run entry point
+8. write the final markdown report
+9. smoke-check the final report
+
+For fresh runs, `scripts/review_paper.py` is the default entry point for this flow.
 
 ## Current Repo Layout
 
@@ -112,6 +114,11 @@ work/<paper_id>/prompts/
 ### `config/reviewers.json`
 
 The enabled reviewer roster. Each reviewer entry declares the Codex agent name, prompt template, output filename, whether web search is required, and the normalizer role used during editor-bundle construction.
+
+Valid `normalization_role` values are:
+- `manuscript`: default substantive manuscript findings
+- `crossref`: cross-reference findings, including parser-artifact classification for parser/false-positive categories
+- `reference`: reference-integrity findings, including bibliography-maintenance classification for outdated or metadata-typo categories
 
 ### `schemas/`
 

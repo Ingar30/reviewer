@@ -159,7 +159,7 @@ def main() -> int:
     parser.add_argument(
         "--keep-going",
         action="store_true",
-        help="Collect reviewer failures after all parallel reviewers finish before exiting.",
+        help="Continue validating remaining reviewer outputs after a reviewer-output validation error.",
     )
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
     args = parser.parse_args()

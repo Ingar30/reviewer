@@ -24,7 +24,10 @@ from build_editor_input import (  # noqa: E402
 )
 from normalize_review_outputs import issue_class, normalize  # noqa: E402
 from review_paper import (  # noqa: E402
+    extract_editor_report_from_transcript,
     parser_quality_gate_findings,
+    plausible_editor_report,
+    recover_editor_report_if_needed,
     selected_reviewers_from_selection,
     validate_selection_output,
 )
@@ -738,6 +741,67 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIn("CANON-005", synthesis)
         self.assertNotIn("CANON-006", synthesis)
         self.assertIn("CANON-006", additional)
+
+    def test_editor_report_recovery_uses_last_complete_transcript_report(self) -> None:
+        report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "summary",
+                "## Review Configuration",
+                "config",
+                "## Highest-Priority Cross-Agent Findings",
+                "findings",
+                "## Suggested Revision Priorities",
+                "priorities",
+                "## Additional Findings",
+                "additional",
+                "body " + ("x" * 2100),
+            ]
+        )
+        transcript = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "prompt skeleton only",
+                "collab: SpawnAgent",
+                "codex",
+                report,
+                "collab: CloseAgent",
+                "codex",
+                "Received.",
+                "tokens used",
+            ]
+        )
+
+        self.assertTrue(plausible_editor_report(report))
+        self.assertEqual(extract_editor_report_from_transcript(transcript), report + "\n")
+
+    def test_recover_editor_report_replaces_tiny_acknowledgement(self) -> None:
+        report_path = self.config_path("tiny_editor_report.md")
+        stderr_path = self.config_path("tiny_editor_report.stderr.log")
+        recovered = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "summary",
+                "## Review Configuration",
+                "config",
+                "## Highest-Priority Cross-Agent Findings",
+                "findings",
+                "## Suggested Revision Priorities",
+                "priorities",
+                "## Additional Findings",
+                "additional",
+                "body " + ("x" * 2100),
+            ]
+        )
+        report_path.write_text("Received.", encoding="utf-8")
+        stderr_path.write_text(f"codex\n{recovered}\ncollab: CloseAgent\nReceived.\n", encoding="utf-8")
+
+        recover_editor_report_if_needed(report_path, stderr_path)
+
+        self.assertEqual(report_path.read_text(encoding="utf-8"), recovered + "\n")
 
     def test_report_checker_requires_grammar_appendix_when_copyedit_exists(self) -> None:
         bundle = {

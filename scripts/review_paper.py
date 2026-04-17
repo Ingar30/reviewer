@@ -17,6 +17,14 @@ from reviewer_config import ReviewerConfig, load_reviewers_config, write_reviewe
 SELECTOR_TEMPLATE = "reviewer_selection.txt"
 SELECTOR_OUTPUT = "reviewer_selection.json"
 SELECTED_REVIEWERS_CONFIG = "selected_reviewers.json"
+MIN_EDITOR_REPORT_CHARS = 2000
+EDITOR_REPORT_REQUIRED_HEADINGS = [
+    "## Executive Summary",
+    "## Review Configuration",
+    "## Highest-Priority Cross-Agent Findings",
+    "## Suggested Revision Priorities",
+    "## Additional Findings",
+]
 
 
 @dataclass
@@ -148,6 +156,43 @@ def require_fresh_file(path: Path, started_at: float, label: str) -> None:
         raise FileNotFoundError(f"Missing {label}: {path}")
     if path.stat().st_mtime < started_at:
         raise RuntimeError(f"{label} is stale and was not regenerated in this run: {path}")
+
+
+def plausible_editor_report(text: str) -> bool:
+    stripped = text.strip()
+    if len(stripped) < MIN_EDITOR_REPORT_CHARS:
+        return False
+    if not stripped.startswith("# Multi-Agent Paper Review Report"):
+        return False
+    return all(heading in stripped for heading in EDITOR_REPORT_REQUIRED_HEADINGS)
+
+
+def extract_editor_report_from_transcript(text: str) -> str | None:
+    starts = [match.start() for match in re.finditer(r"(?m)^# Multi-Agent Paper Review Report\s*$", text)]
+    for start in reversed(starts):
+        candidate = text[start:]
+        end_match = re.search(r"(?m)^(?:collab:|tokens used\b)", candidate)
+        if end_match:
+            candidate = candidate[: end_match.start()]
+        candidate = candidate.strip()
+        if plausible_editor_report(candidate):
+            return candidate + "\n"
+    return None
+
+
+def recover_editor_report_if_needed(report_path: Path, editor_stderr_path: Path) -> None:
+    current = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+    if plausible_editor_report(current):
+        return
+
+    transcript = editor_stderr_path.read_text(encoding="utf-8") if editor_stderr_path.exists() else ""
+    recovered = extract_editor_report_from_transcript(transcript)
+    if recovered is None:
+        raise RuntimeError(
+            f"editor produced an invalid final report and no recoverable report was found in {editor_stderr_path}"
+        )
+    report_path.write_text(recovered, encoding="utf-8")
+    print(f"[recover] final report recovered from editor transcript: {editor_stderr_path}")
 
 
 def validate_reviewer_json(path: Path, expected_reviewer: str, paper_id: str) -> None:
@@ -637,6 +682,7 @@ def main() -> int:
         input_text=editor_input,
     )
     require_fresh_file(report_path, editor_started_at, "final report")
+    recover_editor_report_if_needed(report_path, editor_result.stderr_path)
 
     check_result = run_required(
         "check-final-report",

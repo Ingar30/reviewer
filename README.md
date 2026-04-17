@@ -38,13 +38,16 @@ The intended flow is:
 2. render run-specific prompts
 3. run the parser-quality preflight auditor
 4. validate preflight JSON and fail only on high-confidence blocking parser defects
-5. run reviewer agents on parsed artifacts
-6. validate reviewer JSON
-7. normalize and deduplicate reviewer outputs
-8. build editor input
-9. run the editor
-10. write the final markdown report
-11. smoke-check the final report
+5. classify the paper and select optional reviewers, unless static mode is requested
+6. write the run-specific selected reviewer roster
+7. rerender prompts for the selected reviewer roster
+8. run mandatory baseline reviewers and selected optional reviewers on parsed artifacts
+9. validate reviewer JSON
+10. normalize and deduplicate reviewer outputs
+11. build editor input with a deterministic editor brief
+12. run the editor
+13. write the final markdown report
+14. smoke-check the final report
 
 For fresh runs, `scripts/review_paper.py` is the default entry point for this flow.
 
@@ -211,6 +214,38 @@ Use static mode to run all enabled reviewers without selector filtering:
 python scripts\review_paper.py --pdf inputs\example-paper.pdf --reviewer-selection static
 ```
 
+The wrapper runs a fresh pipeline, executes preflight reviewers first, selects or preserves review-stage reviewers, rerenders prompts for the selected roster, and then executes the active review-stage reviewers in parallel. The manual steps below remain useful for debugging or rerunning one stage by hand.
+
+### Editor-Only Refresh
+
+If preprocessing, reviewer JSON, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when prompt/report-shape changes do not require new reviewer evidence:
+
+```powershell
+python scripts\render_prompts.py `
+  --paper-id example-paper `
+  --parsed-dir work\example-paper\parsed `
+  --reviews-dir work\example-paper\reviews `
+  --schema-path schemas\reviewer_output.schema.json `
+  --output-dir work\example-paper\prompts `
+  --editor-bundle-path work\example-paper\editor\normalized_bundle.json `
+  --reviewers-config work\example-paper\selection\selected_reviewers.json
+
+python scripts\build_editor_input.py `
+  --paper-id example-paper `
+  --editor-prompt work\example-paper\prompts\editor_report.txt `
+  --bundle work\example-paper\editor\normalized_bundle.json `
+  --reviews-dir work\example-paper\reviews `
+  --output work\example-paper\editor\editor_input.md `
+  --reviewers-config work\example-paper\selection\selected_reviewers.json
+
+Get-Content work\example-paper\editor\editor_input.md -Raw |
+  codex exec --output-last-message outputs\example-paper\report.md -
+
+python scripts\check_final_report.py `
+  --input outputs\example-paper\report.md `
+  --bundle work\example-paper\editor\normalized_bundle.json
+```
+
 ### 1. Preprocess
 
 ```powershell
@@ -233,6 +268,20 @@ python scripts\render_prompts.py `
   --schema-path schemas\reviewer_output.schema.json `
   --output-dir work\example-paper\prompts
 ```
+
+In dynamic wrapper runs, prompts are rendered once before preflight and then rendered again after selection with:
+
+```powershell
+python scripts\render_prompts.py `
+  --paper-id example-paper `
+  --parsed-dir work\example-paper\parsed `
+  --reviews-dir work\example-paper\reviews `
+  --schema-path schemas\reviewer_output.schema.json `
+  --output-dir work\example-paper\prompts `
+  --reviewers-config work\example-paper\selection\selected_reviewers.json
+```
+
+If you are debugging a static run rather than a dynamic selected run, use `config/reviewers.json` anywhere these manual examples pass `work\<paper_id>\selection\selected_reviewers.json`.
 
 ### 3. Run Reviewers
 
@@ -283,7 +332,8 @@ Repeat for all configured reviewer outputs.
 python scripts\normalize_review_outputs.py `
   --paper-id example-paper `
   --reviews-dir work\example-paper\reviews `
-  --output work\example-paper\editor\normalized_bundle.json
+  --output work\example-paper\editor\normalized_bundle.json `
+  --reviewers-config work\example-paper\selection\selected_reviewers.json
 ```
 
 The normalized bundle groups overlapping findings, separates parser artifacts from manuscript issues, and removes process notes from editor-facing synthesis.
@@ -296,7 +346,8 @@ python scripts\build_editor_input.py `
   --editor-prompt work\example-paper\prompts\editor_report.txt `
   --bundle work\example-paper\editor\normalized_bundle.json `
   --reviews-dir work\example-paper\reviews `
-  --output work\example-paper\editor\editor_input.md
+  --output work\example-paper\editor\editor_input.md `
+  --reviewers-config work\example-paper\selection\selected_reviewers.json
 ```
 
 This writes a deterministic editor brief before the raw JSON inputs. The brief gives the editor internal guidance on optional reviewer selection, the top five high-priority synthesis candidates, additional-finding candidates, section routing, and traceability-map rows. The brief is not intended to be reproduced as report text.
@@ -309,6 +360,7 @@ Get-Content work\example-paper\editor\editor_input.md -Raw |
 ```
 
 The editor must write the actual final markdown report, not a note saying where the report was saved.
+The wrapper rejects implausibly short editor outputs and can recover a complete report from the editor transcript if `codex exec --output-last-message` captures a short acknowledgement after a delegated editor response.
 The report should keep canonical and source finding IDs out of the main prose and collect them in a final traceability appendix, such as:
 
 ```markdown
@@ -323,10 +375,11 @@ The intended report structure starts with synthesis and keeps audit metadata com
 - `## Highest-Priority Cross-Agent Findings`
 - `## Suggested Revision Priorities`
 - `## Additional Findings`
-- domain-specific sections for literature, references, parser caveats, cannot-verify items, and grammar appendix when applicable
+- domain-specific sections for literature, references, parser caveats, and cannot-verify items
+- `## Appendix: Grammar and Copyediting Issues` when copyedit findings exist
 - `## Appendix: Traceability Map`
 
-The highest-priority section should stay selective. Lower-priority substantive issues and cannot-verify items should use compact tables where possible.
+The highest-priority section is capped at five synthesis findings by `scripts/build_editor_input.py`. Lower-priority substantive issues go to `Additional Findings`, cannot-verify items should use a compact table, and all canonical/source IDs should appear in the traceability appendix rather than repeated body footers.
 
 ### 8. Check Final Report
 

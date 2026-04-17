@@ -34,12 +34,26 @@ The pipeline stages are:
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch preflight reviewers from `config/reviewers.json`.
 6. Validate preflight JSON and stop on blocking parser-quality failures.
-7. Launch the configured review-stage reviewers from `config/reviewers.json`.
-8. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
-9. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
-10. Build editor input at `work/<paper_id>/editor/editor_input.md`.
-11. Run the editor to write `outputs/<paper_id>/report.md`.
-12. Smoke-check the final report with `scripts/check_final_report.py`.
+7. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
+8. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
+9. Rerender prompts using the selected reviewer roster.
+10. Launch mandatory review-stage reviewers and selected optional reviewers.
+11. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
+12. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
+13. Build editor input at `work/<paper_id>/editor/editor_input.md`.
+14. Run the editor to write `outputs/<paper_id>/report.md`.
+15. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
+
+Use `--reviewer-selection static` only when all enabled review-stage reviewers should run.
+
+## Editor-only refresh
+If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when the change is limited to editor prompt/report presentation:
+1. Rerender prompts with `scripts/render_prompts.py`, passing `--reviewers-config work/<paper_id>/selection/selected_reviewers.json`.
+2. Rebuild editor input with `scripts/build_editor_input.py`, passing the same selected reviewer config.
+3. Run the editor with `codex exec --output-last-message outputs/<paper_id>/report.md -`.
+4. Smoke-check with `scripts/check_final_report.py --input outputs/<paper_id>/report.md --bundle work/<paper_id>/editor/normalized_bundle.json`.
+
+Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewer selection, or normalized findings need to change.
 
 ## Critical rules
 - Internal reviewers return JSON only.
@@ -49,8 +63,13 @@ The pipeline stages are:
 - Preserve exact source locations whenever possible.
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
 - Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
+- Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
+- If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`
+- Reviewer selection: `work/<paper_id>/selection/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`
+
+The expected final report shape is synthesis-first: executive summary, prose review configuration, at most five highest-priority findings, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, and traceability map appendix.

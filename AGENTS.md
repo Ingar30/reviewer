@@ -7,17 +7,22 @@ The normal workflow is:
 1. Put source PDFs in `inputs/`.
 2. Preprocess each paper into structured artifacts under `work/<paper_id>/parsed/`.
 3. Render run-specific prompts under `work/<paper_id>/prompts/`.
-4. Run the configured reviewer agents on the parsed artifacts.
-5. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
-6. Normalize and deduplicate reviewer outputs into an editor bundle.
-7. Build editor input from the normalized bundle and original reviewer JSON files.
-8. Run the editor to write the final markdown report under `outputs/<paper_id>/report.md`.
-9. Smoke-check the final report.
+4. Run parser-quality preflight before substantive review.
+5. Use dynamic reviewer selection by default to choose optional reviewers while mandatory reviewers always run.
+6. Store the selector decision under `work/<paper_id>/selection/` and use the selected reviewer roster for downstream stages.
+7. Rerender prompts for the selected reviewer roster.
+8. Run the selected reviewer agents on the parsed artifacts.
+9. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
+10. Normalize and deduplicate reviewer outputs into an editor bundle.
+11. Build editor input from the normalized bundle and original reviewer JSON files.
+12. Run the editor to write the final markdown report under `outputs/<paper_id>/report.md`.
+13. Smoke-check the final report.
 
 ## Canonical file locations
 - Source PDFs: `inputs/`
 - Parsed artifacts: `work/<paper_id>/parsed/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
+- Reviewer selection: `work/<paper_id>/selection/`
 - Final reports: `outputs/<paper_id>/`
 
 ## Path conventions
@@ -29,9 +34,11 @@ The normal workflow is:
 - Never run reviewer agents directly on a raw PDF if parsed artifacts do not exist.
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
+- Dynamic reviewer selection is the default for fresh wrapper runs; static mode is available when all enabled reviewers should run.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.
 - If preprocessing artifacts are missing or clearly poor, fail clearly instead of guessing.
+- Editor-only refresh is allowed when parsed artifacts, reviewer JSON, selected reviewer config, and the normalized editor bundle already exist. Rerender prompts, rebuild editor input, rerun only the editor, and then smoke-check the final report.
 
 ## Preprocessing rules
 - Preserve original page numbering.
@@ -45,6 +52,7 @@ The normal workflow is:
 - Never guess missing evidence; use `cannot_verify` or equivalent failure labels.
 - Preserve exact source locations whenever possible.
 - Keep reviewer outputs modular so failed reviewers can be rerun independently.
+- Final reports should keep canonical/source finding identifiers in the traceability appendix rather than repeated body footers.
 
 ## Working style
 - Prefer deterministic scripts for file handling, preprocessing, validation, and report assembly.

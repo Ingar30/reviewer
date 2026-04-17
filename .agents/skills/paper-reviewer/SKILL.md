@@ -20,7 +20,7 @@ This skill runs a reproducible multi-agent paper-review workflow for academic PD
 - parsed artifacts already exist and the request is unrelated to the review pipeline
 
 ## Default input convention
-- If the user names a file like `example-paper.pdf`, first look for `inputs/example-paper.pdf`.
+- If the user names a bare PDF filename, first look for it under `inputs/`.
 - If the user gives a repo-relative path, use it.
 - If the user gives an absolute path, use it as provided.
 

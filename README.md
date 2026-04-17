@@ -8,6 +8,10 @@ This repo is both:
 
 The goal is not to build a polished product immediately. The goal is to learn a workflow with repo guidance, project-scoped config, custom agents, repo-scoped skills, `codex exec`, JSON schemas, deterministic preprocessing, validation, and editor synthesis.
 
+Current status: `scripts/review_paper.py` is the default fresh-run entry point. The workflow has been smoke-tested across multiple papers with parser-quality preflight, dynamic reviewer selection, selected optional reviewers, editor synthesis, final report checking, and editor-only report refreshes from existing reviewer evidence.
+
+For an external-facing explanation of the full workflow, design choices, artifacts, and prompt appendix, see `PROJECT_DOCUMENTATION.md`.
+
 ## Mental Model
 
 The repo has several layers. They do different jobs.
@@ -87,7 +91,7 @@ Source PDFs. Usually not committed to Git.
 Example:
 
 ```text
-inputs/example-paper.pdf
+inputs/<paper_id>.pdf
 ```
 
 ### `work/`
@@ -108,7 +112,7 @@ Final human-readable reports. Usually not committed to Git.
 
 ### `prompts/templates/`
 
-Reusable prompt templates tracked in Git. They should not hardcode `example-paper`.
+Reusable prompt templates tracked in Git. They should not hardcode any run-specific paper ID.
 
 Run-specific prompt files are generated under:
 
@@ -197,7 +201,8 @@ git status
 For a fully automated fresh run, use:
 
 ```powershell
-python scripts\review_paper.py --pdf inputs\example-paper.pdf
+$paperId = "your-paper-id"
+python scripts\review_paper.py --pdf "inputs\${paperId}.pdf"
 ```
 
 This derives `paper_id` from the PDF filename, writes intermediate artifacts under `work/<paper_id>/`, writes the final report to `outputs/<paper_id>/report.md`, and stores subprocess logs under `work/<paper_id>/logs/`. By default, the wrapper uses dynamic reviewer selection: parser preflight runs first, mandatory baseline reviewers always run, and optional reviewers are selected for the paper type.
@@ -205,13 +210,15 @@ This derives `paper_id` from the PDF filename, writes intermediate artifacts und
 Use an explicit paper ID when needed:
 
 ```powershell
-python scripts\review_paper.py --pdf inputs\example-paper.pdf --paper-id example-paper
+$paperId = "your-paper-id"
+python scripts\review_paper.py --pdf "inputs\${paperId}.pdf" --paper-id $paperId
 ```
 
 Use static mode to run all enabled reviewers without selector filtering:
 
 ```powershell
-python scripts\review_paper.py --pdf inputs\example-paper.pdf --reviewer-selection static
+$paperId = "your-paper-id"
+python scripts\review_paper.py --pdf "inputs\${paperId}.pdf" --reviewer-selection static
 ```
 
 The wrapper runs a fresh pipeline, executes preflight reviewers first, selects or preserves review-stage reviewers, rerenders prompts for the selected roster, and then executes the active review-stage reviewers in parallel. The manual steps below remain useful for debugging or rerunning one stage by hand.
@@ -221,64 +228,71 @@ The wrapper runs a fresh pipeline, executes preflight reviewers first, selects o
 If preprocessing, reviewer JSON, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when prompt/report-shape changes do not require new reviewer evidence:
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\render_prompts.py `
-  --paper-id example-paper `
-  --parsed-dir work\example-paper\parsed `
-  --reviews-dir work\example-paper\reviews `
+  --paper-id $paperId `
+  --parsed-dir "work\${paperId}\parsed" `
+  --reviews-dir "work\${paperId}\reviews" `
   --schema-path schemas\reviewer_output.schema.json `
-  --output-dir work\example-paper\prompts `
-  --editor-bundle-path work\example-paper\editor\normalized_bundle.json `
-  --reviewers-config work\example-paper\selection\selected_reviewers.json
+  --output-dir "work\${paperId}\prompts" `
+  --editor-bundle-path "work\${paperId}\editor\normalized_bundle.json" `
+  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 
 python scripts\build_editor_input.py `
-  --paper-id example-paper `
-  --editor-prompt work\example-paper\prompts\editor_report.txt `
-  --bundle work\example-paper\editor\normalized_bundle.json `
-  --reviews-dir work\example-paper\reviews `
-  --output work\example-paper\editor\editor_input.md `
-  --reviewers-config work\example-paper\selection\selected_reviewers.json
+  --paper-id $paperId `
+  --editor-prompt "work\${paperId}\prompts\editor_report.txt" `
+  --bundle "work\${paperId}\editor\normalized_bundle.json" `
+  --reviews-dir "work\${paperId}\reviews" `
+  --output "work\${paperId}\editor\editor_input.md" `
+  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 
-Get-Content work\example-paper\editor\editor_input.md -Raw |
-  codex exec --output-last-message outputs\example-paper\report.md -
+Get-Content "work\${paperId}\editor\editor_input.md" -Raw |
+  codex exec --output-last-message "outputs\${paperId}\report.md" -
 
 python scripts\check_final_report.py `
-  --input outputs\example-paper\report.md `
-  --bundle work\example-paper\editor\normalized_bundle.json
+  --input "outputs\${paperId}\report.md" `
+  --bundle "work\${paperId}\editor\normalized_bundle.json"
 ```
 
 ### 1. Preprocess
 
 ```powershell
-python scripts\preprocess_pdf.py --pdf inputs\example-paper.pdf
+$paperId = "your-paper-id"
+python scripts\preprocess_pdf.py --pdf "inputs\${paperId}.pdf"
 ```
 
 This writes parsed artifacts under:
 
 ```text
-work/example-paper/parsed/
+work/<paper_id>/parsed/
 ```
 
 ### 2. Render Prompts
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\render_prompts.py `
-  --paper-id example-paper `
-  --parsed-dir work\example-paper\parsed `
-  --reviews-dir work\example-paper\reviews `
+  --paper-id $paperId `
+  --parsed-dir "work\${paperId}\parsed" `
+  --reviews-dir "work\${paperId}\reviews" `
   --schema-path schemas\reviewer_output.schema.json `
-  --output-dir work\example-paper\prompts
+  --output-dir "work\${paperId}\prompts"
 ```
 
 In dynamic wrapper runs, prompts are rendered once before preflight and then rendered again after selection with:
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\render_prompts.py `
-  --paper-id example-paper `
-  --parsed-dir work\example-paper\parsed `
-  --reviews-dir work\example-paper\reviews `
+  --paper-id $paperId `
+  --parsed-dir "work\${paperId}\parsed" `
+  --reviews-dir "work\${paperId}\reviews" `
   --schema-path schemas\reviewer_output.schema.json `
-  --output-dir work\example-paper\prompts `
-  --reviewers-config work\example-paper\selection\selected_reviewers.json
+  --output-dir "work\${paperId}\prompts" `
+  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 ```
 
 If you are debugging a static run rather than a dynamic selected run, use `config/reviewers.json` anywhere these manual examples pass `work\<paper_id>\selection\selected_reviewers.json`.
@@ -306,9 +320,11 @@ Each reviewer reads from `work/<paper_id>/parsed/` and writes one JSON file unde
 The basic command shape is:
 
 ```powershell
-Get-Content work\example-paper\prompts\crossref_audit.txt -Raw |
+$paperId = "your-paper-id"
+
+Get-Content "work\${paperId}\prompts\crossref_audit.txt" -Raw |
   codex exec --output-schema schemas\reviewer_output.schema.json `
-    --output-last-message work\example-paper\reviews\crossref_auditor.json `
+    --output-last-message "work\${paperId}\reviews\crossref_auditor.json" `
     -
 ```
 
@@ -321,7 +337,8 @@ codex --search exec ...
 ### 4. Validate Reviewer JSON
 
 ```powershell
-python scripts\validate_review_json.py --schema schemas\reviewer_output.schema.json --input work\example-paper\reviews\crossref_auditor.json
+$paperId = "your-paper-id"
+python scripts\validate_review_json.py --schema schemas\reviewer_output.schema.json --input "work\${paperId}\reviews\crossref_auditor.json" --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 ```
 
 Repeat for all configured reviewer outputs.
@@ -329,11 +346,13 @@ Repeat for all configured reviewer outputs.
 ### 5. Normalize and Deduplicate
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\normalize_review_outputs.py `
-  --paper-id example-paper `
-  --reviews-dir work\example-paper\reviews `
-  --output work\example-paper\editor\normalized_bundle.json `
-  --reviewers-config work\example-paper\selection\selected_reviewers.json
+  --paper-id $paperId `
+  --reviews-dir "work\${paperId}\reviews" `
+  --output "work\${paperId}\editor\normalized_bundle.json" `
+  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 ```
 
 The normalized bundle groups overlapping findings, separates parser artifacts from manuscript issues, and removes process notes from editor-facing synthesis.
@@ -341,13 +360,15 @@ The normalized bundle groups overlapping findings, separates parser artifacts fr
 ### 6. Build Editor Input
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\build_editor_input.py `
-  --paper-id example-paper `
-  --editor-prompt work\example-paper\prompts\editor_report.txt `
-  --bundle work\example-paper\editor\normalized_bundle.json `
-  --reviews-dir work\example-paper\reviews `
-  --output work\example-paper\editor\editor_input.md `
-  --reviewers-config work\example-paper\selection\selected_reviewers.json
+  --paper-id $paperId `
+  --editor-prompt "work\${paperId}\prompts\editor_report.txt" `
+  --bundle "work\${paperId}\editor\normalized_bundle.json" `
+  --reviews-dir "work\${paperId}\reviews" `
+  --output "work\${paperId}\editor\editor_input.md" `
+  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 ```
 
 This writes a deterministic editor brief before the raw JSON inputs. The brief gives the editor internal guidance on optional reviewer selection, the top five high-priority synthesis candidates, additional-finding candidates, section routing, and traceability-map rows. The brief is not intended to be reproduced as report text.
@@ -355,8 +376,9 @@ This writes a deterministic editor brief before the raw JSON inputs. The brief g
 ### 7. Run Editor
 
 ```powershell
-Get-Content work\example-paper\editor\editor_input.md -Raw |
-  codex exec --output-last-message outputs\example-paper\report.md -
+$paperId = "your-paper-id"
+Get-Content "work\${paperId}\editor\editor_input.md" -Raw |
+  codex exec --output-last-message "outputs\${paperId}\report.md" -
 ```
 
 The editor must write the actual final markdown report, not a note saying where the report was saved.
@@ -384,9 +406,11 @@ The highest-priority section is capped at five synthesis findings by `scripts/bu
 ### 8. Check Final Report
 
 ```powershell
+$paperId = "your-paper-id"
+
 python scripts\check_final_report.py `
-  --input outputs\example-paper\report.md `
-  --bundle work\example-paper\editor\normalized_bundle.json
+  --input "outputs\${paperId}\report.md" `
+  --bundle "work\${paperId}\editor\normalized_bundle.json"
 ```
 
 The final report checker rejects reports that are too short, look like run-status notes, omit required headings, omit the grammar appendix when copyedit findings exist, omit the traceability appendix when a normalized bundle is supplied, or omit canonical/source finding identifiers.

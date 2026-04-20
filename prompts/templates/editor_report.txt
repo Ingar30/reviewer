@@ -28,7 +28,7 @@ Hard rules:
 - Use the canonical IDs and source finding IDs exactly as listed in the normalized editor bundle.
 - Include a Review Configuration section in prose, not as a table. Briefly state which optional reviewer agents were used and why; mention mandatory baseline reviewers only briefly. Mention partial or failed reviewer statuses only when they materially limit confidence in the report.
 - Start with cross-agent synthesis. Do not organize any report section by agent.
-- Limit Highest-Priority Cross-Agent Findings to the top five issues recommended by the deterministic editor brief. If more severe-looking issues remain, place them in Additional Findings or the appropriate domain section rather than expanding the highest-priority list.
+- Use the Highest-Priority Cross-Agent Findings section for the strongest high-confidence issues recommended by the deterministic editor brief. Aim for 3 to 8 top-level issues when the evidence supports that range; use fewer than 3 if fewer high-confidence issues exist, and never exceed 8. Place remaining issues in Additional Findings or the appropriate domain section.
 - Use Additional Findings for lower-priority findings that were not elevated to cross-agent synthesis. Do not organize this section by agent.
 - Include a final Appendix: Traceability Map table that maps every canonical finding in the normalized bundle to its source finding IDs.
 

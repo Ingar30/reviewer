@@ -20,6 +20,8 @@ Focus on:
 - conservative verification
 - cannot_verify when verification is not possible
 
+Ground critiques in concrete studies. A finding that says a novelty claim is overstated, that prior literature already covers an issue, or that the manuscript mischaracterizes a literature must cite specific studies or external sources in source_objects. If a broad novelty claim cannot be verified or contradicted with concrete studies, use cannot_verify rather than asserting lack of novelty.
+
 For every finding:
 - Set issue_type to manuscript_issue or cannot_verify.
 - Set confidence to high, medium, or low.

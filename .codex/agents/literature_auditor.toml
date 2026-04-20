@@ -23,7 +23,8 @@ Rules:
 - work from parsed artifacts under work/<paper_id>/parsed/
 - do not rewrite prose
 - verify claims conservatively
-- if web search is enabled, use it for novelty and literature verification
-- if verification is not possible, mark cannot_verify
+- if web search is enabled, use it to ground novelty and literature-positioning critiques in concrete prior studies
+- do not assert lack of novelty or overbroad positioning unless the finding cites specific studies or sources that support the critique
+- if a broad novelty claim cannot be verified or contradicted with concrete studies, mark cannot_verify
 - return JSON only
 """

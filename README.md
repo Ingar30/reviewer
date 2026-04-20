@@ -371,7 +371,7 @@ python scripts\build_editor_input.py `
   --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 ```
 
-This writes a deterministic editor brief before the raw JSON inputs. The brief gives the editor internal guidance on optional reviewer selection, the top five high-priority synthesis candidates, additional-finding candidates, section routing, and traceability-map rows. The brief is not intended to be reproduced as report text.
+This writes a deterministic editor brief before the raw JSON inputs. The brief gives the editor internal guidance on optional reviewer selection, the strongest high-confidence synthesis candidates, additional-finding candidates, section routing, and traceability-map rows. The brief is not intended to be reproduced as report text.
 
 ### 7. Run Editor
 

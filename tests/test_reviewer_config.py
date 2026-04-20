@@ -187,6 +187,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(next(item for item in reviewers if item.name == "parser_quality_auditor").stage, "preflight")
         self.assertEqual(next(item for item in reviewers if item.name == "numerical_auditor").id_prefix, "NUM")
         self.assertTrue(next(item for item in reviewers if item.name == "literature_auditor").search)
+        self.assertTrue(next(item for item in reviewers if item.name == "data_availability_replication_auditor").search)
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").normalization_role, "crossref")
         self.assertEqual(next(item for item in reviewers if item.name == "grammar_auditor").normalization_role, "copyedit")
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").selection_policy, "mandatory")
@@ -698,10 +699,10 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertNotIn("Agent-by-Agent Finding Index", brief)
         self.assertIn("CANON-001", brief)
 
-    def test_editor_brief_caps_highest_priority_candidates(self) -> None:
+    def test_editor_brief_keeps_up_to_eight_high_confidence_candidates(self) -> None:
         reviewer = reviewer_config("claim_evidence_auditor", "CEA")
         findings = []
-        for index in range(1, 7):
+        for index in range(1, 10):
             findings.append(
                 {
                     "canonical_id": f"CANON-{index:03d}",
@@ -717,11 +718,11 @@ class ReviewerConfigTests(unittest.TestCase):
             )
         bundle = {
             "summary": {
-                "issue_class_counts": {"manuscript_issue": 6},
-                "severity_counts": {"high": 6},
+                "issue_class_counts": {"manuscript_issue": 9},
+                "severity_counts": {"high": 9},
             },
             "source_reviewer_outputs": [
-                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 6}
+                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 9}
             ],
             "canonical_findings": findings,
         }
@@ -738,9 +739,62 @@ class ReviewerConfigTests(unittest.TestCase):
         )[0]
         additional = brief.split("## Additional Findings Candidates", 1)[1].split("## Section Routing Guidance", 1)[0]
 
-        self.assertIn("CANON-005", synthesis)
-        self.assertNotIn("CANON-006", synthesis)
-        self.assertIn("CANON-006", additional)
+        self.assertIn("CANON-008", synthesis)
+        self.assertNotIn("CANON-009", synthesis)
+        self.assertIn("CANON-009", additional)
+
+    def test_editor_brief_does_not_promote_lower_confidence_to_reach_minimum(self) -> None:
+        reviewer = reviewer_config("claim_evidence_auditor", "CEA")
+        findings = [
+            {
+                "canonical_id": "CANON-001",
+                "issue_class": "manuscript_issue",
+                "severity": "high",
+                "confidence": "high",
+                "assessment": "no",
+                "source_reviewers": ["claim_evidence_auditor"],
+                "source_findings": [{"reviewer": "claim_evidence_auditor", "id": "CEA-001"}],
+                "claim_text": "High-confidence claim.",
+                "primary_location": {"page": 1, "page_label": "1", "section": "Results"},
+            },
+            {
+                "canonical_id": "CANON-002",
+                "issue_class": "manuscript_issue",
+                "severity": "high",
+                "confidence": "medium",
+                "assessment": "no",
+                "source_reviewers": ["claim_evidence_auditor"],
+                "source_findings": [{"reviewer": "claim_evidence_auditor", "id": "CEA-002"}],
+                "claim_text": "Medium-confidence claim.",
+                "primary_location": {"page": 2, "page_label": "2", "section": "Results"},
+            },
+        ]
+        bundle = {
+            "summary": {
+                "issue_class_counts": {"manuscript_issue": 2},
+                "severity_counts": {"high": 2},
+            },
+            "source_reviewer_outputs": [
+                {"reviewer": "claim_evidence_auditor", "run_status": "ok", "finding_count": 2}
+            ],
+            "canonical_findings": findings,
+        }
+
+        brief = editor_brief_markdown(
+            "paper-x",
+            bundle,
+            [reviewer],
+            {"claim_evidence_auditor": review_output([], "claim_evidence_auditor")},
+        )
+
+        synthesis = brief.split("## Findings Recommended For Cross-Agent Synthesis", 1)[1].split(
+            "## Additional Findings Candidates", 1
+        )[0]
+        additional = brief.split("## Additional Findings Candidates", 1)[1].split("## Section Routing Guidance", 1)[0]
+
+        self.assertIn("CANON-001", synthesis)
+        self.assertNotIn("CANON-002", synthesis)
+        self.assertIn("CANON-002", additional)
 
     def test_editor_report_recovery_uses_last_complete_transcript_report(self) -> None:
         report = "\n".join(

@@ -136,7 +136,7 @@
       "prompt": "data_availability_replication_audit.txt",
       "output": "data_availability_replication_auditor.json",
       "id_prefix": "REPL",
-      "search": false,
+      "search": true,
       "enabled": true,
       "normalization_role": "manuscript",
       "selection_policy": "optional"

@@ -33,6 +33,6 @@ Selection rules:
 - Select abstract_conclusion_consistency_auditor when abstract/introduction/conclusion claims appear important enough to check against the body.
 - Select limitations_external_validity_auditor for papers making policy, welfare, generalizability, or scope claims.
 - Select model_equation_auditor for theory, structural, model-heavy, equation-heavy, or methods papers.
-- Select data_availability_replication_auditor for empirical papers with data/code availability, replication, or reproducibility claims.
+- Select data_availability_replication_auditor for experiments, RCTs, preregistered or pre-planned empirical designs, explicit pre-analysis-plan claims, registry links or IDs, or concrete replication/reproducibility claims. Treat mentions of platforms such as AEA RCT Registry, OSF Registries, AsPredicted, and similar services as strong selection cues.
 
 When unsure, prefer selecting a reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect.

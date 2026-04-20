@@ -21,7 +21,7 @@ TRACEABILITY_APPENDIX_SECTION = "Appendix: Traceability Map"
 SEVERITY_POINTS = {"high": 60, "medium": 35, "low": 10}
 CONFIDENCE_POINTS = {"high": 15, "medium": 8, "low": 0}
 TOP_SYNTHESIS_SCORE = 55
-MAX_SYNTHESIS_FINDINGS = 5
+MAX_SYNTHESIS_FINDINGS = 8
 
 
 def read(path: Path) -> str:
@@ -170,8 +170,8 @@ def route_finding(finding: dict[str, Any]) -> tuple[str, str]:
         return REFERENCE_SECTION, "reference findings belong in the reference-integrity section"
     if "literature_auditor" in reviewers:
         return LITERATURE_SECTION, "literature-auditor findings belong in the literature section"
-    if issue_class == "manuscript_issue" and score >= TOP_SYNTHESIS_SCORE:
-        return HIGHEST_PRIORITY_SECTION, "high-scoring substantive issue for cross-agent synthesis"
+    if issue_class == "manuscript_issue" and finding_confidence(finding) == "high" and score >= TOP_SYNTHESIS_SCORE:
+        return HIGHEST_PRIORITY_SECTION, "high-confidence substantive issue for cross-agent synthesis"
     return ADDITIONAL_FINDINGS_SECTION, "lower-priority substantive item for the additional-findings table"
 
 

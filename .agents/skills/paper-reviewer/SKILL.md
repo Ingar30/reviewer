@@ -64,6 +64,9 @@ Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewe
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
 - Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
 - Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
+- Literature and novelty critiques must be grounded in concrete studies or marked `cannot_verify`; do not assert lack of novelty from vague prior-work impressions.
+- If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
+- Treat `scripts/check_final_report.py` as a structure and traceability smoke check, not as independent verification that external sources are real or current.
 - If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
 
 ## Output conventions
@@ -72,4 +75,4 @@ Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewe
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`
 
-The expected final report shape is synthesis-first: executive summary, prose review configuration, at most five highest-priority findings, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, and traceability map appendix.
+The expected final report shape is synthesis-first: executive summary, prose review configuration, roughly 3 to 8 high-confidence highest-priority findings when supported by the evidence, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, external-sources appendix when external evidence is cited, and traceability map appendix.

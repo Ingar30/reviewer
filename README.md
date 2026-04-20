@@ -399,9 +399,12 @@ The intended report structure starts with synthesis and keeps audit metadata com
 - `## Additional Findings`
 - domain-specific sections for literature, references, parser caveats, and cannot-verify items
 - `## Appendix: Grammar and Copyediting Issues` when copyedit findings exist
+- `## Appendix: External Sources Cited In This Review` when external sources are named as review evidence
 - `## Appendix: Traceability Map`
 
-The highest-priority section is capped at five synthesis findings by `scripts/build_editor_input.py`. Lower-priority substantive issues go to `Additional Findings`, cannot-verify items should use a compact table, and all canonical/source IDs should appear in the traceability appendix rather than repeated body footers.
+The highest-priority section should contain the strongest high-confidence synthesis findings. The editor prompt asks for judgment rather than a fixed count: aim for 3 to 8 top-level issues when the evidence supports that range, use fewer than 3 if fewer high-confidence issues exist, and never exceed 8. Lower-priority substantive issues go to `Additional Findings`, cannot-verify items should use a compact table, and all canonical/source IDs should appear in the traceability appendix rather than repeated body footers.
+
+Literature and novelty critiques should be grounded in concrete studies or external sources from reviewer evidence. If the report names external studies, registry records, web pages, or other external sources as evidence, the editor should include a compact external-sources appendix using only details already present in `source_objects`, `claim_evidence_links`, or the original reviewer JSON. The appendix is not a replacement bibliography for the reviewed manuscript, and missing authors, years, URLs, DOIs, or titles should not be filled from memory.
 
 ### 8. Check Final Report
 
@@ -413,7 +416,7 @@ python scripts\check_final_report.py `
   --bundle "work\${paperId}\editor\normalized_bundle.json"
 ```
 
-The final report checker rejects reports that are too short, look like run-status notes, omit required headings, omit the grammar appendix when copyedit findings exist, omit the traceability appendix when a normalized bundle is supplied, or omit canonical/source finding identifiers.
+The final report checker rejects reports that are too short, look like run-status notes, omit required headings, omit the grammar appendix when copyedit findings exist, omit the traceability appendix when a normalized bundle is supplied, or omit canonical/source finding identifiers. It is a smoke check for structure and traceability coverage, not a semantic guarantee that every external source is real, current, or correctly characterized.
 
 ## Git Hygiene
 

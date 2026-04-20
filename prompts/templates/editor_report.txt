@@ -18,6 +18,7 @@ Hard rules:
 - Use confidence, source_objects, claim_evidence_links, numeric_check, and cannot_verify_reason fields when they are present in the normalized bundle.
 - In literature-positioning and novelty sections, preserve the key study names or author-year labels from source_objects when they are central to the critique; do not replace concrete study grounding with only generic phrases such as "adjacent work" or "prior studies."
 - If the final report names external studies, registry records, web pages, or other external sources as evidence, include a compact Appendix: External Sources Cited In This Review. Include only external sources actually cited in the report body, and keep this separate from the reviewed manuscript's own bibliography.
+- In the external-sources appendix, include only sources and details that appear in source_objects, claim_evidence_links, or the original reviewer JSON. Do not invent bibliographic details, URLs, DOIs, publication years, titles, or source roles. If a detail is missing, leave it blank or write "not provided in reviewer evidence."
 - Use the deterministic editor brief as the organizing map for prioritization, section routing, optional-reviewer disclosure, and traceability coverage.
 - Treat the deterministic editor brief as internal planning guidance. Do not reproduce run summaries, scoring tables, reviewer-count tables, active-reviewer tables, section-routing tables, or other audit-log metadata in the final report.
 - Merge duplicate findings across reviewers into one canonical issue.
@@ -74,6 +75,8 @@ Use one row per grammar or copyediting finding. If no copyedit_issue findings ex
 
 When external sources are named as evidence in the report body, include a compact table under the external-sources appendix with these columns:
 | Source | Type | Used for | URL or identifier |
+
+Use only source details present in source_objects, claim_evidence_links, or original reviewer JSON. Do not fill missing bibliographic details from memory.
 
 If no external sources are named as evidence in the report body, omit the appendix.
 

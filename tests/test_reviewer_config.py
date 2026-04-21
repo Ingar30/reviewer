@@ -181,6 +181,10 @@ class ReviewerConfigTests(unittest.TestCase):
                 "limitations_external_validity_auditor",
                 "model_equation_auditor",
                 "data_availability_replication_auditor",
+                "institutional_context_auditor",
+                "power_multiple_testing_auditor",
+                "design_randomization_auditor",
+                "economic_magnitude_auditor",
             ],
         )
         self.assertEqual([item.output for item in reviewers], [f"{item.name}.json" for item in reviewers])
@@ -188,6 +192,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(next(item for item in reviewers if item.name == "numerical_auditor").id_prefix, "NUM")
         self.assertTrue(next(item for item in reviewers if item.name == "literature_auditor").search)
         self.assertTrue(next(item for item in reviewers if item.name == "data_availability_replication_auditor").search)
+        self.assertTrue(next(item for item in reviewers if item.name == "institutional_context_auditor").search)
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").normalization_role, "crossref")
         self.assertEqual(next(item for item in reviewers if item.name == "grammar_auditor").normalization_role, "copyedit")
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").selection_policy, "mandatory")

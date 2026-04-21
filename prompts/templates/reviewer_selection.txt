@@ -34,5 +34,9 @@ Selection rules:
 - Select limitations_external_validity_auditor for papers making policy, welfare, generalizability, or scope claims.
 - Select model_equation_auditor for theory, structural, model-heavy, equation-heavy, or methods papers.
 - Select data_availability_replication_auditor for experiments, RCTs, preregistered or pre-planned empirical designs, explicit pre-analysis-plan claims, registry links or IDs, or concrete replication/reproducibility claims. Treat mentions of platforms such as AEA RCT Registry, OSF Registries, AsPredicted, and similar services as strong selection cues.
+- Select institutional_context_auditor only when material legal, regulatory, platform, market-design, institutional-process, voting-rule, or event-context claims affect interpretation and targeted external verification would add value.
+- Select power_multiple_testing_auditor only when empirical results involve preregistrations, many outcomes, many subgroup tests, many treatment arms, strong null-effect claims, or unclear confirmatory versus exploratory status.
+- Select design_randomization_auditor only for experiments, RCTs, survey experiments, or assigned-treatment designs where treatment assignment, omitted arms, attrition after assignment, spillovers, contamination, carryover, or implementation fidelity could affect interpretation.
+- Select economic_magnitude_auditor only when the paper makes welfare, willingness-to-pay, cost, calibration, investment-share, policy-magnitude, practical-significance, or "economically large" claims.
 
-When unsure, prefer selecting a reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect.
+When unsure, prefer selecting a mature reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect. For pilot reviewers, require a clear selection cue and a plausible material issue class; do not select them merely because they could make generic documentation or presentation suggestions.

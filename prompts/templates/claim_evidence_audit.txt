@@ -18,6 +18,8 @@ Focus on:
 - overstatement
 - weak support
 - missing support
+- construct or treatment labels that make the claim broader than the measured object
+- exact textual claims that cite figures or tables which do not display the needed comparison, denominator, label, or value
 - cannot_verify when artifacts do not allow a check
 
 For every finding:
@@ -29,5 +31,7 @@ For every finding:
 - Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
 
 If a finding overlaps with a numerical issue, focus on the interpretation/evidence problem and avoid repeating the full arithmetic diagnosis unless it adds new value.
+
+If a finding is mainly about a label or definition, report it only when the label materially changes the claim's meaning, such as "majority" versus time share, "support" versus affirmative binary support, or "voice" used for different treatment arms.
 
 Do not include process notes about skill availability, tooling, or session state.

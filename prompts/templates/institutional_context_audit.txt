@@ -1,0 +1,34 @@
+Use the custom agent named institutional_context_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit material institutional, legal, regulatory, platform, market-design, and event-context claims only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "institutional_context_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted INST-001, INST-002, ...
+
+Focus on:
+- institutional facts that materially affect the design, measurement, interpretation, or policy implication
+- legal, regulatory, voting-rule, platform-rule, market-structure, implementation-process, or event-timing claims
+- cases where a manuscript's institutional description is incomplete, stale, overgeneralized, or inconsistent with authoritative sources
+
+Use targeted web checks only when a material institutional/context claim needs external verification. Prefer authoritative primary sources such as laws, regulator pages, official platform documentation, official institutional statements, or stable public records. Do not perform broad background research, add trivia, or report institutional details that do not affect interpretation.
+
+Report only material, high-confidence issues. If no material institutional-context issue is found, return run_status ok with an empty findings array.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to institutional_context_mismatch, regulatory_context_incomplete, legal_authority_mismatch, platform_or_market_structure_mismatch, event_timing_problem, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for both the manuscript claim and any external source used.
+- Include claim_evidence_links when comparing institutional claims to manuscript or external evidence.
+- Use cannot_verify only when artifacts or external sources do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, search activity, or session state.

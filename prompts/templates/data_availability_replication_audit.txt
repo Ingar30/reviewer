@@ -17,6 +17,7 @@ Focus on:
 - whether experiments, RCTs, surveys, or other prospectively planned empirical designs identify preregistrations or pre-analysis plans
 - registry records, pre-analysis plans, or preregistration materials linked or explicitly identified by the manuscript
 - consistency between planned and reported samples, exclusions, treatment arms, outcomes, estimands, specifications, weighting, and robustness checks
+- consistency between planned and reported outcome families, subgroup analyses, exploratory versus confirmatory analyses, and omitted or collapsed treatment arms
 - whether deviations from the plan are disclosed clearly enough for readers to distinguish planned analyses from exploratory or changed analyses
 - data, code, or replication-package claims only when the manuscript makes a concrete availability/reproducibility claim, a directly relevant availability statement is at issue, or missing materials prevent checking a material planned-vs-reported issue
 

@@ -8,7 +8,7 @@ This repo is both:
 
 The goal is not to build a polished product immediately. The goal is to learn a workflow with repo guidance, project-scoped config, custom agents, repo-scoped skills, `codex exec`, JSON schemas, deterministic preprocessing, validation, and editor synthesis.
 
-Current status: `scripts/review_paper.py` is the default fresh-run entry point. The workflow has been smoke-tested across multiple papers with parser-quality preflight, dynamic reviewer selection, selected optional reviewers, editor synthesis, final report checking, and editor-only report refreshes from existing reviewer evidence.
+Current status: `scripts/review_paper.py` is the default fresh-run entry point. The workflow has been smoke-tested across multiple papers with parser-quality preflight, dynamic reviewer selection, selected optional reviewers, editor synthesis, final report checking, and editor-only report refreshes from existing reviewer evidence. Recent editor-only reruns on `example-paper` and `example-paper` were also used to tune the editor prompt so central parser artifacts stay visible in prose when they materially distort auditability of a core formula, table, figure, or citation target.
 
 For an external-facing explanation of the full workflow, design choices, artifacts, and prompt appendix, see `PROJECT_DOCUMENTATION.md`.
 
@@ -255,6 +255,8 @@ python scripts\check_final_report.py `
   --bundle "work\${paperId}\editor\normalized_bundle.json"
 ```
 
+Use this path when you want to test editor changes conservatively. For example, a prompt change that affects how parser caveats are surfaced in prose can be evaluated by rerunning only the editor against the same normalized bundle and then comparing the refreshed report with the prior report. In recent reruns, this was a clear improvement for `example-paper`, where the report now keeps a central calibration-formula parsing defect visible in the parser-caveats prose instead of leaving it mostly to traceability, and roughly neutral to mildly positive for `example-paper`.
+
 ### 1. Preprocess
 
 ```powershell
@@ -314,8 +316,14 @@ The default reviewer agents are configured in `config/reviewers.json`:
 - `limitations_external_validity_auditor` (optional)
 - `model_equation_auditor` (optional)
 - `data_availability_replication_auditor` (optional)
+- `institutional_context_auditor` (optional pilot)
+- `power_multiple_testing_auditor` (optional pilot)
+- `design_randomization_auditor` (optional pilot)
+- `economic_magnitude_auditor` (optional pilot)
 
 Each reviewer reads from `work/<paper_id>/parsed/` and writes one JSON file under `work/<paper_id>/reviews/`.
+
+The pilot reviewers are deliberately narrow and should be selected only when the paper contains the relevant risk: institutional/legal/platform context, power or multiplicity interpretation, experimental-assignment implementation, or economic-magnitude claims. They are not intended to replace the mature baseline reviewers or to generate generic documentation requests.
 
 The basic command shape is:
 
@@ -405,6 +413,8 @@ The intended report structure starts with synthesis and keeps audit metadata com
 The highest-priority section should contain the strongest high-confidence synthesis findings. The editor prompt asks for judgment rather than a fixed count: aim for 3 to 8 top-level issues when the evidence supports that range, use fewer than 3 if fewer high-confidence issues exist, and never exceed 8. Lower-priority substantive issues go to `Additional Findings`, cannot-verify items should use a compact table, and all canonical/source IDs should appear in the traceability appendix rather than repeated body footers.
 
 Literature and novelty critiques should be grounded in concrete studies or external sources from reviewer evidence. If the report names external studies, registry records, web pages, or other external sources as evidence, the editor should include a compact external-sources appendix using only details already present in `source_objects`, `claim_evidence_links`, or the original reviewer JSON. The appendix is not a replacement bibliography for the reviewed manuscript, and missing authors, years, URLs, DOIs, or titles should not be filled from memory.
+
+Parser and preprocessing issues should remain separate from manuscript issues, but they should not be buried when they materially distort auditability of a central formula, table, figure, citation target, or quantitative claim. When a parser artifact changes how a key result could be read, the editor should mention it explicitly in the prose of `Parser and Preprocessing Caveats`, and it can belong in `Suggested Revision Priorities` when the auditability risk is substantial.
 
 ### 8. Check Final Report
 

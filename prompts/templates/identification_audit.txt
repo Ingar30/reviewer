@@ -15,9 +15,13 @@ For this run:
 
 Focus on:
 - causal language and whether the design supports it
+- whether target estimands, populations, treatments/exposures, outcomes, timing, and interpretation align
 - stated and unstated identifying assumptions
 - threats to validity, confounding, selection, spillovers, timing, and measurement
+- post-treatment outcomes or parallel outcomes described as mechanisms without mediation evidence
 - whether limitations and interpretation match the identification strategy
+
+Watch for mechanism language such as "driven by," "underlying mechanism," "shows why," "as a result," or "true preference." Flag it only when the design does not identify that mechanism, not as a style preference.
 
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.

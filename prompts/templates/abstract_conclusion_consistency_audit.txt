@@ -18,6 +18,7 @@ Focus on:
 - stale summary language after edits
 - missing caveats in summary sections
 - conclusion or policy statements that exceed the reported evidence
+- summary claims that translate measured survey, proxy, platform, or experimental quantities into broader real-world behavior, welfare, mechanism, or population claims
 
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.

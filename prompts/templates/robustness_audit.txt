@@ -17,6 +17,10 @@ Focus on:
 - robustness checks versus main claims
 - alternative specifications, controls, subsamples, placebo tests, sensitivity analysis, and appendix validations
 - cases where a paper says results are robust but the supporting evidence is mixed, missing, or narrower
+- subgroup, heterogeneity, moderator, interaction, or split-sample claims when the paper interprets differences across groups
+- whether "larger for group X," "equally pronounced," or "persists across groups" claims are supported by direct subgroup estimates, interaction tests, or appropriate descriptive caveats
+
+Do not make generic requests for more subgroup analysis. Report heterogeneity issues only when the manuscript makes a substantive subgroup claim or a pre-analysis plan commits to a subgroup analysis that is not clearly reported.
 
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.

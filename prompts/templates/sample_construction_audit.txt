@@ -17,6 +17,8 @@ Focus on:
 - sample restrictions, exclusions, attrition, denominators, missingness, and observation counts
 - variable definitions and transformations
 - consistency between data section, tables, figures, appendices, and result interpretation
+- whether claims use person-level, observation-level, account-level, scenario-level, or time-weighted quantities consistently
+- whether table and figure denominators or conditioning samples are clear enough for the claims they support
 
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.

@@ -140,6 +140,46 @@
       "enabled": true,
       "normalization_role": "manuscript",
       "selection_policy": "optional"
+    },
+    {
+      "name": "institutional_context_auditor",
+      "prompt": "institutional_context_audit.txt",
+      "output": "institutional_context_auditor.json",
+      "id_prefix": "INST",
+      "search": true,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "power_multiple_testing_auditor",
+      "prompt": "power_multiple_testing_audit.txt",
+      "output": "power_multiple_testing_auditor.json",
+      "id_prefix": "POWER",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "design_randomization_auditor",
+      "prompt": "design_randomization_audit.txt",
+      "output": "design_randomization_auditor.json",
+      "id_prefix": "RAND",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
+    },
+    {
+      "name": "economic_magnitude_auditor",
+      "prompt": "economic_magnitude_audit.txt",
+      "output": "economic_magnitude_auditor.json",
+      "id_prefix": "MAG",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "optional"
     }
   ]
 }

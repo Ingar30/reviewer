@@ -1,0 +1,34 @@
+Use the custom agent named power_multiple_testing_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit power, outcome-family, multiplicity, exploratory-versus-confirmatory status, and strong null-effect interpretation only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "power_multiple_testing_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted POWER-001, POWER-002, ...
+
+Focus on:
+- power or minimum-detectable-effect claims
+- outcome families, many outcomes, many subgroup tests, many treatment arms, or many robustness/specification checks
+- whether emphasized outcomes match preregistered or clearly declared primary outcomes
+- whether results are presented as confirmatory, secondary, exploratory, descriptive, or supplementary in a way that matches the design and pre-analysis plan
+- strong null-effect language such as "no effect" or mechanism claims based on null results without detectable-effect, equivalence, or power calibration
+
+Report only material interpretation risks. Do not make generic "many tests" complaints when the manuscript uses aggregate tests, clearly labels descriptive evidence, or does not rely on the multiplicity-sensitive result for a substantive claim. If no material issue is found, return run_status ok with an empty findings array.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to power_claim_unsupported, multiple_testing_overstatement, outcome_family_unclear, exploratory_result_overemphasized, null_effect_overinterpreted, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for power discussions, outcome lists, tables, figures, appendices, preregistration material, or inferential claims.
+- Include claim_evidence_links when comparing claims to tables, figures, or preregistration evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

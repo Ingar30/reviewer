@@ -55,6 +55,8 @@ If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_re
 
 Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewer selection, or normalized findings need to change.
 
+Use editor-only refresh to test narrowly scoped editor prompt changes against the same evidence bundle before changing the full workflow. This is especially useful for checking whether report emphasis improved without changing reviewer evidence, such as when adjusting how parser/preprocessing caveats are surfaced in prose.
+
 ## Critical rules
 - Internal reviewers return JSON only.
 - The editor is the only component that emits final markdown.
@@ -66,7 +68,9 @@ Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewe
 - Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
 - Literature and novelty critiques must be grounded in concrete studies or marked `cannot_verify`; do not assert lack of novelty from vague prior-work impressions.
 - If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
+- Do not bury parser/preprocessing issues when they materially distort auditability of a central formula, table, figure, citation target, or quantitative claim. Keep them in the parser-caveats section, but mention them explicitly in prose and treat them as revision-priority material when the auditability risk is substantial.
 - Treat `scripts/check_final_report.py` as a structure and traceability smoke check, not as independent verification that external sources are real or current.
+- Treat institutional context, power/multiple testing, design/randomization, and economic magnitude reviewers as narrow optional pilots. They should run only when the selected paper has strong cues for those risks.
 - If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
 
 ## Output conventions
@@ -75,4 +79,4 @@ Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewe
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`
 
-The expected final report shape is synthesis-first: executive summary, prose review configuration, roughly 3 to 8 high-confidence highest-priority findings when supported by the evidence, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, external-sources appendix when external evidence is cited, and traceability map appendix.
+The expected final report shape is synthesis-first: executive summary, prose review configuration, roughly 3 to 8 high-confidence highest-priority findings when supported by the evidence, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, external-sources appendix when external evidence is cited, parser-caveat prose that keeps central auditability failures visible, and traceability map appendix.

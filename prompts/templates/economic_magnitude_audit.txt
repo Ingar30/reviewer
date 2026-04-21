@@ -1,0 +1,33 @@
+Use the custom agent named economic_magnitude_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit economic magnitude and practical-significance interpretation only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "economic_magnitude_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted MAG-001, MAG-002, ...
+
+Focus on:
+- whether effect-size and practical-significance claims match appropriate baselines, units, populations, denominators, and scales
+- welfare, willingness-to-pay, cost, calibration, investment-share, policy-magnitude, or materiality claims
+- absolute versus relative effects, percent versus percentage-point changes, standardized units, raw versus normalized values, and aggregation levels
+- practical-significance claims not supported by reported magnitudes
+
+Report only places where magnitude language materially changes interpretation. Do not duplicate arithmetic checks handled by the numerical auditor unless the central problem is interpretation of magnitude. If no material issue is found, return run_status ok with an empty findings array.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to magnitude_overstatement, baseline_missing, unit_or_scale_mismatch, practical_significance_unclear, welfare_or_cost_overreach, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for magnitude claims, tables, figures, baseline values, sample descriptions, calibration notes, or welfare/cost statements.
+- Include claim_evidence_links when comparing magnitude claims to evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

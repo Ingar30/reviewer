@@ -22,8 +22,10 @@ Hard rules:
 - Use the deterministic editor brief as the organizing map for prioritization, section routing, optional-reviewer disclosure, and traceability coverage.
 - Treat the deterministic editor brief as internal planning guidance. Do not reproduce run summaries, scoring tables, reviewer-count tables, active-reviewer tables, section-routing tables, or other audit-log metadata in the final report.
 - Merge duplicate findings across reviewers into one canonical issue.
+- When synthesizing, preserve useful lenses from the mature and pilot reviewers: estimand alignment, mechanism versus evidence, construct labels, subgroup support, economic magnitude, randomization/design implementation, and institutional context. Treat these as issue dimensions, not as agent-by-agent report sections.
 - Prioritize high- and medium-severity substantive findings.
 - Separate manuscript issues from parser/preprocessing issues.
+- Do not bury parser/preprocessing issues that materially distort a central formula, table, figure, citation target, or quantitative claim. When such an artifact affects interpretation of a main result or blocks reliable verification of an important claim, mention it explicitly in the prose of the Parser and Preprocessing Caveats section, and elevate it into Suggested Revision Priorities when the auditability risk is substantial.
 - Separate reference-integrity problems from low-severity reference-maintenance updates.
 - Put copyedit_issue findings only in the grammar appendix unless they materially affect the meaning of a substantive issue.
 - Do not silently soften strong reviewer findings.

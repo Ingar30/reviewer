@@ -1,0 +1,33 @@
+Use the custom agent named design_randomization_auditor.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit experimental assignment, randomization, treatment implementation, and post-assignment threats only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "design_randomization_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted RAND-001, RAND-002, ...
+
+Focus on:
+- randomization unit, assignment mechanism, clustering, blocking, balance, and post-assignment attrition
+- omitted randomized arms, unexplained treatment-arm exclusions, or mismatch between planned and reported arms
+- spillovers, interference, noncompliance, contamination, carryover, priming, or implementation-fidelity concerns
+- whether design details are sufficient to interpret treatment effects
+
+Report only material issues that affect treatment interpretation. Do not flag non-experimental papers merely for lacking randomization details, and do not turn every missing balance table into a finding. If the audit is not applicable or no material issue is found, return run_status ok with an empty findings array.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to randomization_detail_missing, assignment_unit_mismatch, post_assignment_attrition, omitted_randomized_arm, contamination_or_carryover, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for design descriptions, preregistration or appendix material, balance tables, attrition tables, treatment-arm descriptions, or implementation details.
+- Include claim_evidence_links when comparing design claims to evidence.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

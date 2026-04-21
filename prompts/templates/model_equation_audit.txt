@@ -17,6 +17,7 @@ Focus on:
 - notation definitions and reuse
 - equation signs, variables, assumptions, constraints, and interpretation
 - consistency between propositions, text, tables, figures, and equations
+- notation or definition drift between model text, calibration tables, table notes, and appendix formulas
 - model claims that do not follow from the displayed setup
 
 For every finding:

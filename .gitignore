@@ -4,3 +4,15 @@ __pycache__/
 work/
 outputs/
 inputs/*.pdf
+PROJECT_DOCUMENTATION.html
+PROJECT_DOCUMENTATION.jpeg
+PROJECT_DOCUMENTATION.pdf
+PROJECT_DOCUMENTATION.png
+Slides/**/*.aux
+Slides/**/*.log
+Slides/**/*.nav
+Slides/**/*.out
+Slides/**/*.snm
+Slides/**/*.toc
+Slides/**/*.vrb
+Slides/sharp_review_pages/

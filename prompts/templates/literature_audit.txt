@@ -1,4 +1,4 @@
-Use the custom agent named literature_auditor.
+Act as the literature_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

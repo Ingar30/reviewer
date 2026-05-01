@@ -1,4 +1,4 @@
-Use the custom agent named power_multiple_testing_auditor.
+Act as the power_multiple_testing_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

@@ -1,4 +1,4 @@
-Use the custom agent named sample_construction_auditor.
+Act as the sample_construction_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

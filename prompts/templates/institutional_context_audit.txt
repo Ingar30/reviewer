@@ -1,4 +1,4 @@
-Use the custom agent named institutional_context_auditor.
+Act as the institutional_context_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

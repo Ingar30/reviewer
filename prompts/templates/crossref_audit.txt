@@ -1,4 +1,4 @@
-Use the custom agent named crossref_auditor.
+Act as the crossref_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

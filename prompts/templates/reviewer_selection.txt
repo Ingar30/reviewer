@@ -1,4 +1,4 @@
-Use the custom agent named reviewer_selector.
+Act as the reviewer_selector for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

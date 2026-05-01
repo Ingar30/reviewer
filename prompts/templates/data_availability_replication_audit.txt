@@ -1,4 +1,4 @@
-Use the custom agent named data_availability_replication_auditor.
+Act as the data_availability_replication_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

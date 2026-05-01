@@ -23,7 +23,7 @@ ISSUE_CLASSES = {
     "cannot_verify",
 }
 PROCESS_NOTE_RE = re.compile(
-    r"\b(?:skill|tool|session|local checks|no files were written|no files were edited|requested custom agent)\b",
+    r"\b(?:skill|tool|session|local checks|no files were written|no files were edited)\b",
     re.IGNORECASE,
 )
 

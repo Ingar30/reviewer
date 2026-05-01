@@ -1,4 +1,4 @@
-Use the custom agent named abstract_conclusion_consistency_auditor.
+Act as the abstract_conclusion_consistency_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

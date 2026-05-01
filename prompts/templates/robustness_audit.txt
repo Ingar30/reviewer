@@ -1,4 +1,4 @@
-Use the custom agent named robustness_auditor.
+Act as the robustness_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

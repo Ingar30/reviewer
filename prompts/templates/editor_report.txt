@@ -1,4 +1,4 @@
-Use the custom agent named editor.
+Act as the editor for this run.
 
 You will receive:
 1. a deterministic editor brief,

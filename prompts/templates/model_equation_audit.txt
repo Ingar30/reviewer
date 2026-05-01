@@ -1,4 +1,4 @@
-Use the custom agent named model_equation_auditor.
+Act as the model_equation_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

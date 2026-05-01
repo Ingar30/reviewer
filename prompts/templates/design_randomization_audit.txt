@@ -1,4 +1,4 @@
-Use the custom agent named design_randomization_auditor.
+Act as the design_randomization_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

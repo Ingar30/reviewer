@@ -1,4 +1,4 @@
-Use the custom agent named parser_quality_auditor.
+Act as the parser_quality_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

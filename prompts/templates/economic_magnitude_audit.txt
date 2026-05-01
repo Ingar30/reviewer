@@ -1,4 +1,4 @@
-Use the custom agent named economic_magnitude_auditor.
+Act as the economic_magnitude_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

@@ -1,4 +1,4 @@
-Use the custom agent named claim_evidence_auditor.
+Act as the claim_evidence_auditor for this run.
 
 Use the repo guidance and the paper-reviewer workflow.
 

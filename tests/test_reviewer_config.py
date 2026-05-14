@@ -1017,6 +1017,13 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(metrics["zero_finding_selected_optional"], ["data_availability_replication_auditor"])
         self.assertEqual(metrics["score"], 86.0)
 
+    def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
+        prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
+
+        self.assertIn("5 to 9 optional reviewers", prompt)
+        self.assertIn("at most 2 pilot reviewers", prompt)
+        self.assertIn("Use skipped_optional_reviewers", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

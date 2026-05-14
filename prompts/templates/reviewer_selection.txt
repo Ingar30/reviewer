@@ -24,6 +24,8 @@ Classification guidance:
 - unknown: parsed artifacts are too limited to classify confidently.
 
 Selection rules:
+- Treat reviewer selection as a budgeted triage decision, not a checklist. A typical paper should select 5 to 9 optional reviewers. Select 10 or more optional reviewers only when the paper has multiple central methods, empirical, reference, and external-validity risks and the extra reviewers are likely to produce non-overlapping findings.
+- For every selected optional reviewer, the reason must identify the concrete parsed cue and the distinct risk it will audit. If two reviewers would likely inspect the same claims, select the more direct reviewer and skip the other with a reason.
 - Select numerical_auditor for papers with important numeric claims, tables, figures, or appendix estimates.
 - Select claim_evidence_auditor for papers with substantive empirical, policy, or interpretive claims tied to displayed evidence.
 - Select literature_auditor for papers with novelty, positioning, or prior-work characterization claims.
@@ -33,10 +35,14 @@ Selection rules:
 - Select abstract_conclusion_consistency_auditor when abstract/introduction/conclusion claims appear important enough to check against the body.
 - Select limitations_external_validity_auditor for papers making policy, welfare, generalizability, or scope claims.
 - Select model_equation_auditor for theory, structural, model-heavy, equation-heavy, or methods papers.
-- Select data_availability_replication_auditor for experiments, RCTs, preregistered or pre-planned empirical designs, explicit pre-analysis-plan claims, registry links or IDs, or concrete replication/reproducibility claims. Treat mentions of platforms such as AEA RCT Registry, OSF Registries, AsPredicted, and similar services as strong selection cues.
-- Select institutional_context_auditor only when material legal, regulatory, platform, market-design, institutional-process, voting-rule, or event-context claims affect interpretation and targeted external verification would add value.
-- Select power_multiple_testing_auditor only when empirical results involve preregistrations, many outcomes, many subgroup tests, many treatment arms, strong null-effect claims, or unclear confirmatory versus exploratory status.
-- Select design_randomization_auditor only for experiments, RCTs, survey experiments, or assigned-treatment designs where treatment assignment, omitted arms, attrition after assignment, spillovers, contamination, carryover, or implementation fidelity could affect interpretation.
-- Select economic_magnitude_auditor only when the paper makes welfare, willingness-to-pay, cost, calibration, investment-share, policy-magnitude, practical-significance, or "economically large" claims.
+- Select data_availability_replication_auditor only for experiments, RCTs, preregistered or pre-planned empirical designs, explicit pre-analysis-plan claims, registry links or IDs, concrete replication/reproducibility claims, or data/code availability claims that materially affect the paper's credibility. Treat mentions of platforms such as AEA RCT Registry, OSF Registries, AsPredicted, and similar services as strong selection cues.
+- Select institutional_context_auditor only when material legal, regulatory, platform, market-design, institutional-process, voting-rule, or event-context claims affect interpretation and targeted external verification would add value beyond literature/reference checks.
+- Select power_multiple_testing_auditor only when empirical results involve preregistrations, many outcomes, many subgroup tests, many treatment arms, strong null-effect claims, or unclear confirmatory versus exploratory status, and those multiplicity issues are central to the reported contribution.
+- Select design_randomization_auditor only for experiments, RCTs, survey experiments, or assigned-treatment designs where treatment assignment, omitted arms, attrition after assignment, spillovers, contamination, carryover, or implementation fidelity could affect interpretation. Do not select it for ordinary observational comparisons or vague mentions of study order unless assignment itself is central.
+- Select economic_magnitude_auditor only when the paper makes welfare, willingness-to-pay, cost, calibration, investment-share, policy-magnitude, practical-significance, or "economically large" claims that are central enough to merit a separate audit.
 
-When unsure, prefer selecting a mature reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect. For pilot reviewers, require a clear selection cue and a plausible material issue class; do not select them merely because they could make generic documentation or presentation suggestions.
+Pilot-reviewer budget:
+- The pilot reviewers are data_availability_replication_auditor, institutional_context_auditor, power_multiple_testing_auditor, design_randomization_auditor, and economic_magnitude_auditor.
+- Select at most 2 pilot reviewers by default. Select 3 or more pilot reviewers only if each has a distinct, central, high-stakes cue and the notes explain why the extra pilot coverage is worth the added review length.
+
+When unsure, prefer selecting a mature reviewer if its audit would catch high-impact errors and the parsed artifacts contain enough material to inspect. For pilot reviewers, require a clear selection cue and a plausible material issue class; do not select them merely because they could make generic documentation or presentation suggestions. Use skipped_optional_reviewers to document useful-but-lower-priority reviewers that were not selected under the budget.

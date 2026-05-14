@@ -1032,6 +1032,13 @@ class ReviewerConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(FileNotFoundError, "Editor refresh prerequisites"):
             require_paths({"normalized bundle": missing})
 
+    def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
+        prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
+
+        self.assertIn("5 to 9 optional reviewers", prompt)
+        self.assertIn("at most 2 pilot reviewers", prompt)
+        self.assertIn("Use skipped_optional_reviewers", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

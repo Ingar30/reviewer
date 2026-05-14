@@ -1,0 +1,7 @@
+The treatment is assigned after baseline measurement.
+
+Table 1: Outcome summary
+
+Group   Mean outcome   N
+Treatment   12.0   100
+Control     10.0   100

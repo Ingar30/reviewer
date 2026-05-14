@@ -1,0 +1,107 @@
+{
+  "type": "object",
+  "properties": {
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_status": {
+      "type": "string",
+      "enum": ["ok", "partial", "failed"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "parser_finding_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue_summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["mitigated", "partially_mitigated", "requires_reprocess", "not_repairable"]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "prefer_existing_fallback",
+              "add_reviewer_overlay",
+              "requires_deterministic_preprocess_change",
+              "cannot_address_safely"
+            ]
+          },
+          "reviewer_guidance": {
+            "type": "string",
+            "minLength": 1
+          },
+          "preferred_source_paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "avoid_source_paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "verification_steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "residual_risk": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "parser_finding_id",
+          "issue_summary",
+          "status",
+          "action",
+          "reviewer_guidance",
+          "preferred_source_paths",
+          "avoid_source_paths",
+          "verification_steps",
+          "residual_risk"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reviewer_brief": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "paper_id",
+    "run_status",
+    "summary",
+    "repairs",
+    "reviewer_brief",
+    "limitations"
+  ],
+  "additionalProperties": false
+}

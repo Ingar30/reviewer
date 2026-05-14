@@ -14,7 +14,9 @@ if str(SCRIPTS_DIR) not in sys.path:
 from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures, external_source_urls  # noqa: E402
 from check_shareable_repo import private_tracking_violations  # noqa: E402
 from check_tracked_sensitive_names import suspicious_files  # noqa: E402
+from evaluate_parser_repair import evaluate_plan  # noqa: E402
 from evaluate_prior_runs import aggregate, selector_metrics  # noqa: E402
+from render_prompts import append_parser_repair_note  # noqa: E402
 from build_editor_input import (  # noqa: E402
     ADDITIONAL_FINDINGS_SECTION,
     GRAMMAR_APPENDIX_SECTION,
@@ -28,6 +30,7 @@ from build_editor_input import (  # noqa: E402
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
 from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
+from run_parser_repair_agent import repair_notes_markdown, validate_plan  # noqa: E402
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -1162,6 +1165,77 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual(portable_path(inside, root), "work/paper")
         self.assertEqual(portable_path(outside, root), str(outside))
+
+    def test_parser_repair_plan_validation_and_notes(self) -> None:
+        plan = {
+            "paper_id": "paper-x",
+            "run_status": "ok",
+            "summary": "Prepared a parser repair overlay.",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "issue_summary": "Table extraction is unreliable.",
+                    "status": "partially_mitigated",
+                    "action": "prefer_existing_fallback",
+                    "reviewer_guidance": "Use the page image and raw page text instead of the table CSV.",
+                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                    "avoid_source_paths": ["work/paper-x/parsed/tables/table_1.csv"],
+                    "verification_steps": ["Compare the crop with the page image."],
+                    "residual_risk": "Values still require visual verification.",
+                }
+            ],
+            "reviewer_brief": "Use image fallback for Table 1.",
+            "limitations": ["No regenerated table CSV was produced."],
+        }
+
+        schema_path = REPO_ROOT / "schemas" / "parser_repair_plan.schema.json"
+        self.assertEqual(validate_plan(plan, schema_path, "paper-x"), [])
+        notes = repair_notes_markdown(plan)
+
+        self.assertIn("PARSER-001", notes)
+        self.assertIn("work/paper-x/parsed/page_images/page_001.png", notes)
+        self.assertIn("No regenerated table CSV was produced.", notes)
+
+    def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
+        parser_quality = {
+            "findings": [
+                {
+                    "id": "PARSER-001",
+                    "issue_type": "parser_artifact",
+                    "severity": "medium",
+                },
+                {
+                    "id": "PARSER-002",
+                    "issue_type": "parser_artifact",
+                    "severity": "low",
+                },
+            ]
+        }
+        plan = {
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "status": "mitigated",
+                    "action": "add_reviewer_overlay",
+                    "reviewer_guidance": "Use verified raw page and page image fallbacks for this object.",
+                    "preferred_source_paths": ["work/paper/parsed/page_images/page_001.png"],
+                }
+            ]
+        }
+
+        metrics = evaluate_plan(parser_quality, plan)
+
+        self.assertEqual(metrics["target_finding_count"], 1)
+        self.assertEqual(metrics["covered_count"], 1)
+        self.assertEqual(metrics["mitigated_count"], 1)
+        self.assertEqual(metrics["score"], 100.0)
+
+    def test_render_prompts_can_append_parser_repair_overlay(self) -> None:
+        rendered = append_parser_repair_note("Audit:\n`work/paper/parsed`\n", "work/paper/repair/parser_repair_notes.md")
+
+        self.assertIn("Parser repair overlay", rendered)
+        self.assertIn("work/paper/repair/parser_repair_notes.md", rendered)
+        self.assertIn("preferred fallback artifacts", rendered)
 
 
 if __name__ == "__main__":

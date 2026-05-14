@@ -184,6 +184,21 @@ Use an explicit paper id when needed:
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
 ```
 
+## Parser Repair Overlay
+
+An experimental post-preflight parser repair planner can be enabled after parser-quality preflight and before substantive review:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
+```
+
+The repair planner writes:
+
+- `work/<paper_id>/repair/parser_repair_plan.json`
+- `work/<paper_id>/repair/parser_repair_notes.md`
+
+Substantive reviewer prompts then include the repair-notes path so reviewers know which parsed artifacts to trust, which fallback artifacts to prefer, and which artifacts should not be used as primary evidence. This is an overlay and triage mechanism, not a replacement for deterministic preprocessing fixes: it does not run OCR, regenerate crops, reconstruct tables, or modify raw PDFs.
+
 ## Editor-Only Refresh
 
 Use editor-only refresh when parsed artifacts, reviewer JSON, selected reviewer config, and `work/<paper_id>/editor/normalized_bundle.json` already exist, and the change only affects editor presentation or report shape.

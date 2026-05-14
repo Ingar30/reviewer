@@ -115,8 +115,6 @@ Tracked project machinery:
 - `schemas/*.json`: structured output contracts.
 - `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
 - `scripts/pipeline_paths.py`: shared runtime path conventions for wrappers and forked workflows.
-- `scripts/run_parser_repair_agent.py`: opt-in post-preflight parser repair overlay generation.
-- `scripts/evaluate_parser_repair.py`: scoring helper for parser repair plan experiments.
 - `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
 - `.github/`: CI, issue templates, and pull request template.
 - `.github/dependabot.yml`: weekly dependency checks for GitHub Actions and Python requirements.
@@ -138,28 +136,7 @@ Local/private runtime locations:
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
 - `outputs/<paper_id>/report.md`: final human-readable report.
 
-## Privacy And Git Hygiene
-
-Do not commit:
-
-- source PDFs or other paper files
-- parsed artifacts under `work/`
-- rendered prompts or logs from real papers
-- reviewer JSON outputs
-- editor bundles
-- final reports
-- API keys, tokens, passwords, credentials, or authenticated CLI config
-
-The `.gitignore` file is configured to keep `inputs/`, `work/`, and `outputs/` contents local while retaining README placeholders for those directories. Before pushing or making the repository public, inspect tracked files:
-
-```powershell
-git ls-files
-git status --short
-.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
-.\.venv\Scripts\python.exe scripts\check_tracked_sensitive_names.py
-```
-
-See `docs/public_release_checklist.md` before switching the GitHub repository from private to public.
+Private papers and generated review artifacts are local by default. Do not commit source PDFs, `work/` artifacts, `outputs/` reports, logs, rendered prompts, reviewer JSON, or credentials. See `SECURITY.md` and `docs/public_release_checklist.md` for the full release checklist.
 
 ## Open Development
 
@@ -216,88 +193,6 @@ Use an explicit paper id when needed:
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
 ```
-
-## Parser Repair Overlay
-
-An experimental post-preflight parser repair planner can be enabled after parser-quality preflight and before substantive review:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
-```
-
-The repair planner writes:
-
-- `work/<paper_id>/repair/parser_repair_plan.json`
-- `work/<paper_id>/repair/parser_repair_notes.md`
-
-Substantive reviewer prompts then include the repair-notes path so reviewers know which parsed artifacts to trust, which fallback artifacts to prefer, and which artifacts should not be used as primary evidence. This is an overlay and triage mechanism, not a replacement for deterministic preprocessing fixes: it does not run OCR, regenerate crops, reconstruct tables, or modify raw PDFs.
-
-The wrapper invokes the repair planner only when parser-quality preflight reports high- or medium-severity `parser_artifact` findings. If no such issue is reported, `--parser-repair plan` is skipped and the run proceeds without an LLM repair call.
-
-## Editor-Only Refresh
-
-Use editor-only refresh when parsed artifacts, reviewer JSON, selected reviewer config, and `work/<paper_id>/editor/normalized_bundle.json` already exist, and the change only affects editor presentation or report shape.
-
-Build refreshed editor input without making a new Codex call:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\refresh_editor.py --paper-id "my-paper"
-```
-
-Run the editor and smoke-check the refreshed report:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\refresh_editor.py --paper-id "my-paper" --run-editor
-```
-
-The lower-level commands are:
-
-```powershell
-$paperId = "my-paper"
-
-python scripts\render_prompts.py `
-  --paper-id $paperId `
-  --parsed-dir "work\${paperId}\parsed" `
-  --reviews-dir "work\${paperId}\reviews" `
-  --schema-path schemas\reviewer_output.schema.json `
-  --output-dir "work\${paperId}\prompts" `
-  --editor-bundle-path "work\${paperId}\editor\normalized_bundle.json" `
-  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
-
-python scripts\build_editor_input.py `
-  --paper-id $paperId `
-  --editor-prompt "work\${paperId}\prompts\editor_report.txt" `
-  --bundle "work\${paperId}\editor\normalized_bundle.json" `
-  --reviews-dir "work\${paperId}\reviews" `
-  --output "work\${paperId}\editor\editor_input.md" `
-  --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
-
-Get-Content "work\${paperId}\editor\editor_input.md" -Raw |
-  codex exec --output-last-message "outputs\${paperId}\report.md" -
-
-python scripts\check_final_report.py `
-  --input "outputs\${paperId}\report.md" `
-  --bundle "work\${paperId}\editor\normalized_bundle.json"
-```
-
-Do not use editor-only refresh when reviewer evidence, parsing, reviewer selection, or normalized findings need to change.
-
-## Output Contracts
-
-Reviewer outputs must conform to `schemas/reviewer_output.schema.json` and semantic checks in `scripts/validate_review_json.py`.
-
-Important reviewer-output expectations:
-
-- stable IDs such as `NUM-001` matching each reviewer `id_prefix`
-- explicit `issue_type`, `severity`, and `confidence`
-- precise locations when possible
-- `source_objects` for verifiable findings
-- `cannot_verify_reason` for cannot-verify findings
-- `numeric_check` for verifiable numerical-auditor findings
-- `claim_evidence_links` when comparing claims with source evidence
-- copyediting findings routed as `copyedit_issue`
-
-The final report should be readable prose first, with canonical IDs and source finding IDs collected in `## Appendix: Traceability Map` rather than repeated in body footers. `scripts/check_final_report.py` is a smoke check for structure and traceability coverage; it is not a full semantic audit of every claim or external source.
 
 ## Development
 

@@ -17,7 +17,7 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. optionally runs parser repair planning when parser-quality preflight reports high- or medium-severity parser artifacts
+4. optionally runs a parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
 5. dynamically selects optional reviewers while always running mandatory reviewers
 6. validates every reviewer JSON output against schema and semantic checks
 7. normalizes and deduplicates reviewer findings into an editor bundle
@@ -172,7 +172,19 @@ Reviewers are configured in `config/reviewers.json`. Each entry declares:
 - stage: `preflight` or `review`
 - selection policy: `mandatory` or `optional`
 
-Mandatory reviewers currently include parser preflight plus baseline cross-reference, reference, and grammar/copyediting checks. Optional reviewers cover numerical claims, claim-evidence alignment, literature positioning, identification, robustness, sample construction, front/back consistency, external validity, model/equation checks, replication/data availability, institutional context, power/multiple testing, design/randomization, and economic magnitude.
+Mandatory reviewers always run:
+
+- `parser_quality_auditor`: preflight check for parser artifacts that could poison downstream review
+- `crossref_auditor`: internal reference, numbering, and appendix-label checks
+- `reference_auditor`: bibliography and cited-reference verification
+- `grammar_auditor`: copyediting and grammar issues
+
+Optional reviewers are selected dynamically by default:
+
+- core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
+- narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
+
+Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
 
 Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
 

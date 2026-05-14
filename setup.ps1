@@ -6,6 +6,10 @@ $ErrorActionPreference = "Stop"
 
 Set-Location -Path $PSScriptRoot
 
+if ($PSScriptRoot -match "\\(Dropbox|OneDrive|iCloudDrive)\\") {
+    Write-Warning "This checkout is inside a cloud-synced folder. If pip reports WinError 32 or locked .pyc files, move the clone or create the virtual environment outside the synced folder."
+}
+
 if (-not (Test-Path ".venv")) {
     & $Python -m venv .venv
 }

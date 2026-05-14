@@ -14,6 +14,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures  # noqa: E402
 from check_shareable_repo import private_tracking_violations  # noqa: E402
 from check_tracked_sensitive_names import suspicious_files  # noqa: E402
+from evaluate_prior_runs import aggregate, selector_metrics  # noqa: E402
 from build_editor_input import (  # noqa: E402
     ADDITIONAL_FINDINGS_SECTION,
     GRAMMAR_APPENDIX_SECTION,
@@ -939,6 +940,82 @@ class ReviewerConfigTests(unittest.TestCase):
         self.addCleanup(lambda: normal_file.exists() and normal_file.unlink())
 
         self.assertEqual(suspicious_files(root, ["settings.py", "notes.md"]), ["settings.py"])
+
+    def test_prior_run_aggregate_scores_sections(self) -> None:
+        results = [
+            {
+                "overall_score": 80.0,
+                "preprocessing": {"score": 60.0},
+                "caption_extraction": {"score": 100.0},
+                "normalization": {"score": 90.0},
+                "report_checking": {"score": 80.0},
+                "selector_breadth": {"score": 70.0},
+                "resume_readiness": {"score": 100.0},
+            },
+            {
+                "overall_score": 100.0,
+                "preprocessing": {"score": 100.0},
+                "caption_extraction": {"score": 100.0},
+                "normalization": {"score": 100.0},
+                "report_checking": {"score": 100.0},
+                "selector_breadth": {"score": 100.0},
+                "resume_readiness": {"score": 100.0},
+            },
+        ]
+
+        summary = aggregate(results)
+
+        self.assertEqual(summary["paper_count"], 2)
+        self.assertEqual(summary["overall_score"], 90.0)
+        self.assertEqual(summary["section_scores"]["preprocessing"], 80.0)
+        self.assertEqual(summary["section_scores"]["selector_breadth"], 85.0)
+
+    def test_selector_metrics_penalizes_broad_pilot_zero_finding_selection(self) -> None:
+        root = self.config_path("selector_marker.json").parent
+        selection_dir = root / "selection"
+        editor_dir = root / "editor"
+        selection_dir.mkdir(exist_ok=True)
+        editor_dir.mkdir(exist_ok=True)
+        (selection_dir / "reviewer_selection.json").write_text(
+            json.dumps(
+                {
+                    "paper_type": "mixed",
+                    "selection_confidence": "high",
+                    "selected_optional_reviewers": [
+                        {"name": "numerical_auditor"},
+                        {"name": "claim_evidence_auditor"},
+                        {"name": "literature_auditor"},
+                        {"name": "identification_auditor"},
+                        {"name": "robustness_auditor"},
+                        {"name": "sample_construction_auditor"},
+                        {"name": "abstract_conclusion_consistency_auditor"},
+                        {"name": "limitations_external_validity_auditor"},
+                        {"name": "model_equation_auditor"},
+                        {"name": "data_availability_replication_auditor"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (editor_dir / "normalized_bundle.json").write_text(
+            json.dumps(
+                {
+                    "source_reviewer_outputs": [
+                        {"reviewer": "data_availability_replication_auditor", "finding_count": 0}
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.addCleanup(lambda: (selection_dir / "reviewer_selection.json").exists() and (selection_dir / "reviewer_selection.json").unlink())
+        self.addCleanup(lambda: (editor_dir / "normalized_bundle.json").exists() and (editor_dir / "normalized_bundle.json").unlink())
+
+        metrics = selector_metrics(selection_dir, editor_dir)
+
+        self.assertEqual(metrics["selected_optional_count"], 10)
+        self.assertEqual(metrics["pilot_selected"], ["data_availability_replication_auditor"])
+        self.assertEqual(metrics["zero_finding_selected_optional"], ["data_availability_replication_auditor"])
+        self.assertEqual(metrics["score"], 86.0)
 
 
 if __name__ == "__main__":

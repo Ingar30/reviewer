@@ -28,19 +28,20 @@ Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed 
 
 ## Quick Start
 
-### 1. Clone
+### 1. Get The Repository
 
 ```powershell
 git clone https://github.com/Ingar30/reviewer.git
 cd reviewer
 ```
 
+Git is convenient for cloning and contributing, but it is not required to run the reviewer. You can also download the repository as a ZIP from GitHub and open a shell in the extracted folder.
+
 ### 2. Install Prerequisites
 
 You need:
 
 - Python 3.12 or newer
-- Git
 - Codex CLI installed and authenticated
 - access to the model/search features needed by your reviewer configuration
 

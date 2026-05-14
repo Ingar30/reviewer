@@ -25,7 +25,7 @@ from build_editor_input import (  # noqa: E402
     finding_score,
     route_finding,
 )
-from normalize_review_outputs import issue_class, normalize  # noqa: E402
+from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -572,6 +572,40 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual(bundle["canonical_findings"][0]["issue_class"], "copyedit_issue")
         self.assertEqual(bundle["summary"]["issue_class_counts"]["copyedit_issue"], 1)
+
+    def test_should_merge_uses_source_object_overlap_with_related_claims(self) -> None:
+        base = finding(
+            claim_text="The table implies a large treatment effect.",
+            source_objects=[
+                {
+                    "id": "SRC-T1",
+                    "type": "table",
+                    "label": "Table 1",
+                    "path": "work/paper/parsed/tables/table_1.md",
+                    "page": 5,
+                    "page_label": "5",
+                    "section": "Results",
+                    "text_quote": "estimate",
+                    "url": None,
+                }
+            ],
+        )
+        group = {
+            "issue_class": "manuscript_issue",
+            "source_reviewers": ["numerical_auditor"],
+            "claim_text": base["claim_text"],
+            "primary_quote": "estimate",
+            "locations": [base["location"]],
+            "source_objects": [{"source_object": base["source_objects"][0]}],
+            "claim_evidence_links": [],
+            "categories": [base["category"]],
+        }
+        related = finding(
+            claim_text="Table 1 supports an economically meaningful effect.",
+            source_objects=[base["source_objects"][0]],
+        )
+
+        self.assertTrue(should_merge(group, "claim_evidence_auditor", related, "manuscript_issue"))
 
     def test_editor_brief_priority_scoring_and_routing(self) -> None:
         high_manuscript = {

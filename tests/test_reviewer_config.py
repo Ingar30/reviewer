@@ -11,7 +11,7 @@ TEMP_ROOT = REPO_ROOT / "work" / "test-tmp"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures  # noqa: E402
+from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures, external_source_urls  # noqa: E402
 from check_shareable_repo import private_tracking_violations  # noqa: E402
 from check_tracked_sensitive_names import suspicious_files  # noqa: E402
 from evaluate_prior_runs import aggregate, selector_metrics  # noqa: E402
@@ -905,6 +905,51 @@ class ReviewerConfigTests(unittest.TestCase):
         )
 
         self.assertTrue(any("missing grammar appendix heading" in failure for failure in failures))
+        self.assertEqual(fixed, [])
+
+    def test_report_checker_requires_external_source_appendix_for_url_evidence(self) -> None:
+        bundle = {
+            "canonical_findings": [
+                {
+                    "canonical_id": "CANON-001",
+                    "issue_class": "reference_integrity",
+                    "source_findings": [{"reviewer": "reference_auditor", "id": "REF-001"}],
+                    "source_objects": [
+                        {
+                            "source_object": {
+                                "id": "SRC-001",
+                                "url": "https://example.org/source",
+                            }
+                        }
+                    ],
+                }
+            ]
+        }
+        base_report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "CANON-001 reference_auditor:REF-001",
+                "## Review Configuration",
+                "reference_auditor ran.",
+                "## Highest-Priority Cross-Agent Findings",
+                "A source was checked.",
+                "## Suggested Revision Priorities",
+                "Revise the citation.",
+                "## Additional Findings",
+                "No additional findings.",
+                f"{TRACEABILITY_APPENDIX_HEADING}",
+                "| Report section | Finding | Canonical ID | Source finding IDs |",
+                "| References | citation | CANON-001 | reference_auditor:REF-001 |",
+            ]
+        )
+        fixed_report = base_report + "\n## Appendix: External Sources Cited In This Review\nhttps://example.org/source\n"
+
+        failures = report_failures(base_report, bundle=bundle, min_chars=0)
+        fixed = report_failures(fixed_report, bundle=bundle, min_chars=0)
+
+        self.assertEqual(external_source_urls(bundle), {"https://example.org/source"})
+        self.assertTrue(any("missing external-sources appendix" in failure for failure in failures))
         self.assertEqual(fixed, [])
 
     def test_shareable_repo_check_allows_placeholders_only_in_private_dirs(self) -> None:

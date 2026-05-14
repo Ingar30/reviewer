@@ -220,6 +220,11 @@ def parser_quality_gate_findings(data: dict) -> tuple[list[dict], list[dict]]:
     return blockers, warnings
 
 
+def repairable_parser_findings(data: dict) -> list[dict]:
+    blockers, warnings = parser_quality_gate_findings(data)
+    return [*blockers, *warnings]
+
+
 def finding_label(finding: dict) -> str:
     finding_id = finding.get("id", "unknown-id")
     claim = " ".join(str(finding.get("claim_text", "")).split())
@@ -623,28 +628,37 @@ def main() -> int:
         parser_quality_outputs = [reviews_dir / reviewer.output for reviewer in preflight_reviewers if reviewer.name == "parser_quality_auditor"]
         if not parser_quality_outputs:
             raise RuntimeError("Parser repair requested, but parser_quality_auditor is not configured")
-        run_required(
-            "parser-repair-agent",
-            [
-                sys.executable,
-                "scripts/run_parser_repair_agent.py",
-                "--paper-id",
-                paper_id,
-                "--parsed-dir",
-                str(parsed_dir.relative_to(repo)),
-                "--parser-quality-output",
-                str(parser_quality_outputs[0].relative_to(repo)),
-                "--output-dir",
-                str(repair_dir.relative_to(repo)),
-                "--notes-output",
-                str(parser_repair_notes_path.relative_to(repo)),
-                "--log-dir",
-                str(log_dir.relative_to(repo)),
-            ],
-            repo,
-            log_dir,
-        )
-        active_parser_repair_notes = parser_repair_notes_path
+        parser_quality_data = json.loads(parser_quality_outputs[0].read_text(encoding="utf-8"))
+        repairable_findings = repairable_parser_findings(parser_quality_data)
+        if repairable_findings:
+            print(
+                "[repair] parser-quality findings: "
+                + ", ".join(finding_label(finding) for finding in repairable_findings)
+            )
+            run_required(
+                "parser-repair-agent",
+                [
+                    sys.executable,
+                    "scripts/run_parser_repair_agent.py",
+                    "--paper-id",
+                    paper_id,
+                    "--parsed-dir",
+                    str(parsed_dir.relative_to(repo)),
+                    "--parser-quality-output",
+                    str(parser_quality_outputs[0].relative_to(repo)),
+                    "--output-dir",
+                    str(repair_dir.relative_to(repo)),
+                    "--notes-output",
+                    str(parser_repair_notes_path.relative_to(repo)),
+                    "--log-dir",
+                    str(log_dir.relative_to(repo)),
+                ],
+                repo,
+                log_dir,
+            )
+            active_parser_repair_notes = parser_repair_notes_path
+        else:
+            print("[repair] skipped: parser-quality preflight reported no high/medium parser-artifact issues")
 
     active_reviewers_config = args.reviewers_config
     if args.reviewer_selection == "dynamic":

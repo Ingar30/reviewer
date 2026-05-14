@@ -36,6 +36,7 @@ from review_paper import (  # noqa: E402
     parser_quality_gate_findings,
     plausible_editor_report,
     recover_editor_report_if_needed,
+    repairable_parser_findings,
     selected_reviewers_from_selection,
     validate_selection_output,
 )
@@ -464,6 +465,28 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual([finding["id"] for finding in blockers], ["PARSER-001"])
         self.assertEqual([finding["id"] for finding in warnings], ["PARSER-002", "PARSER-003"])
+
+    def test_repairable_parser_findings_returns_only_reported_parser_issues(self) -> None:
+        data = review_output(
+            [
+                finding(id="PARSER-001", issue_type="parser_artifact", severity="medium"),
+                finding(
+                    id="PARSER-002",
+                    issue_type="parser_artifact",
+                    severity="high",
+                    confidence="high",
+                    assessment="no",
+                ),
+                finding(id="PARSER-003", issue_type="parser_artifact", severity="low"),
+                finding(id="NUM-001", issue_type="manuscript_issue", severity="high"),
+            ],
+            reviewer_name="parser_quality_auditor",
+        )
+
+        self.assertEqual(
+            [finding["id"] for finding in repairable_parser_findings(data)],
+            ["PARSER-002", "PARSER-001"],
+        )
 
     def test_validate_selection_output_rejects_unknown_mandatory_and_duplicate_reviewers(self) -> None:
         mandatory = [

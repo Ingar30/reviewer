@@ -1,0 +1,99 @@
+{
+  "reviewer": "parser_quality_auditor",
+  "paper_id": "synthetic-parser",
+  "run_status": "ok",
+  "summary": "Synthetic parser-quality output with one broken table extraction and one scrambled page-text issue.",
+  "findings": [
+    {
+      "id": "PARSER-001",
+      "category": "broken_table_extraction",
+      "issue_type": "parser_artifact",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "page": 1,
+        "page_label": "1",
+        "section": "Synthetic results",
+        "text_quote": "Table 1: Outcome summary",
+        "precision": "partial"
+      },
+      "claim_text": "The structured table output has one row-label column even though the page text and table crop indicate a three-column table.",
+      "assessment": "yes",
+      "cannot_verify_reason": null,
+      "evidence_summary": "The table CSV contains only row labels. The raw page text and table crop provide usable fallback evidence.",
+      "source_objects": [
+        {
+          "id": "synthetic-table-csv",
+          "type": "table",
+          "label": "Table 1 CSV",
+          "path": "tests/fixtures/parser_repair/synthetic-parser/parsed/tables/table_1.csv",
+          "page": 1,
+          "page_label": "1",
+          "section": "Synthetic results",
+          "text_quote": "row_label",
+          "url": null
+        },
+        {
+          "id": "synthetic-raw-page",
+          "type": "text",
+          "label": "Raw page text",
+          "path": "tests/fixtures/parser_repair/synthetic-parser/parsed/raw_pages/page_001.txt",
+          "page": 1,
+          "page_label": "1",
+          "section": "Synthetic results",
+          "text_quote": "Table 1: Outcome summary",
+          "url": null
+        }
+      ],
+      "claim_evidence_links": [],
+      "numeric_check": null,
+      "suggested_fix": "Tell downstream reviewers to use raw_pages/page_001.txt and the table crop as primary evidence, and not the CSV, unless deterministic table extraction is regenerated."
+    },
+    {
+      "id": "PARSER-002",
+      "category": "scrambled_reading_order",
+      "issue_type": "parser_artifact",
+      "severity": "medium",
+      "confidence": "high",
+      "location": {
+        "page": 1,
+        "page_label": "1",
+        "section": "Synthetic methods",
+        "text_quote": "beta alpha treatment",
+        "precision": "exact"
+      },
+      "claim_text": "The normalized page text has scrambled reading order, while raw page text preserves the intended sequence.",
+      "assessment": "yes",
+      "cannot_verify_reason": null,
+      "evidence_summary": "The normalized page text interleaves words from two columns. The raw page text is readable enough for reviewer fallback.",
+      "source_objects": [
+        {
+          "id": "synthetic-normalized-page",
+          "type": "text",
+          "label": "Normalized page text",
+          "path": "tests/fixtures/parser_repair/synthetic-parser/parsed/pages/page_001.md",
+          "page": 1,
+          "page_label": "1",
+          "section": "Synthetic methods",
+          "text_quote": "beta alpha treatment",
+          "url": null
+        },
+        {
+          "id": "synthetic-raw-page-2",
+          "type": "text",
+          "label": "Raw page text",
+          "path": "tests/fixtures/parser_repair/synthetic-parser/parsed/raw_pages/page_001.txt",
+          "page": 1,
+          "page_label": "1",
+          "section": "Synthetic methods",
+          "text_quote": "The treatment is assigned after baseline measurement.",
+          "url": null
+        }
+      ],
+      "claim_evidence_links": [],
+      "numeric_check": null,
+      "suggested_fix": "Tell downstream reviewers to prefer raw_pages/page_001.txt over pages/page_001.md for prose on this page."
+    }
+  ],
+  "notes": ["Synthetic fixture; contains no private paper text."]
+}

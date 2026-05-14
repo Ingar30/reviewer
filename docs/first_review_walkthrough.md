@@ -46,6 +46,14 @@ Use an explicit ID if the filename is long or sensitive:
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
 ```
 
+If parser-quality preflight reports parser artifacts and you want a reviewer-facing repair overlay before substantive review, enable the opt-in repair planner:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
+```
+
+When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
+
 ## 5. Read The Report
 
 The final report appears at:
@@ -60,7 +68,7 @@ Intermediate artifacts are under:
 work/my-paper/
 ```
 
-Both directories are ignored by Git because they can contain paper text, quotes, reviewer findings, and logs.
+Repair overlays, if enabled, appear under `work/my-paper/repair/`. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
 
 ## 6. Before Sharing Changes
 

@@ -17,6 +17,7 @@ from reviewer_config import ReviewerConfig, load_reviewers_config, write_reviewe
 SELECTOR_TEMPLATE = "reviewer_selection.txt"
 SELECTOR_OUTPUT = "reviewer_selection.json"
 SELECTED_REVIEWERS_CONFIG = "selected_reviewers.json"
+PARSER_REPAIR_NOTES = "parser_repair_notes.md"
 MIN_EDITOR_REPORT_CHARS = 2000
 EDITOR_REPORT_REQUIRED_HEADINGS = [
     "## Executive Summary",
@@ -219,6 +220,11 @@ def parser_quality_gate_findings(data: dict) -> tuple[list[dict], list[dict]]:
     return blockers, warnings
 
 
+def repairable_parser_findings(data: dict) -> list[dict]:
+    blockers, warnings = parser_quality_gate_findings(data)
+    return [*blockers, *warnings]
+
+
 def finding_label(finding: dict) -> str:
     finding_id = finding.get("id", "unknown-id")
     claim = " ".join(str(finding.get("claim_text", "")).split())
@@ -256,10 +262,11 @@ def render_selector_prompt(
     parsed_dir: Path,
     optional_reviewers: list[ReviewerConfig],
     selection_schema_path: Path,
+    parser_repair_notes: Path | None = None,
 ) -> str:
     template = (repo / "prompts" / "templates" / SELECTOR_TEMPLATE).read_text(encoding="utf-8")
     catalog = json.dumps(reviewer_catalog(optional_reviewers), indent=2)
-    return render_template(
+    rendered = render_template(
         template,
         {
             "paper_id": paper_id,
@@ -268,6 +275,14 @@ def render_selector_prompt(
             "optional_reviewer_catalog": catalog,
         },
     )
+    if parser_repair_notes:
+        rendered += (
+            "\n\nParser repair overlay available before reviewer selection:\n"
+            f"`{parser_repair_notes.relative_to(repo)}`\n\n"
+            "Use this overlay to avoid selecting reviewers whose primary evidence class is unresolved by the parsed artifacts, "
+            "and to prefer reviewers who can work from verified fallback artifacts.\n"
+        )
+    return rendered
 
 
 def run_reviewer_selector(
@@ -278,10 +293,18 @@ def run_reviewer_selector(
     selection_dir: Path,
     selection_schema_path: Path,
     log_dir: Path,
+    parser_repair_notes: Path | None = None,
 ) -> tuple[dict, float]:
     selection_dir.mkdir(parents=True, exist_ok=True)
     output_path = selection_dir / SELECTOR_OUTPUT
-    prompt_text = render_selector_prompt(repo, paper_id, parsed_dir, optional_reviewers, selection_schema_path)
+    prompt_text = render_selector_prompt(
+        repo,
+        paper_id,
+        parsed_dir,
+        optional_reviewers,
+        selection_schema_path,
+        parser_repair_notes,
+    )
     started_at = time.time() - 1.0
     run_required(
         "reviewer-selector",
@@ -414,6 +437,38 @@ def run_reviewer_batch(
     return reviewer_started_at
 
 
+def render_prompts_command(
+    *,
+    paper_id: str,
+    parsed_dir: Path,
+    reviews_dir: Path,
+    schema_path: Path,
+    prompts_dir: Path,
+    reviewers_config: str,
+    repo: Path,
+    parser_repair_notes: Path | None = None,
+) -> list[str]:
+    command = [
+        sys.executable,
+        "scripts/render_prompts.py",
+        "--paper-id",
+        paper_id,
+        "--parsed-dir",
+        str(parsed_dir.relative_to(repo)),
+        "--reviews-dir",
+        str(reviews_dir.relative_to(repo)),
+        "--schema-path",
+        str(schema_path.relative_to(repo)),
+        "--output-dir",
+        str(prompts_dir.relative_to(repo)),
+        "--reviewers-config",
+        reviewers_config,
+    ]
+    if parser_repair_notes:
+        command.extend(["--parser-repair-notes", str(parser_repair_notes.relative_to(repo))])
+    return command
+
+
 def validate_reviewer_batch(
     reviewers: list[ReviewerConfig],
     reviewer_started_at: float,
@@ -470,6 +525,12 @@ def main() -> int:
         default="dynamic",
         help="Use dynamic optional-reviewer selection or run all enabled reviewers.",
     )
+    parser.add_argument(
+        "--parser-repair",
+        choices=["off", "plan"],
+        default="off",
+        help="Optionally run a post-preflight parser repair-planning agent before substantive review.",
+    )
     args = parser.parse_args()
 
     repo = repo_root()
@@ -488,6 +549,7 @@ def main() -> int:
     prompts_dir = work_root / "prompts"
     reviews_dir = work_root / "reviews"
     editor_dir = work_root / "editor"
+    repair_dir = work_root / "repair"
     selection_dir = work_root / "selection"
     log_dir = work_root / "logs"
     outputs_dir = repo / "outputs" / paper_id
@@ -496,6 +558,7 @@ def main() -> int:
     selection_schema_path = repo / "schemas" / "reviewer_selection.schema.json"
     bundle_path = editor_dir / "normalized_bundle.json"
     editor_input_path = editor_dir / "editor_input.md"
+    parser_repair_notes_path = repair_dir / PARSER_REPAIR_NOTES
     reviewers_config_path = repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else Path(args.reviewers_config)
     reviewers = load_reviewers_config(reviewers_config_path)
     preflight_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "preflight"]
@@ -530,22 +593,15 @@ def main() -> int:
 
     run_required(
         "render-prompts",
-        [
-            sys.executable,
-            "scripts/render_prompts.py",
-            "--paper-id",
-            paper_id,
-            "--parsed-dir",
-            str(parsed_dir.relative_to(repo)),
-            "--reviews-dir",
-            str(reviews_dir.relative_to(repo)),
-            "--schema-path",
-            str(schema_path.relative_to(repo)),
-            "--output-dir",
-            str(prompts_dir.relative_to(repo)),
-            "--reviewers-config",
-            str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
-        ],
+        render_prompts_command(
+            paper_id=paper_id,
+            parsed_dir=parsed_dir,
+            reviews_dir=reviews_dir,
+            schema_path=schema_path,
+            prompts_dir=prompts_dir,
+            reviewers_config=str((repo / args.reviewers_config).relative_to(repo) if not Path(args.reviewers_config).is_absolute() else args.reviewers_config),
+            repo=repo,
+        ),
         repo,
         log_dir,
     )
@@ -567,6 +623,43 @@ def main() -> int:
     if preflight_errors:
         raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
 
+    active_parser_repair_notes = None
+    if args.parser_repair == "plan":
+        parser_quality_outputs = [reviews_dir / reviewer.output for reviewer in preflight_reviewers if reviewer.name == "parser_quality_auditor"]
+        if not parser_quality_outputs:
+            raise RuntimeError("Parser repair requested, but parser_quality_auditor is not configured")
+        parser_quality_data = json.loads(parser_quality_outputs[0].read_text(encoding="utf-8"))
+        repairable_findings = repairable_parser_findings(parser_quality_data)
+        if repairable_findings:
+            print(
+                "[repair] parser-quality findings: "
+                + ", ".join(finding_label(finding) for finding in repairable_findings)
+            )
+            run_required(
+                "parser-repair-agent",
+                [
+                    sys.executable,
+                    "scripts/run_parser_repair_agent.py",
+                    "--paper-id",
+                    paper_id,
+                    "--parsed-dir",
+                    str(parsed_dir.relative_to(repo)),
+                    "--parser-quality-output",
+                    str(parser_quality_outputs[0].relative_to(repo)),
+                    "--output-dir",
+                    str(repair_dir.relative_to(repo)),
+                    "--notes-output",
+                    str(parser_repair_notes_path.relative_to(repo)),
+                    "--log-dir",
+                    str(log_dir.relative_to(repo)),
+                ],
+                repo,
+                log_dir,
+            )
+            active_parser_repair_notes = parser_repair_notes_path
+        else:
+            print("[repair] skipped: parser-quality preflight reported no high/medium parser-artifact issues")
+
     active_reviewers_config = args.reviewers_config
     if args.reviewer_selection == "dynamic":
         selection, _selection_started_at = run_reviewer_selector(
@@ -577,6 +670,7 @@ def main() -> int:
             selection_dir,
             selection_schema_path,
             log_dir,
+            active_parser_repair_notes,
         )
         selection_errors = validate_selection_output(selection, paper_id, mandatory_reviewers, optional_reviewers)
         if selection_errors:
@@ -587,27 +681,38 @@ def main() -> int:
         print("[selection] selected reviewers: " + ", ".join(reviewer.name for reviewer in standard_reviewers))
         run_required(
             "render-selected-prompts",
-            [
-                sys.executable,
-                "scripts/render_prompts.py",
-                "--paper-id",
-                paper_id,
-                "--parsed-dir",
-                str(parsed_dir.relative_to(repo)),
-                "--reviews-dir",
-                str(reviews_dir.relative_to(repo)),
-                "--schema-path",
-                str(schema_path.relative_to(repo)),
-                "--output-dir",
-                str(prompts_dir.relative_to(repo)),
-                "--reviewers-config",
-                active_reviewers_config,
-            ],
+            render_prompts_command(
+                paper_id=paper_id,
+                parsed_dir=parsed_dir,
+                reviews_dir=reviews_dir,
+                schema_path=schema_path,
+                prompts_dir=prompts_dir,
+                reviewers_config=active_reviewers_config,
+                repo=repo,
+                parser_repair_notes=active_parser_repair_notes,
+            ),
             repo,
             log_dir,
         )
     else:
         write_reviewers_config(selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers])
+        if active_parser_repair_notes:
+            active_reviewers_config = str(selected_reviewers_config_path.relative_to(repo))
+            run_required(
+                "render-repaired-prompts",
+                render_prompts_command(
+                    paper_id=paper_id,
+                    parsed_dir=parsed_dir,
+                    reviews_dir=reviews_dir,
+                    schema_path=schema_path,
+                    prompts_dir=prompts_dir,
+                    reviewers_config=active_reviewers_config,
+                    repo=repo,
+                    parser_repair_notes=active_parser_repair_notes,
+                ),
+                repo,
+                log_dir,
+            )
 
     reviewer_started_at = run_reviewer_batch(
         standard_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir

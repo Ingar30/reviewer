@@ -20,6 +20,11 @@ def main() -> int:
     parser.add_argument("--selection-dir", required=True)
     parser.add_argument("--log-dir", required=True)
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
+    parser.add_argument(
+        "--parser-repair-notes",
+        default=None,
+        help="Optional parser repair notes to include in the selector prompt.",
+    )
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
@@ -32,6 +37,9 @@ def main() -> int:
     log_dir = Path(args.log_dir)
     if not log_dir.is_absolute():
         log_dir = repo / log_dir
+    parser_repair_notes = Path(args.parser_repair_notes) if args.parser_repair_notes else None
+    if parser_repair_notes and not parser_repair_notes.is_absolute():
+        parser_repair_notes = repo / parser_repair_notes
 
     reviewers_config = Path(args.reviewers_config)
     if not reviewers_config.is_absolute():
@@ -50,6 +58,7 @@ def main() -> int:
         selection_dir,
         repo / "schemas" / "reviewer_selection.schema.json",
         log_dir,
+        parser_repair_notes,
     )
     errors = validate_selection_output(selection, args.paper_id, mandatory_reviewers, optional_reviewers)
     if errors:
@@ -67,6 +76,9 @@ def main() -> int:
                 ],
                 "selection_path": str((selection_dir / "reviewer_selection.json").relative_to(repo)),
                 "selected_reviewers_config": str((selection_dir / SELECTED_REVIEWERS_CONFIG).relative_to(repo)),
+                "parser_repair_notes": (
+                    str(parser_repair_notes.relative_to(repo)) if parser_repair_notes else None
+                ),
             },
             indent=2,
         )

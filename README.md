@@ -17,12 +17,13 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. dynamically selects optional reviewers while always running mandatory reviewers
-5. validates every reviewer JSON output against schema and semantic checks
-6. normalizes and deduplicates reviewer findings into an editor bundle
-7. builds editor input from the normalized bundle and original reviewer JSON files
-8. runs the editor to write `outputs/<paper_id>/report.md`
-9. smoke-checks final report structure and traceability
+4. optionally runs a parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
+5. dynamically selects optional reviewers while always running mandatory reviewers
+6. validates every reviewer JSON output against schema and semantic checks
+7. normalizes and deduplicates reviewer findings into an editor bundle
+8. builds editor input from the normalized bundle and original reviewer JSON files
+9. runs the editor to write `outputs/<paper_id>/report.md`
+10. smoke-checks final report structure and traceability
 
 Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are local/private by default.
 
@@ -113,6 +114,8 @@ Tracked project machinery:
 - `prompts/templates/*.txt`: reusable prompt templates.
 - `schemas/*.json`: structured output contracts.
 - `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
+- `scripts/run_parser_repair_agent.py`: opt-in post-preflight parser repair overlay generation.
+- `scripts/evaluate_parser_repair.py`: scoring helper for parser repair plan experiments.
 - `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
 - `.github/`: CI, issue templates, and pull request template.
 - `.github/dependabot.yml`: weekly dependency checks for GitHub Actions and Python requirements.
@@ -127,6 +130,7 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
+- `work/<paper_id>/repair/`: optional parser repair plan and reviewer-facing repair notes.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
@@ -168,7 +172,19 @@ Reviewers are configured in `config/reviewers.json`. Each entry declares:
 - stage: `preflight` or `review`
 - selection policy: `mandatory` or `optional`
 
-Mandatory reviewers currently include parser preflight plus baseline cross-reference, reference, and grammar/copyediting checks. Optional reviewers cover numerical claims, claim-evidence alignment, literature positioning, identification, robustness, sample construction, front/back consistency, external validity, model/equation checks, replication/data availability, institutional context, power/multiple testing, design/randomization, and economic magnitude.
+Mandatory reviewers always run:
+
+- `parser_quality_auditor`: preflight check for parser artifacts that could poison downstream review
+- `crossref_auditor`: internal reference, numbering, and appendix-label checks
+- `reference_auditor`: bibliography and cited-reference verification
+- `grammar_auditor`: copyediting and grammar issues
+
+Optional reviewers are selected dynamically by default:
+
+- core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
+- narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
+
+Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
 
 Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
 
@@ -183,6 +199,23 @@ Use an explicit paper id when needed:
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
 ```
+
+## Parser Repair Overlay
+
+An experimental post-preflight parser repair planner can be enabled after parser-quality preflight and before substantive review:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
+```
+
+The repair planner writes:
+
+- `work/<paper_id>/repair/parser_repair_plan.json`
+- `work/<paper_id>/repair/parser_repair_notes.md`
+
+Substantive reviewer prompts then include the repair-notes path so reviewers know which parsed artifacts to trust, which fallback artifacts to prefer, and which artifacts should not be used as primary evidence. This is an overlay and triage mechanism, not a replacement for deterministic preprocessing fixes: it does not run OCR, regenerate crops, reconstruct tables, or modify raw PDFs.
+
+The wrapper invokes the repair planner only when parser-quality preflight reports high- or medium-severity `parser_artifact` findings. If no such issue is reported, `--parser-repair plan` is skipped and the run proceeds without an LLM repair call.
 
 ## Editor-Only Refresh
 

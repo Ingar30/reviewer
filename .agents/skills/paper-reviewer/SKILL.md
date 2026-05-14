@@ -34,17 +34,19 @@ The pipeline stages are:
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch preflight reviewers from `config/reviewers.json`.
 6. Validate preflight JSON and stop on blocking parser-quality failures.
-7. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
-8. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
-9. Rerender prompts using the selected reviewer roster.
-10. Launch mandatory review-stage reviewers and selected optional reviewers.
-11. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
-12. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
-13. Build editor input at `work/<paper_id>/editor/editor_input.md`.
-14. Run the editor to write `outputs/<paper_id>/report.md`.
-15. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
+7. If `--parser-repair plan` is enabled and parser-quality preflight reports high- or medium-severity parser artifacts, run `scripts/run_parser_repair_agent.py` and write `work/<paper_id>/repair/parser_repair_notes.md`.
+8. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
+9. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
+10. Rerender prompts using the selected reviewer roster and parser repair notes when present.
+11. Launch mandatory review-stage reviewers and selected optional reviewers.
+12. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
+13. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
+14. Build editor input at `work/<paper_id>/editor/editor_input.md`.
+15. Run the editor to write `outputs/<paper_id>/report.md`.
+16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
 Use `--reviewer-selection static` only when all enabled review-stage reviewers should run.
+Use `--parser-repair plan` only when parser-quality issues should be converted into a reviewer-facing repair overlay before substantive reviewers run.
 
 ## Editor-only refresh
 If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when the change is limited to editor prompt/report presentation:
@@ -65,6 +67,7 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 - Preserve exact source locations whenever possible.
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
 - Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
+- Treat parser repair notes as routing guidance to existing safer artifacts, not as evidence that OCR, tables, figures, or page ordering were actually regenerated.
 - Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
 - Literature and novelty critiques must be grounded in concrete studies or marked `cannot_verify`; do not assert lack of novelty from vague prior-work impressions.
 - If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
@@ -75,6 +78,7 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`
+- Parser repair overlays: `work/<paper_id>/repair/`
 - Reviewer selection: `work/<paper_id>/selection/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`

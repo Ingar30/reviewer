@@ -1,0 +1,9 @@
+[
+  {
+    "table_id": "table_1",
+    "label": "Table 1",
+    "page": 1,
+    "col_count": 1,
+    "path": "tests/fixtures/parser_repair/synthetic-parser/parsed/tables/table_1.csv"
+  }
+]

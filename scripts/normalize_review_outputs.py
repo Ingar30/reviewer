@@ -61,6 +61,40 @@ def location_page(finding: dict[str, Any]) -> int | None:
     return page if isinstance(page, int) else None
 
 
+def source_object_keys(finding: dict[str, Any]) -> set[str]:
+    keys = set()
+    for source in finding.get("source_objects", []) or []:
+        if not isinstance(source, dict):
+            continue
+        for field in ("id", "path", "label", "url"):
+            value = source.get(field)
+            if isinstance(value, str) and value.strip():
+                keys.add(f"{field}:{compact_text(value)}")
+    for link in finding.get("claim_evidence_links", []) or []:
+        if not isinstance(link, dict):
+            continue
+        for source_id in link.get("source_object_ids", []) or []:
+            if isinstance(source_id, str) and source_id.strip():
+                keys.add(f"id:{compact_text(source_id)}")
+    return keys
+
+
+def group_source_object_keys(group: dict[str, Any]) -> set[str]:
+    keys = set()
+    for source in group.get("source_objects", []) or []:
+        source_object = source.get("source_object") or {}
+        for field in ("id", "path", "label", "url"):
+            value = source_object.get(field)
+            if isinstance(value, str) and value.strip():
+                keys.add(f"{field}:{compact_text(value)}")
+    for link in group.get("claim_evidence_links", []) or []:
+        link_object = link.get("link") or {}
+        for source_id in link_object.get("source_object_ids", []) or []:
+            if isinstance(source_id, str) and source_id.strip():
+                keys.add(f"id:{compact_text(source_id)}")
+    return keys
+
+
 def issue_class(reviewer: ReviewerConfig, finding: dict[str, Any]) -> str:
     explicit = finding.get("issue_type")
     if explicit in ISSUE_CLASSES:
@@ -101,6 +135,9 @@ def should_merge(group: dict[str, Any], reviewer: str, finding: dict[str, Any], 
         return True
     if quote_similarity >= 0.62:
         return True
+    if source_object_keys(finding) & group_source_object_keys(group):
+        if claim_similarity >= 0.35 or quote_similarity >= 0.35:
+            return True
 
     categories = " ".join(group.get("categories", []))
     new_category = compact_text(finding.get("category"))

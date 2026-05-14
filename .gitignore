@@ -1,18 +1,48 @@
+# Local Python environments and caches
 .venv/
+venv/
 __pycache__/
-*.pyc
-work/
-outputs/
-inputs/*.pdf
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local secrets and machine-specific settings
+.env
+.env.*
+!.env.example
+*.local
+
+# Private paper inputs and generated review artifacts
+inputs/*
+!inputs/README.md
+work/*
+!work/README.md
+outputs/*
+!outputs/README.md
+data/raw/
+data/*/raw/
+
+# Generated documentation exports
 PROJECT_DOCUMENTATION.html
 PROJECT_DOCUMENTATION.jpeg
 PROJECT_DOCUMENTATION.pdf
 PROJECT_DOCUMENTATION.png
+
+# Slides and LaTeX build byproducts
 Slides/**/*.aux
+Slides/**/*.fdb_latexmk
+Slides/**/*.fls
 Slides/**/*.log
 Slides/**/*.nav
 Slides/**/*.out
 Slides/**/*.snm
+Slides/**/*.synctex.gz
 Slides/**/*.toc
 Slides/**/*.vrb
 Slides/sharp_review_pages/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,18 +1,107 @@
 # Reviewer
 
-A local, Windows-first Codex project for running a reproducible multi-agent reviewer on academic economics papers.
+A reproducible multi-agent reviewer for academic economics papers. The repository contains the workflow machinery: preprocessing scripts, reviewer prompts, schemas, validation, normalization, editor assembly, tests, and Codex project instructions. It does not include papers or generated review outputs.
 
-The default path is the single wrapper:
+The main entry point is:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\<paper_id>.pdf"
 ```
 
-If the project virtual environment is already activated, `python scripts\review_paper.py ...` is equivalent. The wrapper preprocesses the PDF, renders prompts, runs parser-quality preflight, dynamically selects optional reviewers, runs the selected reviewer roster, validates reviewer JSON, normalizes and deduplicates findings, builds editor input, writes `outputs/<paper_id>/report.md`, and smoke-checks the final report.
+On macOS/Linux, use `./.venv/bin/python` instead of `.\.venv\Scripts\python.exe`.
 
-Documentation is intentionally simple: `README.md` is the human-facing source of truth, and `AGENTS.md` is the Codex-facing workflow contract.
+## What This Does
 
-## Project Map
+For a fresh paper, the wrapper:
+
+1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
+2. renders run-specific prompts under `work/<paper_id>/prompts/`
+3. runs parser-quality preflight before substantive review
+4. dynamically selects optional reviewers while always running mandatory reviewers
+5. validates every reviewer JSON output against schema and semantic checks
+6. normalizes and deduplicates reviewer findings into an editor bundle
+7. builds editor input from the normalized bundle and original reviewer JSON files
+8. runs the editor to write `outputs/<paper_id>/report.md`
+9. smoke-checks final report structure and traceability
+
+Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are local/private by default.
+
+## Quick Start
+
+### 1. Clone
+
+```powershell
+git clone https://github.com/Ingar30/reviewer.git
+cd reviewer
+```
+
+### 2. Install Prerequisites
+
+You need:
+
+- Python 3.12 or newer
+- Git
+- Codex CLI installed and authenticated
+- access to the model/search features needed by your reviewer configuration
+
+### 3. Set Up Python
+
+Windows PowerShell:
+
+```powershell
+.\setup.ps1
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS/Linux:
+
+```bash
+bash setup.sh
+source .venv/bin/activate
+```
+
+Manual setup is also fine:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### 4. Check The Install
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest
+.\.venv\Scripts\python.exe scripts\check_environment.py
+```
+
+### 5. Add A Paper Locally
+
+Put a source PDF in `inputs/`. Files in `inputs/` are ignored by Git.
+
+```text
+inputs/my-paper.pdf
+```
+
+### 6. Run A Review
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
+```
+
+The final report will be written to:
+
+```text
+outputs/my-paper/report.md
+```
+
+The intermediate parsed artifacts, prompts, logs, reviewer outputs, selection output, and editor bundle will be written to:
+
+```text
+work/my-paper/
+```
+
+## Repository Map
 
 Tracked project machinery:
 
@@ -24,11 +113,18 @@ Tracked project machinery:
 - `schemas/*.json`: structured output contracts.
 - `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
 - `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
-- `Slides/reviewer_slides.pdf`: teaching deck for explaining this project as an agentic research-pipeline case study.
+- `.github/`: CI, issue templates, and pull request template.
+- `.github/dependabot.yml`: weekly dependency checks for GitHub Actions and Python requirements.
+- `setup.ps1` and `setup.sh`: local bootstrap helpers.
+- `scripts/check_environment.py`: fast local readiness check for dependencies, project files, and Codex CLI.
+- `scripts/check_tracked_sensitive_names.py`: pre-push scanner for unexpected sensitive variable names in shareable files.
+- `Slides/`: optional teaching material for explaining the workflow.
+- `docs/first_review_walkthrough.md`: step-by-step path for a new user running a first private review.
+- `docs/repository_settings.md`: recommended GitHub settings for the private repository.
 
-Run-specific artifacts:
+Local/private runtime locations:
 
-- `inputs/`: source PDFs, usually ignored by Git.
+- `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
@@ -36,36 +132,28 @@ Run-specific artifacts:
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
 - `outputs/<paper_id>/report.md`: final human-readable report.
 
-## Workflow
+## Privacy And Git Hygiene
 
-The fresh-run sequence is:
+Do not commit:
 
-1. Preprocess the PDF into structured artifacts.
-2. Render prompts for preflight and review stages.
-3. Run `parser_quality_auditor` first.
-4. Block only on high-severity, high-confidence parser artifacts that make review unsafe.
-5. Dynamically classify the paper and select optional reviewers, unless static mode is requested.
-6. Write `work/<paper_id>/selection/reviewer_selection.json`.
-7. Write `work/<paper_id>/selection/selected_reviewers.json`.
-8. Rerender prompts for the selected roster.
-9. Run mandatory and selected optional reviewers in parallel.
-10. Validate reviewer JSON with the schema and semantic checks.
-11. Normalize and deduplicate reviewer outputs into `normalized_bundle.json`.
-12. Build editor input with deterministic guidance and traceability rows.
-13. Run the editor to write the final markdown report.
-14. Smoke-check the report structure and traceability identifiers.
+- source PDFs or other paper files
+- parsed artifacts under `work/`
+- rendered prompts or logs from real papers
+- reviewer JSON outputs
+- editor bundles
+- final reports
+- API keys, tokens, passwords, credentials, or authenticated CLI config
 
-Use an explicit paper id when needed:
+The `.gitignore` file is configured to keep `inputs/`, `work/`, and `outputs/` contents local while retaining README placeholders for those directories. Before pushing or making the repository public, inspect tracked files:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\<paper_id>.pdf" --paper-id "<paper_id>"
+git ls-files
+git status --short
+.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
+.\.venv\Scripts\python.exe scripts\check_tracked_sensitive_names.py
 ```
 
-Run all enabled review-stage reviewers without selector filtering:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\<paper_id>.pdf" --reviewer-selection static
-```
+See `docs/public_release_checklist.md` before switching the GitHub repository from private to public.
 
 ## Reviewer Roster
 
@@ -80,20 +168,30 @@ Reviewers are configured in `config/reviewers.json`. Each entry declares:
 - stage: `preflight` or `review`
 - selection policy: `mandatory` or `optional`
 
-Reviewer roles are carried by the prompt templates and reviewer config; the wrapper does not require separate `.codex/agents` definitions.
-
 Mandatory reviewers currently include parser preflight plus baseline cross-reference, reference, and grammar/copyediting checks. Optional reviewers cover numerical claims, claim-evidence alignment, literature positioning, identification, robustness, sample construction, front/back consistency, external validity, model/equation checks, replication/data availability, institutional context, power/multiple testing, design/randomization, and economic magnitude.
 
-Search-enabled reviewers need the Codex CLI search mode available. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
+Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
+
+Run all enabled review-stage reviewers without selector filtering:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection static
+```
+
+Use an explicit paper id when needed:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
+```
 
 ## Editor-Only Refresh
 
 Use editor-only refresh when parsed artifacts, reviewer JSON, selected reviewer config, and `work/<paper_id>/editor/normalized_bundle.json` already exist, and the change only affects editor presentation or report shape.
 
 ```powershell
-$paperId = "<paper_id>"
+$paperId = "my-paper"
 
-.\.venv\Scripts\python.exe scripts\render_prompts.py `
+python scripts\render_prompts.py `
   --paper-id $paperId `
   --parsed-dir "work\${paperId}\parsed" `
   --reviews-dir "work\${paperId}\reviews" `
@@ -102,7 +200,7 @@ $paperId = "<paper_id>"
   --editor-bundle-path "work\${paperId}\editor\normalized_bundle.json" `
   --reviewers-config "work\${paperId}\selection\selected_reviewers.json"
 
-.\.venv\Scripts\python.exe scripts\build_editor_input.py `
+python scripts\build_editor_input.py `
   --paper-id $paperId `
   --editor-prompt "work\${paperId}\prompts\editor_report.txt" `
   --bundle "work\${paperId}\editor\normalized_bundle.json" `
@@ -113,7 +211,7 @@ $paperId = "<paper_id>"
 Get-Content "work\${paperId}\editor\editor_input.md" -Raw |
   codex exec --output-last-message "outputs\${paperId}\report.md" -
 
-.\.venv\Scripts\python.exe scripts\check_final_report.py `
+python scripts\check_final_report.py `
   --input "outputs\${paperId}\report.md" `
   --bundle "work\${paperId}\editor\normalized_bundle.json"
 ```
@@ -139,12 +237,10 @@ The final report should be readable prose first, with canonical IDs and source f
 
 ## Development
 
-Set up locally on Windows/PowerShell:
+Run the test suite:
 
 ```powershell
-cd C:\Users\s11378\Dropbox\reviewer
-.\.venv\Scripts\Activate.ps1
-python -m unittest tests.test_reviewer_config
+python -m unittest
 ```
 
 Add a reviewer by adding:
@@ -153,21 +249,8 @@ Add a reviewer by adding:
 2. one enabled entry in `config/reviewers.json`
 3. focused tests when the reviewer changes validation, normalization, routing, or report structure
 
-## Git Hygiene
+GitHub Actions runs `python -m unittest` on pushes and pull requests to `main` or `master`.
 
-Usually track:
+## License
 
-- project instructions and README: `AGENTS.md`, `README.md`
-- project config, skills, reviewer config, prompts, schemas, scripts, tests
-- slide teaching material under `Slides/` when intentionally kept
-
-Usually do not track:
-
-- `inputs/*.pdf`
-- `work/`
-- `outputs/`
-- `.venv/`
-- generated documentation exports
-- LaTeX slide build byproducts
-
-Track the machinery that produces review results, not temporary run products.
+No public open-source license has been selected yet. See `LICENSE.md`. Choose a real license before making the repository public.

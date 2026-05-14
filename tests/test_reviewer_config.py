@@ -12,6 +12,8 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures  # noqa: E402
+from check_shareable_repo import private_tracking_violations  # noqa: E402
+from check_tracked_sensitive_names import suspicious_files  # noqa: E402
 from build_editor_input import (  # noqa: E402
     ADDITIONAL_FINDINGS_SECTION,
     GRAMMAR_APPENDIX_SECTION,
@@ -903,6 +905,40 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(any("missing grammar appendix heading" in failure for failure in failures))
         self.assertEqual(fixed, [])
+
+    def test_shareable_repo_check_allows_placeholders_only_in_private_dirs(self) -> None:
+        paths = [
+            "README.md",
+            "inputs/README.md",
+            "work/README.md",
+            "outputs/README.md",
+            "scripts/review_paper.py",
+        ]
+
+        self.assertEqual(private_tracking_violations(paths), [])
+
+    def test_shareable_repo_check_rejects_private_artifacts(self) -> None:
+        paths = [
+            "inputs/paper.pdf",
+            "work/synthetic-paper/reviews/numerical_auditor.json",
+            "outputs/synthetic-paper/report.md",
+            "data/raw/survey.csv",
+            "data/paper/raw/table.csv",
+        ]
+
+        self.assertEqual(private_tracking_violations(paths), paths)
+
+    def test_sensitive_name_check_flags_assignments_without_secret_values(self) -> None:
+        root = self.config_path("sensitive_marker.txt").parent
+        secret_file = root / "settings.py"
+        normal_file = root / "notes.md"
+        variable_name = "OPENAI_" + "API_KEY"
+        secret_file.write_text(f"{variable_name} = 'do-not-print'\n", encoding="utf-8")
+        normal_file.write_text("Key findings are summarized here.\n", encoding="utf-8")
+        self.addCleanup(lambda: secret_file.exists() and secret_file.unlink())
+        self.addCleanup(lambda: normal_file.exists() and normal_file.unlink())
+
+        self.assertEqual(suspicious_files(root, ["settings.py", "notes.md"]), ["settings.py"])
 
 
 if __name__ == "__main__":

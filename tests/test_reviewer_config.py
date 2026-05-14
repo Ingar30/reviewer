@@ -26,6 +26,7 @@ from build_editor_input import (  # noqa: E402
     route_finding,
 )
 from normalize_review_outputs import issue_class, normalize  # noqa: E402
+from preprocess_pdf import should_append_raw_caption_continuation  # noqa: E402
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -1016,6 +1017,13 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(metrics["pilot_selected"], ["data_availability_replication_auditor"])
         self.assertEqual(metrics["zero_finding_selected_optional"], ["data_availability_replication_auditor"])
         self.assertEqual(metrics["score"], 86.0)
+
+    def test_raw_caption_continuation_accepts_split_caption_but_not_notes(self) -> None:
+        self.assertTrue(should_append_raw_caption_continuation("Table 1: Analysis when", "labels disagree"))
+        self.assertTrue(should_append_raw_caption_continuation("Figure 2: Distribution of", "quality scores"))
+        self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "Note: Standard errors"))
+        self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "1.23 4.56 7.89"))
+        self.assertFalse(should_append_raw_caption_continuation("Table 2: Model performances.", "in that it pushes"))
 
 
 if __name__ == "__main__":

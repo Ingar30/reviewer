@@ -188,6 +188,20 @@ Use an explicit paper id when needed:
 
 Use editor-only refresh when parsed artifacts, reviewer JSON, selected reviewer config, and `work/<paper_id>/editor/normalized_bundle.json` already exist, and the change only affects editor presentation or report shape.
 
+Build refreshed editor input without making a new Codex call:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\refresh_editor.py --paper-id "my-paper"
+```
+
+Run the editor and smoke-check the refreshed report:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\refresh_editor.py --paper-id "my-paper" --run-editor
+```
+
+The lower-level commands are:
+
 ```powershell
 $paperId = "my-paper"
 

@@ -27,6 +27,7 @@ from build_editor_input import (  # noqa: E402
 )
 from normalize_review_outputs import issue_class, normalize  # noqa: E402
 from preprocess_pdf import should_append_raw_caption_continuation  # noqa: E402
+from refresh_editor import require_paths  # noqa: E402
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -1024,6 +1025,12 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "Note: Standard errors"))
         self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "1.23 4.56 7.89"))
         self.assertFalse(should_append_raw_caption_continuation("Table 2: Model performances.", "in that it pushes"))
+
+    def test_refresh_editor_require_paths_reports_missing_prerequisites(self) -> None:
+        missing = self.config_path("missing_editor_prereq.json")
+
+        with self.assertRaisesRegex(FileNotFoundError, "Editor refresh prerequisites"):
+            require_paths({"normalized bundle": missing})
 
 
 if __name__ == "__main__":

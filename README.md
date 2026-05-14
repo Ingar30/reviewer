@@ -55,8 +55,6 @@ Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 ```
 
-On Windows, avoid creating `.venv` inside Dropbox, OneDrive, or other cloud-synced folders if possible. Sync clients can lock pip cache or `.pyc` files during installation and cause `WinError 32`.
-
 macOS/Linux:
 
 ```bash

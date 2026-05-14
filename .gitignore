@@ -28,18 +28,8 @@ PROJECT_DOCUMENTATION.jpeg
 PROJECT_DOCUMENTATION.pdf
 PROJECT_DOCUMENTATION.png
 
-# Slides and LaTeX build byproducts
-Slides/**/*.aux
-Slides/**/*.fdb_latexmk
-Slides/**/*.fls
-Slides/**/*.log
-Slides/**/*.nav
-Slides/**/*.out
-Slides/**/*.snm
-Slides/**/*.synctex.gz
-Slides/**/*.toc
-Slides/**/*.vrb
-Slides/sharp_review_pages/
+# Internal slides
+Slides/
 
 # OS/editor noise
 .DS_Store

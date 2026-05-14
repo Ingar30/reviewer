@@ -119,7 +119,6 @@ Tracked project machinery:
 - `setup.ps1` and `setup.sh`: local bootstrap helpers.
 - `scripts/check_environment.py`: fast local readiness check for dependencies, project files, and Codex CLI.
 - `scripts/check_tracked_sensitive_names.py`: pre-push scanner for unexpected sensitive variable names in shareable files.
-- `Slides/`: optional teaching material for explaining the workflow.
 - `docs/first_review_walkthrough.md`: step-by-step path for a new user running a first private review.
 - `docs/repository_settings.md`: recommended GitHub settings for the private repository.
 

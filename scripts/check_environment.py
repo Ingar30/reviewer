@@ -25,6 +25,8 @@ REQUIRED_PATHS = [
     "prompts/templates/editor_report.txt",
     "prompts/templates/parser_repair_plan.txt",
     "scripts/review_paper.py",
+    "scripts/run_parser_repair_agent.py",
+    "scripts/evaluate_parser_repair.py",
 ]
 
 

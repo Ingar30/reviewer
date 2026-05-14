@@ -17,12 +17,13 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. dynamically selects optional reviewers while always running mandatory reviewers
-5. validates every reviewer JSON output against schema and semantic checks
-6. normalizes and deduplicates reviewer findings into an editor bundle
-7. builds editor input from the normalized bundle and original reviewer JSON files
-8. runs the editor to write `outputs/<paper_id>/report.md`
-9. smoke-checks final report structure and traceability
+4. optionally runs parser repair planning when parser-quality preflight reports high- or medium-severity parser artifacts
+5. dynamically selects optional reviewers while always running mandatory reviewers
+6. validates every reviewer JSON output against schema and semantic checks
+7. normalizes and deduplicates reviewer findings into an editor bundle
+8. builds editor input from the normalized bundle and original reviewer JSON files
+9. runs the editor to write `outputs/<paper_id>/report.md`
+10. smoke-checks final report structure and traceability
 
 Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are local/private by default.
 
@@ -112,6 +113,8 @@ Tracked project machinery:
 - `prompts/templates/*.txt`: reusable prompt templates.
 - `schemas/*.json`: structured output contracts.
 - `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
+- `scripts/run_parser_repair_agent.py`: opt-in post-preflight parser repair overlay generation.
+- `scripts/evaluate_parser_repair.py`: scoring helper for parser repair plan experiments.
 - `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
 - `.github/`: CI, issue templates, and pull request template.
 - `.github/dependabot.yml`: weekly dependency checks for GitHub Actions and Python requirements.
@@ -127,6 +130,7 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
+- `work/<paper_id>/repair/`: optional parser repair plan and reviewer-facing repair notes.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.

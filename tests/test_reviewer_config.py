@@ -37,6 +37,7 @@ from review_paper import (  # noqa: E402
     plausible_editor_report,
     recover_editor_report_if_needed,
     repairable_parser_findings,
+    render_selector_prompt,
     selected_reviewers_from_selection,
     validate_selection_output,
 )
@@ -1259,6 +1260,20 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIn("Parser repair overlay", rendered)
         self.assertIn("work/paper/repair/parser_repair_notes.md", rendered)
         self.assertIn("preferred fallback artifacts", rendered)
+
+    def test_selector_prompt_can_include_parser_repair_overlay(self) -> None:
+        prompt = render_selector_prompt(
+            REPO_ROOT,
+            "paper-x",
+            REPO_ROOT / "work" / "paper-x" / "parsed",
+            [reviewer_config("numerical_auditor", "NUM", selection_policy="optional")],
+            REPO_ROOT / "schemas" / "reviewer_selection.schema.json",
+            REPO_ROOT / "work" / "paper-x" / "repair" / "parser_repair_notes.md",
+        )
+
+        self.assertIn("Parser repair overlay available before reviewer selection", prompt)
+        self.assertIn("parser_repair_notes.md", prompt)
+        self.assertIn("verified fallback artifacts", prompt)
 
 
 if __name__ == "__main__":

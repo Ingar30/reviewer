@@ -607,6 +607,25 @@ def fallback_caption_crop_bbox(page: fitz.Page) -> list[float]:
     ]
 
 
+def should_append_raw_caption_continuation(title_so_far: str, next_text: str) -> bool:
+    text = clean_inline_text(next_text)
+    if not text or ANY_CAPTION_RE.match(text):
+        return False
+    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|[-−]?\d|N\b|Controls\b|Control mean\b)", text):
+        return False
+    if len(text) > 180:
+        return False
+    if title_so_far.rstrip().endswith(":"):
+        return True
+    if title_so_far.rstrip().endswith((".", "?", "!", ")")):
+        return False
+    if text[:1].islower():
+        return True
+    if re.search(r"\b(?:and|or|of|for|from|to|when|with|without|by|in|on|the|a|an)$", title_so_far, re.IGNORECASE):
+        return True
+    return False
+
+
 def extract_raw_captioned_items_for_page(
     page: fitz.Page,
     kind: str,
@@ -627,9 +646,17 @@ def extract_raw_captioned_items_for_page(
             continue
 
         label = match.group("label")
-        title = clean_inline_text(match.group("title"))
+        title_parts = [clean_inline_text(match.group("title"))]
+        caption_end = i
+        while caption_end + 1 < len(lines):
+            if should_append_raw_caption_continuation(" ".join(title_parts), lines[caption_end + 1]):
+                title_parts.append(lines[caption_end + 1].strip())
+                caption_end += 1
+            else:
+                break
+        title = clean_inline_text(" ".join(title_parts))
         next_caption_idx = None
-        for j in range(i + 1, len(lines)):
+        for j in range(caption_end + 1, len(lines)):
             if ANY_CAPTION_RE.match(lines[j]):
                 next_caption_idx = j
                 break
@@ -654,7 +681,7 @@ def extract_raw_captioned_items_for_page(
                 "caption_bbox": [crop_bbox[0], crop_bbox[1], crop_bbox[2], min(crop_bbox[3], crop_bbox[1] + 24)],
                 "crop_bbox": crop_bbox,
                 "raw_lines": content_lines,
-                "body_lines": content_lines[1:],
+                "body_lines": content_lines[caption_end - i + 1:],
                 "caption_source": "raw_text",
                 "sort_y": float(i),
             }

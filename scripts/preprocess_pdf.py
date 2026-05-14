@@ -132,6 +132,13 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def portable_path(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root).as_posix())
+    except ValueError:
+        return str(path)
+
+
 def line_number_for_offset(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
@@ -1091,11 +1098,68 @@ def build_full_text(page_records: list[dict[str, Any]]) -> str:
     return "\n\n".join(chunks).strip() + "\n"
 
 
+def plausible_sparse_page(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return True
+    compact = " ".join(lines)
+    if ANY_CAPTION_RE.search(compact):
+        return True
+    if len(lines) <= 3 and all(PAGE_LABEL_LINE_RE.match(line) or len(line) < 90 for line in lines):
+        return True
+    if len(compact) < 250 and re.search(r"\b(?:table|figure|appendix|survey|question|note)\b", compact, re.IGNORECASE):
+        return True
+    if len(compact) < 250 and compact.count("%") >= 2:
+        return True
+    return False
+
+
+def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
+    low_text_pages = []
+    sparse_plausible_pages = []
+    raw_normalized_ratios = []
+    suspicious_order_pages = []
+    for page in page_records:
+        raw_text = page.get("raw_text", "")
+        normalized_text = page.get("normalized_text", "")
+        page_number = page["pdf_page_number"]
+        if len(raw_text.strip()) < 250 and not page.get("likely_scanned"):
+            if plausible_sparse_page(raw_text):
+                sparse_plausible_pages.append(page_number)
+            else:
+                low_text_pages.append(page_number)
+        if raw_text and normalized_text:
+            raw_normalized_ratios.append(len(normalized_text) / max(len(raw_text), 1))
+            raw_lines = max(1, len([line for line in raw_text.splitlines() if line.strip()]))
+            normalized_lines = max(1, len([line for line in normalized_text.splitlines() if line.strip()]))
+            if normalized_lines > raw_lines * 2.25 and len(normalized_text) > 1000:
+                suspicious_order_pages.append(page_number)
+    median_ratio = None
+    if raw_normalized_ratios:
+        ratios = sorted(raw_normalized_ratios)
+        middle = len(ratios) // 2
+        if len(ratios) % 2:
+            median_ratio = ratios[middle]
+        else:
+            median_ratio = (ratios[middle - 1] + ratios[middle]) / 2
+    return {
+        "low_text_pages": low_text_pages,
+        "sparse_plausible_pages": sparse_plausible_pages,
+        "suspicious_order_pages": suspicious_order_pages,
+        "raw_normalized_char_ratio_median": round(median_ratio, 3) if median_ratio is not None else None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Preprocess a paper PDF into structured artifacts.")
     parser.add_argument("--pdf", required=True, help="Path to input PDF")
     parser.add_argument("--paper-id", default=None, help="Optional paper id; defaults to filename stem")
     parser.add_argument("--dpi", type=int, default=200, help="DPI for saved page images")
+    parser.add_argument(
+        "--work-root",
+        default="work",
+        help="Directory for run artifacts; defaults to work. Useful for isolated branch experiments.",
+    )
     args = parser.parse_args()
 
     pdf_path = Path(args.pdf).expanduser().resolve()
@@ -1106,7 +1170,9 @@ def main() -> int:
 
     paper_id = slugify(args.paper_id or pdf_path.stem)
     repo_root = Path.cwd()
-    work_root = repo_root / "work" / paper_id
+    work_root_arg = Path(args.work_root)
+    work_root_base = work_root_arg if work_root_arg.is_absolute() else repo_root / work_root_arg
+    work_root = work_root_base / paper_id
     parsed_dir = work_root / "parsed"
     reviews_dir = work_root / "reviews"
 
@@ -1169,11 +1235,11 @@ def main() -> int:
                 page_label=page_label,
                 page_width=float(page.rect.width),
                 page_height=float(page.rect.height),
-                raw_text_path=str(raw_text_path.relative_to(repo_root).as_posix()),
-                normalized_text_path=str(normalized_text_path.relative_to(repo_root).as_posix()),
-                image_path=str(image_path.relative_to(repo_root).as_posix()),
-                words_path=str(words_path.relative_to(repo_root).as_posix()),
-                blocks_path=str(blocks_path.relative_to(repo_root).as_posix()),
+                raw_text_path=portable_path(raw_text_path, repo_root),
+                normalized_text_path=portable_path(normalized_text_path, repo_root),
+                image_path=portable_path(image_path, repo_root),
+                words_path=portable_path(words_path, repo_root),
+                blocks_path=portable_path(blocks_path, repo_root),
                 extracted_char_count=len(raw_text),
                 likely_scanned=likely_scanned,
             )
@@ -1230,10 +1296,12 @@ def main() -> int:
             "dpi": args.dpi,
             "ocr_used": False,
             "project_root": str(repo_root),
+            "work_root": portable_path(work_root_base, repo_root),
         },
         "summary": {
             "page_count": len(page_records),
             "likely_scanned_pages": likely_scanned_pages,
+            "page_quality": page_quality_summary(page_records),
             "section_count": len(sections),
             "citation_candidate_count": len(citations),
             "reference_count": len(references),

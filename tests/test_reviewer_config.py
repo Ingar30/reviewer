@@ -26,7 +26,7 @@ from build_editor_input import (  # noqa: E402
     route_finding,
 )
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
-from preprocess_pdf import should_append_raw_caption_continuation  # noqa: E402
+from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
@@ -1117,6 +1117,51 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIn("5 to 9 optional reviewers", prompt)
         self.assertIn("at most 2 pilot reviewers", prompt)
         self.assertIn("Use skipped_optional_reviewers", prompt)
+
+    def test_preprocess_page_quality_summary_flags_low_text_and_order_instability(self) -> None:
+        summary = page_quality_summary(
+            [
+                {
+                    "pdf_page_number": 1,
+                    "raw_text": "alpha\nbeta\ngamma\ndelta",
+                    "normalized_text": "alpha\nbeta\ngamma\ndelta",
+                    "likely_scanned": False,
+                },
+                {
+                    "pdf_page_number": 2,
+                    "raw_text": "a\nb\nc\nd\n",
+                    "normalized_text": "\n".join(f"line {index} " + ("x" * 120) for index in range(10)),
+                    "likely_scanned": False,
+                },
+            ]
+        )
+
+        self.assertEqual(summary["low_text_pages"], [1, 2])
+        self.assertEqual(summary["suspicious_order_pages"], [2])
+        self.assertIsNotNone(summary["raw_normalized_char_ratio_median"])
+
+    def test_preprocess_page_quality_summary_separates_sparse_plausible_pages(self) -> None:
+        summary = page_quality_summary(
+            [
+                {
+                    "pdf_page_number": 3,
+                    "raw_text": "Figure A.1: Screenshot of trading data\nNote: image-only evidence\n3",
+                    "normalized_text": "Figure A.1: Screenshot of trading data\nNote: image-only evidence\n3",
+                    "likely_scanned": False,
+                }
+            ]
+        )
+
+        self.assertEqual(summary["low_text_pages"], [])
+        self.assertEqual(summary["sparse_plausible_pages"], [3])
+
+    def test_portable_path_uses_absolute_path_when_outside_root(self) -> None:
+        root = Path("C:/repo")
+        inside = root / "work" / "paper"
+        outside = Path("D:/other/work")
+
+        self.assertEqual(portable_path(inside, root), "work/paper")
+        self.assertEqual(portable_path(outside, root), str(outside))
 
 
 if __name__ == "__main__":

@@ -34,6 +34,8 @@ def score_from_penalties(*penalties: float) -> float:
 
 
 def page_quality_metrics(repo: Path, paper_id: str, parsed_dir: Path) -> dict[str, Any]:
+    manifest = read_json(parsed_dir / "manifest.json", {})
+    manifest_quality = (manifest.get("summary") or {}).get("page_quality") or {}
     page_index = read_json(parsed_dir / "page_index.json", [])
     low_text_pages = []
     unstable_order_pages = []
@@ -65,6 +67,10 @@ def page_quality_metrics(repo: Path, paper_id: str, parsed_dir: Path) -> dict[st
     page_count = len(page_index)
     avg_chars = statistics.mean(chars) if chars else 0
     median_ratio = statistics.median(raw_norm_ratios) if raw_norm_ratios else 1.0
+    if manifest_quality:
+        low_text_pages = manifest_quality.get("low_text_pages", low_text_pages)
+        unstable_order_pages = manifest_quality.get("suspicious_order_pages", unstable_order_pages)
+        median_ratio = manifest_quality.get("raw_normalized_char_ratio_median", median_ratio)
     score = score_from_penalties(
         4.0 * len(low_text_pages),
         3.0 * len(unstable_order_pages),
@@ -76,6 +82,7 @@ def page_quality_metrics(repo: Path, paper_id: str, parsed_dir: Path) -> dict[st
         "avg_extracted_chars": round(avg_chars, 1),
         "likely_scanned_pages": scanned_pages,
         "low_text_pages": low_text_pages,
+        "sparse_plausible_pages": manifest_quality.get("sparse_plausible_pages", []),
         "unstable_order_pages": unstable_order_pages,
         "raw_normalized_char_ratio_median": round(median_ratio, 3),
         "score": round(score, 1),
@@ -194,10 +201,10 @@ def resume_metrics(paper_root: Path) -> dict[str, Any]:
     return {"missing_resume_artifacts": missing, "review_json_count": review_json_count, "score": round(score, 1)}
 
 
-def evaluate_paper(repo: Path, paper_id: str) -> dict[str, Any]:
-    paper_root = repo / "work" / paper_id
+def evaluate_paper(repo: Path, paper_id: str, work_root: Path | None = None, outputs_root: Path | None = None) -> dict[str, Any]:
+    paper_root = (work_root or repo / "work") / paper_id
     parsed_dir = paper_root / "parsed"
-    output_report = repo / "outputs" / paper_id / "report.md"
+    output_report = (outputs_root or repo / "outputs") / paper_id / "report.md"
     metrics = {
         "paper_id": paper_id,
         "preprocessing": page_quality_metrics(repo, paper_id, parsed_dir),
@@ -214,9 +221,8 @@ def evaluate_paper(repo: Path, paper_id: str) -> dict[str, Any]:
     return metrics
 
 
-def available_papers(repo: Path) -> list[str]:
-    work_dir = repo / "work"
-    return sorted(path.name for path in work_dir.glob("paper*") if path.is_dir())
+def available_papers(root: Path) -> list[str]:
+    return sorted(path.name for path in root.glob("paper*") if path.is_dir())
 
 
 def aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -280,13 +286,21 @@ def markdown_report(data: dict[str, Any]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate prior actual reviewer runs against limitation-oriented metrics.")
     parser.add_argument("--papers", nargs="*", default=None, help="Paper IDs to evaluate; defaults to work/paper*.")
+    parser.add_argument("--work-root", default="work", help="Root containing paper work directories.")
+    parser.add_argument("--outputs-root", default="outputs", help="Root containing paper report directories.")
     parser.add_argument("--output-json", default="work/evaluations/prior_run_evaluation.json")
     parser.add_argument("--output-md", default="work/evaluations/prior_run_evaluation.md")
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
-    papers = args.papers or available_papers(repo)
-    results = [evaluate_paper(repo, paper_id) for paper_id in papers]
+    work_root = Path(args.work_root)
+    if not work_root.is_absolute():
+        work_root = repo / work_root
+    outputs_root = Path(args.outputs_root)
+    if not outputs_root.is_absolute():
+        outputs_root = repo / outputs_root
+    papers = args.papers or available_papers(work_root)
+    results = [evaluate_paper(repo, paper_id, work_root=work_root, outputs_root=outputs_root) for paper_id in papers]
     data = {"summary": aggregate(results), "papers": results}
 
     output_json = repo / args.output_json

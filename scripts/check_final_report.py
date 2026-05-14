@@ -15,6 +15,7 @@ DEFAULT_REQUIRED_HEADINGS = [
 ]
 GRAMMAR_APPENDIX_HEADING = "## Appendix: Grammar and Copyediting Issues"
 TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
+EXTERNAL_SOURCES_APPENDIX_RE = re.compile(r"^## Appendix: External Sources", re.MULTILINE)
 
 META_NOTE_RE = re.compile(
     r"\b(?:done\.|wrote the final|report (?:is|was) saved|saved to|appears only under ignored status)\b",
@@ -28,6 +29,19 @@ def bundle_has_copyedit_findings(bundle: dict) -> bool:
         for finding in bundle.get("canonical_findings", [])
         if isinstance(finding, dict)
     )
+
+
+def external_source_urls(bundle: dict) -> set[str]:
+    urls = set()
+    for finding in bundle.get("canonical_findings", []):
+        if not isinstance(finding, dict):
+            continue
+        for source in finding.get("source_objects", []) or []:
+            source_object = source.get("source_object") or {}
+            url = source_object.get("url")
+            if isinstance(url, str) and url.strip():
+                urls.add(url.strip())
+    return urls
 
 
 def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2000) -> list[str]:
@@ -47,6 +61,12 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
             failures.append(f"missing traceability appendix heading: {TRACEABILITY_APPENDIX_HEADING}")
         if bundle_has_copyedit_findings(bundle) and GRAMMAR_APPENDIX_HEADING not in text:
             failures.append(f"missing grammar appendix heading: {GRAMMAR_APPENDIX_HEADING}")
+        urls = external_source_urls(bundle)
+        if urls and not EXTERNAL_SOURCES_APPENDIX_RE.search(text):
+            failures.append("missing external-sources appendix heading despite external source URLs in bundle")
+        for url in sorted(urls):
+            if EXTERNAL_SOURCES_APPENDIX_RE.search(text) and url not in text:
+                failures.append(f"missing external source URL from report: {url}")
         for finding in bundle.get("canonical_findings", []):
             canonical_id = finding.get("canonical_id")
             if canonical_id and canonical_id not in text:

@@ -153,6 +153,8 @@ Forks can usually extend the workflow by adding reviewer entries in `config/revi
 
 See `docs/extension_guide.md` for the main reviewer, schema, prompt, normalization, and wrapper extension points.
 
+See `CONTRIBUTING.md` for pull request expectations and local checks.
+
 ## Reviewer Roster
 
 Reviewers are configured in `config/reviewers.json`. Each entry declares:
@@ -193,22 +195,6 @@ Use an explicit paper id when needed:
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
 ```
-
-## Development
-
-Run the test suite:
-
-```powershell
-python -m unittest
-```
-
-Add a reviewer by adding:
-
-1. `prompts/templates/<prompt>.txt`
-2. one enabled entry in `config/reviewers.json`
-3. focused tests when the reviewer changes validation, normalization, routing, or report structure
-
-GitHub Actions runs `python -m unittest` on pushes and pull requests to `main` or `master`.
 
 ## License
 

@@ -1,11 +1,11 @@
 # Repository Settings
 
-Recommended GitHub settings for the first private repository.
+Recommended GitHub settings for private development and public collaboration.
 
-## Initial Visibility
+## Visibility
 
-- Create the repository as private.
-- Keep it private until `docs/public_release_checklist.md` is complete.
+- Keep the repository private until `docs/public_release_checklist.md` is complete.
+- When public, keep private manuscripts and generated artifacts out of issues, pull requests, discussions, releases, and wikis.
 - Do not add source PDFs, generated reports, reviewer logs, or parsed artifacts to releases, issues, pull requests, or wikis.
 
 ## Branches
@@ -26,7 +26,14 @@ Recommended GitHub settings for the first private repository.
 - Ask contributors to use synthetic examples or short non-sensitive snippets.
 - Close or redact issues that accidentally include private paper text, generated reports, logs, or credentials.
 - Keep reviewer changes small: config, prompt, schema, validator, and tests should move together when the output contract changes.
+- Consider enabling Discussions for design proposals, reviewer ideas, and reproducibility questions.
+
+## Security And Privacy Reporting
+
+- Enable private vulnerability reporting if the repository is public.
+- Direct data-exposure reports to a private channel rather than public issues.
+- Treat accidental paper text, generated review outputs, logs, or credentials as sensitive and remove them before discussion continues.
 
 ## Before Public Release
 
-Follow `docs/public_release_checklist.md`, choose a real license, and verify the repository from a fresh clone.
+Follow `docs/public_release_checklist.md` and verify the repository from a fresh clone.

@@ -1,6 +1,6 @@
-# Private GitHub Repository Setup
+# Historical Private GitHub Repository Setup
 
-Use this when you are ready to publish the project machinery to GitHub as a private repository.
+This records the original private-repository bootstrap path. For ongoing public-release checks, use `docs/public_release_checklist.md` and `docs/repository_settings.md`.
 
 ## Before Publishing
 
@@ -11,16 +11,19 @@ python -m unittest
 python scripts\check_shareable_repo.py --include-untracked
 python scripts\check_tracked_sensitive_names.py
 git status --short
-git ls-files -o --exclude-standard inputs work outputs
+git ls-files inputs work outputs Slides
+git ls-files -o --exclude-standard inputs work outputs Slides
 ```
 
-The last command should list only:
+The tracked-files command should list only:
 
 ```text
 inputs/README.md
 outputs/README.md
 work/README.md
 ```
+
+The untracked-files command should be empty after ignored local artifacts are excluded.
 
 Review the diff before committing:
 
@@ -53,11 +56,11 @@ git branch -M main
 Stage only the shareable setup files and intentional project machinery. Avoid `git add -A` if unrelated local edits are present.
 
 ```powershell
-git add .gitignore .gitattributes .env.example README.md CONTRIBUTING.md SECURITY.md LICENSE.md setup.ps1 setup.sh .github docs inputs/README.md work/README.md outputs/README.md scripts/check_shareable_repo.py
+git add .gitignore .env.example README.md CONTRIBUTING.md SECURITY.md LICENSE.md setup.ps1 setup.sh .github docs inputs/README.md work/README.md outputs/README.md config prompts schemas scripts tests requirements.txt AGENTS.md
 git commit -m "Prepare reviewer project for GitHub"
 git push -u origin main
 ```
 
 Do not stage local paper inputs, generated review artifacts, or unrelated working-tree changes such as draft slide edits unless you intentionally want them in the repository.
 
-Before making the repository public later, follow `docs/public_release_checklist.md`.
+Before making the repository public, follow `docs/public_release_checklist.md`.

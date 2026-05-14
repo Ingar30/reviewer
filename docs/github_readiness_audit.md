@@ -2,9 +2,13 @@
 
 This audit maps the repository-sharing goal to concrete local evidence.
 
+Path and secret-name checks are limited mechanical guards, not certification that
+documentation or fixtures contain no confidential derived evidence. Follow the
+full-file and history review in `docs/public_release_checklist.md` before publishing.
+
 ## Objective
 
-Make the reviewer setup easy for other researchers to clone and run, start from a private GitHub repository, keep the path open for a later public release, and avoid sharing papers or generated review artifacts.
+Make the reviewer setup easy for other researchers to clone, run, fork, and improve while keeping papers and generated review artifacts out of GitHub.
 
 ## Checklist
 
@@ -15,16 +19,18 @@ Make the reviewer setup easy for other researchers to clone and run, start from 
 | Local readiness check | `scripts/check_environment.py` verifies required Python modules, core project files, and Codex CLI availability | Complete locally |
 | First-run walkthrough | `docs/first_review_walkthrough.md` shows activation, checks, adding a private PDF, running the reviewer, and reading outputs | Complete locally |
 | GitHub project scaffolding | `.github/workflows/ci.yml`, `.github/dependabot.yml`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Complete locally |
-| Suggested private repo settings | `docs/repository_settings.md` covers visibility, branch protection, Actions, issues, and public-release preparation | Complete locally |
+| Suggested repository settings | `docs/repository_settings.md` covers visibility, branch protection, Actions, issues, security reporting, and public-release hygiene | Complete locally |
 | Keep papers off GitHub | `.gitignore` ignores `inputs/*`, `work/*`, and `outputs/*` except README placeholders | Complete locally |
 | Keep generated artifacts off GitHub | `.gitignore` ignores generated work/output directories and common build/cache files | Complete locally |
+| Keep internal slides off GitHub | `.gitignore` ignores `Slides/`; `git ls-files Slides` is empty | Complete locally |
 | Enforce shareability in CI | `scripts/check_shareable_repo.py` and CI job `Check shareable tracked files` | Complete locally |
 | Check first-commit safety | `scripts/check_shareable_repo.py --include-untracked` checks tracked plus addable untracked files | Complete locally |
 | Check sensitive-name hygiene | `scripts/check_tracked_sensitive_names.py` scans tracked/addable text files for unexpected secret-like names without printing values | Complete locally |
 | Tests cover the privacy guard | `tests/test_reviewer_config.py` covers allowed placeholders and rejected private artifacts | Complete locally |
-| Private-to-public release path | `docs/public_release_checklist.md` and `LICENSE.md` placeholder | Complete locally |
-| Private GitHub repo exists | No `origin` remote is currently configured | Blocked on owner/repo name and approval |
-| Initial commit pushed | Not done; no commit or push was requested/approved yet | Blocked on approval |
+| Public license | `LICENSE.md` contains the MIT License and README points to it | Complete locally |
+| Open contribution path | `README.md`, `CONTRIBUTING.md`, and `.github/` templates ask for synthetic examples and reproducible workflow changes | Complete locally |
+| GitHub repo exists | `origin` points to `https://github.com/Ingar30/reviewer.git` | Complete |
+| Main branch pushed | `main` is synchronized with `origin/main` when `git status --short --branch` is clean | Verify before release |
 
 ## Last Verified Commands
 
@@ -36,10 +42,11 @@ Make the reviewer setup easy for other researchers to clone and run, start from 
 .\.venv\Scripts\python.exe scripts\check_tracked_sensitive_names.py
 .\.venv\Scripts\python.exe -m py_compile scripts\check_shareable_repo.py scripts\check_environment.py scripts\check_tracked_sensitive_names.py
 git diff --check
-git ls-files -o --exclude-standard inputs work outputs
+git ls-files inputs work outputs Slides
+git ls-files -o --exclude-standard inputs work outputs Slides
 ```
 
-Expected `git ls-files -o --exclude-standard inputs work outputs` output before the first commit:
+Expected `git ls-files inputs work outputs Slides` output:
 
 ```text
 inputs/README.md
@@ -47,6 +54,8 @@ outputs/README.md
 work/README.md
 ```
 
+Expected `git ls-files -o --exclude-standard inputs work outputs Slides` output is empty after ignored local artifacts are excluded.
+
 ## Remaining External Step
 
-After the repository owner/name is chosen and the user approves the external action, create the private GitHub repo, stage only shareable files, commit, and push. See `docs/github_private_repo_setup.md`.
+Before switching visibility to public, rerun the checks above, inspect `git ls-files`, confirm CI is green on `main`, and follow `docs/public_release_checklist.md`.

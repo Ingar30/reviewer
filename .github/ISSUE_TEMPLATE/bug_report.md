@@ -15,6 +15,8 @@ assignees: ""
 2.
 3.
 
+Use synthetic fixtures, public-domain examples, or short non-sensitive snippets. Do not attach private papers or generated review outputs.
+
 ## Expected behavior
 
 
@@ -26,5 +28,4 @@ assignees: ""
 
 ## Logs or error output
 
-Paste only non-sensitive output. Do not include private paper text, API keys, tokens, or credentials.
-
+Paste only non-sensitive output. Do not include private paper text, generated report text, API keys, tokens, or credentials.

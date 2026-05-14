@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pipeline_paths import paper_run_paths
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -46,17 +48,17 @@ def main() -> int:
     args = parser.parse_args()
 
     repo = repo_root()
-    paper_root = repo / "work" / args.paper_id
-    parsed_dir = paper_root / "parsed"
-    reviews_dir = paper_root / "reviews"
-    prompts_dir = paper_root / "prompts"
-    editor_dir = paper_root / "editor"
-    outputs_dir = repo / "outputs" / args.paper_id
-    selected_reviewers = paper_root / "selection" / "selected_reviewers.json"
-    bundle = editor_dir / "normalized_bundle.json"
-    editor_prompt = prompts_dir / "editor_report.txt"
-    editor_input = editor_dir / "editor_input.md"
-    report = outputs_dir / "report.md"
+    paths = paper_run_paths(repo, args.paper_id)
+    parsed_dir = paths.parsed_dir
+    reviews_dir = paths.reviews_dir
+    prompts_dir = paths.prompts_dir
+    editor_dir = paths.editor_dir
+    outputs_dir = paths.outputs_dir
+    selected_reviewers = paths.selected_reviewers_config_path
+    bundle = paths.bundle_path
+    editor_prompt = paths.editor_prompt_path
+    editor_input = paths.editor_input_path
+    report = paths.report_path
 
     require_paths(
         {

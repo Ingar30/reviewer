@@ -12,7 +12,6 @@ This repository is designed to keep private paper inputs and generated artifacts
 
 ## Reporting
 
-For private security or data-exposure concerns, contact the repository owner directly instead of opening a public issue.
+For private security or data-exposure concerns, use GitHub private vulnerability reporting when it is enabled, or contact the repository owner directly instead of opening a public issue.
 
 If private data is accidentally committed, rotate any exposed credentials, remove the file from the current branch, and consider history cleanup before making the repository public.
-

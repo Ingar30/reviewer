@@ -4,9 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
+from pipeline_paths import SELECTED_REVIEWERS_CONFIG
 from reviewer_config import load_reviewers_config, write_reviewers_config
 from review_paper import (
-    SELECTED_REVIEWERS_CONFIG,
     run_reviewer_selector,
     selected_reviewers_from_selection,
     validate_selection_output,

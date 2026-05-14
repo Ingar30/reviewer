@@ -114,6 +114,7 @@ Tracked project machinery:
 - `prompts/templates/*.txt`: reusable prompt templates.
 - `schemas/*.json`: structured output contracts.
 - `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
+- `scripts/pipeline_paths.py`: shared runtime path conventions for wrappers and forked workflows.
 - `scripts/run_parser_repair_agent.py`: opt-in post-preflight parser repair overlay generation.
 - `scripts/evaluate_parser_repair.py`: scoring helper for parser repair plan experiments.
 - `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
@@ -123,7 +124,8 @@ Tracked project machinery:
 - `scripts/check_environment.py`: fast local readiness check for dependencies, project files, and Codex CLI.
 - `scripts/check_tracked_sensitive_names.py`: pre-push scanner for unexpected sensitive variable names in shareable files.
 - `docs/first_review_walkthrough.md`: step-by-step path for a new user running a first private review.
-- `docs/repository_settings.md`: recommended GitHub settings for the private repository.
+- `docs/extension_guide.md`: reviewer and wrapper extension points for forks.
+- `docs/repository_settings.md`: recommended GitHub settings for public or private repository use.
 
 Local/private runtime locations:
 
@@ -158,6 +160,21 @@ git status --short
 ```
 
 See `docs/public_release_checklist.md` before switching the GitHub repository from private to public.
+
+## Open Development
+
+This project is intended to support reproducible AI-assisted paper-review workflows without publishing the papers being reviewed. Issues, pull requests, examples, and tests should use synthetic fixtures, public-domain examples, or short non-sensitive snippets rather than private manuscripts or generated review outputs.
+
+Useful contributions include:
+
+- better deterministic preprocessing and artifact inventories
+- reviewer prompts, schemas, validators, and normalization rules that improve traceability
+- tests that capture parser, reviewer-selection, editor, or privacy-hygiene failures
+- documentation for running the workflow on new platforms or adapting it to related review settings
+
+Forks can usually extend the workflow by adding reviewer entries in `config/reviewers.json`, prompt templates in `prompts/templates/`, and matching validation or normalization tests when the output contract changes. Shared runtime paths live in `scripts/pipeline_paths.py` so wrappers can reuse the same `inputs/`, `work/`, and `outputs/` layout.
+
+See `docs/extension_guide.md` for the main reviewer, schema, prompt, normalization, and wrapper extension points.
 
 ## Reviewer Roster
 
@@ -300,4 +317,4 @@ GitHub Actions runs `python -m unittest` on pushes and pull requests to `main` o
 
 ## License
 
-No public open-source license has been selected yet. See `LICENSE.md`. Choose a real license before making the repository public.
+MIT License. See `LICENSE.md`.

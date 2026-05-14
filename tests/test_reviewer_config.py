@@ -29,6 +29,7 @@ from build_editor_input import (  # noqa: E402
 )
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
 from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
+from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
 from run_parser_repair_agent import repair_notes_markdown, validate_plan  # noqa: E402
 from review_paper import (  # noqa: E402
@@ -1137,6 +1138,14 @@ class ReviewerConfigTests(unittest.TestCase):
 
         with self.assertRaisesRegex(FileNotFoundError, "Editor refresh prerequisites"):
             require_paths({"normalized bundle": missing})
+
+    def test_paper_run_paths_collects_runtime_locations(self) -> None:
+        paths = paper_run_paths(REPO_ROOT, "paper-x")
+
+        self.assertEqual(paths.parsed_dir, REPO_ROOT / "work" / "paper-x" / "parsed")
+        self.assertEqual(paths.selected_reviewers_config_path.name, "selected_reviewers.json")
+        self.assertEqual(paths.parser_repair_notes_path.name, "parser_repair_notes.md")
+        self.assertEqual(paths.report_path, REPO_ROOT / "outputs" / "paper-x" / "report.md")
 
     def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")

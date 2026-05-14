@@ -10,14 +10,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from pipeline_paths import paper_run_paths
 from render_prompts import render_template
 from reviewer_config import ReviewerConfig, load_reviewers_config, write_reviewers_config
 
 
 SELECTOR_TEMPLATE = "reviewer_selection.txt"
 SELECTOR_OUTPUT = "reviewer_selection.json"
-SELECTED_REVIEWERS_CONFIG = "selected_reviewers.json"
-PARSER_REPAIR_NOTES = "parser_repair_notes.md"
 MIN_EDITOR_REPORT_CHARS = 2000
 EDITOR_REPORT_REQUIRED_HEADINGS = [
     "## Executive Summary",
@@ -544,21 +543,20 @@ def main() -> int:
         raise ValueError(f"Expected a PDF file, got: {pdf_path.name}")
 
     paper_id = slugify(args.paper_id or pdf_path.stem)
-    work_root = repo / "work" / paper_id
-    parsed_dir = work_root / "parsed"
-    prompts_dir = work_root / "prompts"
-    reviews_dir = work_root / "reviews"
-    editor_dir = work_root / "editor"
-    repair_dir = work_root / "repair"
-    selection_dir = work_root / "selection"
-    log_dir = work_root / "logs"
-    outputs_dir = repo / "outputs" / paper_id
-    report_path = outputs_dir / "report.md"
+    paths = paper_run_paths(repo, paper_id)
+    parsed_dir = paths.parsed_dir
+    prompts_dir = paths.prompts_dir
+    reviews_dir = paths.reviews_dir
+    repair_dir = paths.repair_dir
+    selection_dir = paths.selection_dir
+    log_dir = paths.log_dir
+    outputs_dir = paths.outputs_dir
+    report_path = paths.report_path
     schema_path = repo / "schemas" / "reviewer_output.schema.json"
     selection_schema_path = repo / "schemas" / "reviewer_selection.schema.json"
-    bundle_path = editor_dir / "normalized_bundle.json"
-    editor_input_path = editor_dir / "editor_input.md"
-    parser_repair_notes_path = repair_dir / PARSER_REPAIR_NOTES
+    bundle_path = paths.bundle_path
+    editor_input_path = paths.editor_input_path
+    parser_repair_notes_path = paths.parser_repair_notes_path
     reviewers_config_path = repo / args.reviewers_config if not Path(args.reviewers_config).is_absolute() else Path(args.reviewers_config)
     reviewers = load_reviewers_config(reviewers_config_path)
     preflight_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "preflight"]
@@ -569,7 +567,7 @@ def main() -> int:
     optional_reviewers = [
         reviewer for reviewer in standard_reviewers if reviewer.selection_policy == "optional"
     ]
-    selected_reviewers_config_path = selection_dir / SELECTED_REVIEWERS_CONFIG
+    selected_reviewers_config_path = paths.selected_reviewers_config_path
 
     log_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)

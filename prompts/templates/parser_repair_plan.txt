@@ -28,9 +28,9 @@ Scope:
 - Never ask reviewers to treat a repaired overlay artifact as the original parse. Repaired artifacts are reviewer aids with provenance and caveats.
 
 Mode behavior:
-- In plan mode, provide routing/caveat guidance only. Do not include repaired_artifacts unless a small, evidence-preserving overlay artifact is clearly justified.
+- In plan mode, provide routing/caveat guidance only. Set repaired_artifacts to [] unless a small, evidence-preserving overlay artifact is clearly justified.
 - In overlay mode, attempt a narrow repaired overlay artifact only when the existing parsed artifacts provide enough evidence to reconstruct the affected object faithfully. Examples include a small corrected CSV from legible page text, a corrected caption from raw page text, a clean reviewer-safe excerpt from scrambled normalized text, or an equation transcription from reliable source text.
-- In overlay mode, if the source evidence is insufficient, do not create repaired_artifacts. Set status to requires_reprocess or not_repairable, choose the appropriate action, and state caveats in residual_risk and limitations.
+- In overlay mode, if the source evidence is insufficient, set repaired_artifacts to []. Set status to requires_reprocess or not_repairable, choose the appropriate action, and state caveats in residual_risk and limitations.
 
 For each high- or medium-severity parser_artifact finding in the parser-quality output:
 - create exactly one repair entry
@@ -41,6 +41,7 @@ For each high- or medium-severity parser_artifact finding in the parser-quality 
 - give concise reviewer_guidance that can be inserted into downstream reviewer prompts
 - include verification_steps that a human or deterministic script could use to check the mitigation
 - state residual_risk honestly
+- include repaired_artifacts for every repair entry; use [] when no repaired overlay artifact is created
 - in overlay mode, when you can faithfully repair a narrow artifact, include repaired_artifacts with:
   - filename using only letters, numbers, dots, underscores, and hyphens
   - artifact_type

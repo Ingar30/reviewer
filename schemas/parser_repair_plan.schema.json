@@ -138,7 +138,8 @@
           "preferred_source_paths",
           "avoid_source_paths",
           "verification_steps",
-          "residual_risk"
+          "residual_risk",
+          "repaired_artifacts"
         ],
         "additionalProperties": false
       }
@@ -159,6 +160,7 @@
     "paper_id",
     "run_status",
     "summary",
+    "repair_mode",
     "repairs",
     "reviewer_brief",
     "limitations"

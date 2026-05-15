@@ -162,6 +162,25 @@ def review_output(
     }
 
 
+def strict_structured_output_schema_errors(schema: dict[str, object], path: str = "$") -> list[str]:
+    errors: list[str] = []
+    if schema.get("type") == "object" and isinstance(schema.get("properties"), dict):
+        properties = schema["properties"]
+        required = schema.get("required")
+        if not isinstance(required, list):
+            errors.append(f"{path}: required must list every property")
+        else:
+            missing = sorted(set(properties) - set(required))
+            if missing:
+                errors.append(f"{path}: required is missing {', '.join(missing)}")
+        for name, child in properties.items():
+            if isinstance(child, dict):
+                errors.extend(strict_structured_output_schema_errors(child, f"{path}.{name}"))
+    if schema.get("type") == "array" and isinstance(schema.get("items"), dict):
+        errors.extend(strict_structured_output_schema_errors(schema["items"], f"{path}[]"))
+    return errors
+
+
 class ReviewerConfigTests(unittest.TestCase):
     def cleanup_path(self, path: Path) -> None:
         try:
@@ -1247,6 +1266,37 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIn("table_1_repaired.csv", notes)
         self.assertIn("work/paper-x/repair/repaired_artifacts/table_1_repaired.csv", notes)
         self.assertIn("The overlay CSV does not replace deterministic table extraction.", notes)
+
+    def test_parser_repair_schema_is_strict_structured_output_compatible(self) -> None:
+        schema = json.loads((REPO_ROOT / "schemas" / "parser_repair_plan.schema.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(strict_structured_output_schema_errors(schema), [])
+
+    def test_parser_repair_plan_accepts_empty_repaired_artifacts(self) -> None:
+        plan = {
+            "paper_id": "paper-x",
+            "run_status": "partial",
+            "summary": "Prepared fallback guidance.",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-002",
+                    "issue_summary": "Page text is not in safe reading order.",
+                    "status": "requires_reprocess",
+                    "action": "requires_deterministic_preprocess_change",
+                    "reviewer_guidance": "Use page images rather than normalized text for this table.",
+                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_010.png"],
+                    "avoid_source_paths": ["work/paper-x/parsed/pages/page_010.md"],
+                    "verification_steps": ["Compare the normalized text with the page image."],
+                    "residual_risk": "No faithful text overlay can be created from the parsed text.",
+                    "repaired_artifacts": [],
+                }
+            ],
+            "reviewer_brief": "Use page-image fallback for the affected table.",
+            "limitations": ["Requires deterministic reprocessing for a real table repair."],
+        }
+
+        self.assertEqual(validate_plan(plan, REPO_ROOT / "schemas" / "parser_repair_plan.schema.json", "paper-x"), [])
 
     def test_parser_repair_writes_overlay_artifacts_and_manifest(self) -> None:
         output_dir = self.config_path("parser_repair_overlay_marker.txt").parent / "parser-repair-output"

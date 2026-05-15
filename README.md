@@ -17,7 +17,7 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. optionally runs a parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
+4. optionally runs an experimental parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
 5. dynamically selects optional reviewers while always running mandatory reviewers
 6. validates every reviewer JSON output against schema and semantic checks
 7. normalizes and deduplicates reviewer findings into an editor bundle
@@ -130,7 +130,7 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
-- `work/<paper_id>/repair/`: optional parser repair plan and reviewer-facing repair notes.
+- `work/<paper_id>/repair/`: optional parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
@@ -180,6 +180,8 @@ Optional reviewers are selected dynamically by default:
 - core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
 - narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
 
+After `parser_quality_auditor`, an optional experimental parser-repair step can be enabled for difficult papers. It can add repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions, but it adds runtime and token usage and is off by default.
+
 Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
 
 Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
@@ -195,6 +197,17 @@ Use an explicit paper id when needed:
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
 ```
+
+## Experimental Features
+
+Parser repair modes can be enabled when you want better parsing support for difficult papers:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+```
+
+`plan` writes reviewer guidance only. `overlay` may also write narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, plus `repair_manifest.json`. These modes can improve auditability by routing reviewers away from unsafe parsed tables, figures, or captions and toward safer fallback artifacts. Neither mode overwrites `work/<paper_id>/parsed/`. Because parser repair uses an extra LLM step, it adds runtime and token usage and should be treated as experimental.
 
 ## License
 

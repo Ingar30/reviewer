@@ -526,9 +526,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--parser-repair",
-        choices=["off", "plan"],
+        choices=["off", "plan", "overlay"],
         default="off",
-        help="Optionally run a post-preflight parser repair-planning agent before substantive review.",
+        help=(
+            "Optionally run experimental parser repair before substantive review. "
+            "plan writes reviewer guidance; overlay also writes narrow repaired overlay artifacts."
+        ),
     )
     args = parser.parse_args()
 
@@ -622,7 +625,7 @@ def main() -> int:
         raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
 
     active_parser_repair_notes = None
-    if args.parser_repair == "plan":
+    if args.parser_repair in {"plan", "overlay"}:
         parser_quality_outputs = [reviews_dir / reviewer.output for reviewer in preflight_reviewers if reviewer.name == "parser_quality_auditor"]
         if not parser_quality_outputs:
             raise RuntimeError("Parser repair requested, but parser_quality_auditor is not configured")
@@ -650,6 +653,8 @@ def main() -> int:
                     str(parser_repair_notes_path.relative_to(repo)),
                     "--log-dir",
                     str(log_dir.relative_to(repo)),
+                    "--repair-mode",
+                    args.parser_repair,
                 ],
                 repo,
                 log_dir,

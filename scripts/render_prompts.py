@@ -27,8 +27,8 @@ def append_parser_repair_note(rendered: str, parser_repair_notes: str | None) ->
         + "\n\nParser repair overlay:\n"
         + f"`{parser_repair_notes}`\n\n"
         + "Before treating a parsed table, figure, page-text passage, or inventory entry as primary evidence, "
-        + "check the parser repair overlay for known parser-quality limitations, preferred fallback artifacts, "
-        + "and artifacts that should not be relied on as primary evidence.\n"
+        + "check the parser repair overlay for known parser-quality limitations, repaired overlay artifacts, "
+        + "preferred fallback artifacts, and artifacts that should not be relied on as primary evidence.\n"
     )
 
 

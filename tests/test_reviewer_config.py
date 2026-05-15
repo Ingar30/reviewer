@@ -31,7 +31,16 @@ from normalize_review_outputs import issue_class, normalize, should_merge  # noq
 from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
-from run_parser_repair_agent import repair_notes_markdown, validate_plan  # noqa: E402
+from run_parser_repair_agent import (  # noqa: E402
+    control_char_score,
+    mojibake_score,
+    repair_notes_markdown,
+    repair_mojibake_text,
+    repair_nul_codepoints,
+    validate_artifact_filenames,
+    validate_plan,
+    write_repaired_artifacts,
+)
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -157,12 +166,38 @@ def review_output(
     }
 
 
+def strict_structured_output_schema_errors(schema: dict[str, object], path: str = "$") -> list[str]:
+    errors: list[str] = []
+    if schema.get("type") == "object" and isinstance(schema.get("properties"), dict):
+        properties = schema["properties"]
+        required = schema.get("required")
+        if not isinstance(required, list):
+            errors.append(f"{path}: required must list every property")
+        else:
+            missing = sorted(set(properties) - set(required))
+            if missing:
+                errors.append(f"{path}: required is missing {', '.join(missing)}")
+        for name, child in properties.items():
+            if isinstance(child, dict):
+                errors.extend(strict_structured_output_schema_errors(child, f"{path}.{name}"))
+    if schema.get("type") == "array" and isinstance(schema.get("items"), dict):
+        errors.extend(strict_structured_output_schema_errors(schema["items"], f"{path}[]"))
+    return errors
+
+
 class ReviewerConfigTests(unittest.TestCase):
     def cleanup_path(self, path: Path) -> None:
         try:
             if path.exists():
                 path.unlink()
         except PermissionError:
+            pass
+
+    def cleanup_dir(self, path: Path) -> None:
+        try:
+            if path.exists():
+                path.rmdir()
+        except OSError:
             pass
 
     def config_path(self, name: str) -> Path:
@@ -997,7 +1032,7 @@ class ReviewerConfigTests(unittest.TestCase):
                 "## Review Configuration",
                 "reference_auditor ran.",
                 "## Highest-Priority Cross-Agent Findings",
-                "A source was checked.",
+                "A source was checked at https://example.org/source.",
                 "## Suggested Revision Priorities",
                 "Revise the citation.",
                 "## Additional Findings",
@@ -1015,6 +1050,44 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(external_source_urls(bundle), {"https://example.org/source"})
         self.assertTrue(any("missing external-sources appendix" in failure for failure in failures))
         self.assertEqual(fixed, [])
+
+    def test_report_checker_allows_uncited_bundle_external_urls(self) -> None:
+        bundle = {
+            "canonical_findings": [
+                {
+                    "canonical_id": "CANON-001",
+                    "source_findings": [{"reviewer": "literature_auditor", "id": "LIT-001"}],
+                    "source_objects": [
+                        {
+                            "source_object": {
+                                "id": "SRC-001",
+                                "url": "https://example.org/unused-source",
+                            }
+                        }
+                    ],
+                }
+            ]
+        }
+        report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "summary",
+                "## Review Configuration",
+                "literature_auditor ran.",
+                "## Highest-Priority Cross-Agent Findings",
+                "A source-informed issue was summarized without citing the URL.",
+                "## Suggested Revision Priorities",
+                "Revise the literature discussion.",
+                "## Additional Findings",
+                "No additional findings.",
+                f"{TRACEABILITY_APPENDIX_HEADING}",
+                "| Report section | Finding | Canonical ID | Source finding IDs |",
+                "| Literature | citation | CANON-001 | literature_auditor:LIT-001 |",
+            ]
+        )
+
+        self.assertEqual(report_failures(report, bundle=bundle, min_chars=0), [])
 
     def test_shareable_repo_check_allows_placeholders_only_in_private_dirs(self) -> None:
         paths = [
@@ -1204,30 +1277,198 @@ class ReviewerConfigTests(unittest.TestCase):
             "paper_id": "paper-x",
             "run_status": "ok",
             "summary": "Prepared a parser repair overlay.",
+            "repair_mode": "overlay",
             "repairs": [
                 {
                     "parser_finding_id": "PARSER-001",
                     "issue_summary": "Table extraction is unreliable.",
-                    "status": "partially_mitigated",
-                    "action": "prefer_existing_fallback",
-                    "reviewer_guidance": "Use the page image and raw page text instead of the table CSV.",
-                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                    "status": "repaired",
+                    "action": "write_repaired_overlay_artifact",
+                    "reviewer_guidance": "Use the repaired overlay CSV only after checking it against the page image.",
+                    "preferred_source_paths": ["work/paper-x/repair/repaired_artifacts/table_1_repaired.csv"],
                     "avoid_source_paths": ["work/paper-x/parsed/tables/table_1.csv"],
                     "verification_steps": ["Compare the crop with the page image."],
                     "residual_risk": "Values still require visual verification.",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "variable,value\nalpha,1\nbeta,2",
+                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                            "confidence": "medium",
+                            "caveats": ["Reconstructed from page image evidence."],
+                        }
+                    ],
                 }
             ],
             "reviewer_brief": "Use image fallback for Table 1.",
-            "limitations": ["No regenerated table CSV was produced."],
+            "limitations": ["The overlay CSV does not replace deterministic table extraction."],
         }
 
         schema_path = REPO_ROOT / "schemas" / "parser_repair_plan.schema.json"
         self.assertEqual(validate_plan(plan, schema_path, "paper-x"), [])
+        self.assertEqual(validate_artifact_filenames(plan), [])
         notes = repair_notes_markdown(plan)
 
         self.assertIn("PARSER-001", notes)
-        self.assertIn("work/paper-x/parsed/page_images/page_001.png", notes)
-        self.assertIn("No regenerated table CSV was produced.", notes)
+        self.assertIn("table_1_repaired.csv", notes)
+        self.assertIn("work/paper-x/repair/repaired_artifacts/table_1_repaired.csv", notes)
+        self.assertIn("The overlay CSV does not replace deterministic table extraction.", notes)
+
+    def test_parser_repair_schema_is_strict_structured_output_compatible(self) -> None:
+        schema = json.loads((REPO_ROOT / "schemas" / "parser_repair_plan.schema.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(strict_structured_output_schema_errors(schema), [])
+
+    def test_parser_repair_plan_accepts_empty_repaired_artifacts(self) -> None:
+        plan = {
+            "paper_id": "paper-x",
+            "run_status": "partial",
+            "summary": "Prepared fallback guidance.",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-002",
+                    "issue_summary": "Page text is not in safe reading order.",
+                    "status": "requires_reprocess",
+                    "action": "requires_deterministic_preprocess_change",
+                    "reviewer_guidance": "Use page images rather than normalized text for this table.",
+                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_010.png"],
+                    "avoid_source_paths": ["work/paper-x/parsed/pages/page_010.md"],
+                    "verification_steps": ["Compare the normalized text with the page image."],
+                    "residual_risk": "No faithful text overlay can be created from the parsed text.",
+                    "repaired_artifacts": [],
+                }
+            ],
+            "reviewer_brief": "Use page-image fallback for the affected table.",
+            "limitations": ["Requires deterministic reprocessing for a real table repair."],
+        }
+
+        self.assertEqual(validate_plan(plan, REPO_ROOT / "schemas" / "parser_repair_plan.schema.json", "paper-x"), [])
+
+    def test_parser_repair_writes_overlay_artifacts_and_manifest(self) -> None:
+        output_dir = self.config_path("parser_repair_overlay_marker.txt").parent / "parser-repair-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "variable,value\nalpha,1\nbeta,2\n",
+                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the page image."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+
+        self.assertEqual(artifact_path.read_text(encoding="utf-8"), "variable,value\nalpha,1\nbeta,2\n")
+        self.assertEqual(manifest["artifact_count"], 1)
+        self.assertEqual(manifest["artifacts"][0]["parser_finding_id"], "PARSER-001")
+        self.assertIn("sha256", manifest["artifacts"][0])
+        self.assertTrue(manifest_path.exists())
+
+    def test_parser_repair_normalizes_overlay_mojibake(self) -> None:
+        root = self.config_path("parser_repair_mojibake_marker.txt").parent
+        source_path = root / "source_table.txt"
+        output_dir = root / "parser-repair-mojibake-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        self.addCleanup(lambda: source_path.exists() and source_path.unlink())
+        source_path.write_text("Black × Discrimination -996.193∗∗∗\n", encoding="utf-8")
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "row_label,column_1\nBlack Ã— Discrimination,-996.193âˆ—âˆ—âˆ—\n",
+                            "source_paths": [str(source_path.relative_to(REPO_ROOT))],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the source table."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        fixed, changed = repair_mojibake_text(plan["repairs"][0]["repaired_artifacts"][0]["content"])
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+
+        self.assertTrue(changed)
+        self.assertLess(mojibake_score(fixed), mojibake_score("Black Ã— Discrimination,-996.193âˆ—âˆ—âˆ—"))
+        self.assertIn("Black × Discrimination,-996.193∗∗∗", artifact_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["quality_summary"]["normalized_mojibake_artifact_count"], 1)
+        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
+        self.assertTrue(manifest["artifacts"][0]["quality"]["normalized_mojibake"])
+        self.assertEqual(manifest["artifacts"][0]["quality"]["mojibake_score_after"], 0)
+
+    def test_parser_repair_normalizes_nul_codepoint_artifacts(self) -> None:
+        root = self.config_path("parser_repair_control_marker.txt").parent
+        output_dir = root / "parser-repair-control-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        content = "row_label,column_1\nBlack \x00d7 Discrimination,-996.193\x002217\x002217\x002217\n"
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": content,
+                            "source_paths": ["work/paper-x/parsed/tables/table_1.txt"],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the source table."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        fixed, changed = repair_nul_codepoints(content)
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+        written = artifact_path.read_text(encoding="utf-8")
+
+        self.assertTrue(changed)
+        self.assertEqual(control_char_score(fixed), 0)
+        self.assertIn("Black × Discrimination,-996.193∗∗∗", written)
+        self.assertEqual(manifest["quality_summary"]["normalized_control_codepoint_artifact_count"], 1)
+        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
+        self.assertEqual(manifest["artifacts"][0]["quality"]["control_char_score_after"], 0)
 
     def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
         parser_quality = {
@@ -1248,10 +1489,10 @@ class ReviewerConfigTests(unittest.TestCase):
             "repairs": [
                 {
                     "parser_finding_id": "PARSER-001",
-                    "status": "mitigated",
-                    "action": "add_reviewer_overlay",
-                    "reviewer_guidance": "Use verified raw page and page image fallbacks for this object.",
-                    "preferred_source_paths": ["work/paper/parsed/page_images/page_001.png"],
+                    "status": "repaired",
+                    "action": "write_repaired_overlay_artifact",
+                    "reviewer_guidance": "Use the repaired overlay artifact after checking it against the page image fallback.",
+                    "preferred_source_paths": ["work/paper/repair/repaired_artifacts/table_1_repaired.csv"],
                 }
             ]
         }

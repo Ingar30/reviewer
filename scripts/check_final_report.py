@@ -16,6 +16,8 @@ DEFAULT_REQUIRED_HEADINGS = [
 GRAMMAR_APPENDIX_HEADING = "## Appendix: Grammar and Copyediting Issues"
 TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
 EXTERNAL_SOURCES_APPENDIX_RE = re.compile(r"^## Appendix: External Sources", re.MULTILINE)
+HEADING_RE = re.compile(r"^## ", re.MULTILINE)
+URL_RE = re.compile(r"https?://[^\s<>\]\)]+")
 
 META_NOTE_RE = re.compile(
     r"\b(?:done\.|wrote the final|report (?:is|was) saved|saved to|appears only under ignored status)\b",
@@ -44,6 +46,19 @@ def external_source_urls(bundle: dict) -> set[str]:
     return urls
 
 
+def urls_in_text(text: str) -> set[str]:
+    return {match.group(0).rstrip(".,;:") for match in URL_RE.finditer(text)}
+
+
+def external_sources_appendix_text(text: str) -> str:
+    match = EXTERNAL_SOURCES_APPENDIX_RE.search(text)
+    if not match:
+        return ""
+    next_heading = HEADING_RE.search(text, match.end())
+    end = next_heading.start() if next_heading else len(text)
+    return text[match.start():end]
+
+
 def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2000) -> list[str]:
     failures = []
     if len(text.strip()) < min_chars:
@@ -61,12 +76,15 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
             failures.append(f"missing traceability appendix heading: {TRACEABILITY_APPENDIX_HEADING}")
         if bundle_has_copyedit_findings(bundle) and GRAMMAR_APPENDIX_HEADING not in text:
             failures.append(f"missing grammar appendix heading: {GRAMMAR_APPENDIX_HEADING}")
-        urls = external_source_urls(bundle)
-        if urls and not EXTERNAL_SOURCES_APPENDIX_RE.search(text):
-            failures.append("missing external-sources appendix heading despite external source URLs in bundle")
-        for url in sorted(urls):
-            if EXTERNAL_SOURCES_APPENDIX_RE.search(text) and url not in text:
-                failures.append(f"missing external source URL from report: {url}")
+        bundle_urls = external_source_urls(bundle)
+        appendix = external_sources_appendix_text(text)
+        appendix_urls = urls_in_text(appendix)
+        body_text = text.replace(appendix, "") if appendix else text
+        cited_bundle_urls = urls_in_text(body_text) & bundle_urls
+        if cited_bundle_urls and not appendix:
+            failures.append("missing external-sources appendix heading despite external source URLs cited in report")
+        for url in sorted(cited_bundle_urls - appendix_urls):
+            failures.append(f"missing external source URL from external-sources appendix: {url}")
         for finding in bundle.get("canonical_findings", []):
             canonical_id = finding.get("canonical_id")
             if canonical_id and canonical_id not in text:

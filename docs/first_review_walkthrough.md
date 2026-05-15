@@ -46,13 +46,19 @@ Use an explicit ID if the filename is long or sensitive:
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
 ```
 
-If parser-quality preflight reports parser artifacts and you want a reviewer-facing repair overlay before substantive review, enable the opt-in repair planner:
+If parser-quality preflight reports parser artifacts and you want better parsing support before substantive review, enable the opt-in repair planner:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
 ```
 
-When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
+To let the experimental repair agent attempt narrow repaired overlay artifacts as well as caveats, use:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+```
+
+Parser repair can improve auditability by routing reviewers away from unsafe parsed tables, figures, or captions and toward safer fallback artifacts. It adds runtime and token usage, so it is experimental and off by default. When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
 
 ## 5. Read The Report
 
@@ -68,7 +74,7 @@ Intermediate artifacts are under:
 work/my-paper/
 ```
 
-Repair overlays, if enabled, appear under `work/my-paper/repair/`. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
+Repair overlays, if enabled, appear under `work/my-paper/repair/`. In `overlay` mode, LLM-generated repaired files are written under `work/my-paper/repair/repaired_artifacts/`; the original `work/my-paper/parsed/` artifacts are not overwritten. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
 
 ## 6. Before Sharing Changes
 

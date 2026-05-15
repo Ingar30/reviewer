@@ -180,6 +180,8 @@ Optional reviewers are selected dynamically by default:
 - core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
 - narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
 
+After `parser_quality_auditor`, an optional experimental parser-repair step can be enabled for difficult papers. It can add repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions, but it adds runtime and token usage and is off by default.
+
 Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
 
 Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.

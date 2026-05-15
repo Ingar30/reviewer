@@ -31,7 +31,12 @@ from normalize_review_outputs import issue_class, normalize, should_merge  # noq
 from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
-from run_parser_repair_agent import repair_notes_markdown, validate_plan  # noqa: E402
+from run_parser_repair_agent import (  # noqa: E402
+    repair_notes_markdown,
+    validate_artifact_filenames,
+    validate_plan,
+    write_repaired_artifacts,
+)
 from review_paper import (  # noqa: E402
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
@@ -1204,30 +1209,81 @@ class ReviewerConfigTests(unittest.TestCase):
             "paper_id": "paper-x",
             "run_status": "ok",
             "summary": "Prepared a parser repair overlay.",
+            "repair_mode": "overlay",
             "repairs": [
                 {
                     "parser_finding_id": "PARSER-001",
                     "issue_summary": "Table extraction is unreliable.",
-                    "status": "partially_mitigated",
-                    "action": "prefer_existing_fallback",
-                    "reviewer_guidance": "Use the page image and raw page text instead of the table CSV.",
-                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                    "status": "repaired",
+                    "action": "write_repaired_overlay_artifact",
+                    "reviewer_guidance": "Use the repaired overlay CSV only after checking it against the page image.",
+                    "preferred_source_paths": ["work/paper-x/repair/repaired_artifacts/table_1_repaired.csv"],
                     "avoid_source_paths": ["work/paper-x/parsed/tables/table_1.csv"],
                     "verification_steps": ["Compare the crop with the page image."],
                     "residual_risk": "Values still require visual verification.",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "variable,value\nalpha,1\nbeta,2",
+                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                            "confidence": "medium",
+                            "caveats": ["Reconstructed from page image evidence."],
+                        }
+                    ],
                 }
             ],
             "reviewer_brief": "Use image fallback for Table 1.",
-            "limitations": ["No regenerated table CSV was produced."],
+            "limitations": ["The overlay CSV does not replace deterministic table extraction."],
         }
 
         schema_path = REPO_ROOT / "schemas" / "parser_repair_plan.schema.json"
         self.assertEqual(validate_plan(plan, schema_path, "paper-x"), [])
+        self.assertEqual(validate_artifact_filenames(plan), [])
         notes = repair_notes_markdown(plan)
 
         self.assertIn("PARSER-001", notes)
-        self.assertIn("work/paper-x/parsed/page_images/page_001.png", notes)
-        self.assertIn("No regenerated table CSV was produced.", notes)
+        self.assertIn("table_1_repaired.csv", notes)
+        self.assertIn("work/paper-x/repair/repaired_artifacts/table_1_repaired.csv", notes)
+        self.assertIn("The overlay CSV does not replace deterministic table extraction.", notes)
+
+    def test_parser_repair_writes_overlay_artifacts_and_manifest(self) -> None:
+        output_dir = self.config_path("parser_repair_overlay_marker.txt").parent / "parser-repair-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(lambda: output_dir.exists() and output_dir.rmdir())
+        self.addCleanup(lambda: (output_dir / "repaired_artifacts").exists() and (output_dir / "repaired_artifacts").rmdir())
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "variable,value\nalpha,1\nbeta,2\n",
+                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the page image."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+
+        self.assertEqual(artifact_path.read_text(encoding="utf-8"), "variable,value\nalpha,1\nbeta,2\n")
+        self.assertEqual(manifest["artifact_count"], 1)
+        self.assertEqual(manifest["artifacts"][0]["parser_finding_id"], "PARSER-001")
+        self.assertIn("sha256", manifest["artifacts"][0])
+        self.assertTrue(manifest_path.exists())
 
     def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
         parser_quality = {
@@ -1248,10 +1304,10 @@ class ReviewerConfigTests(unittest.TestCase):
             "repairs": [
                 {
                     "parser_finding_id": "PARSER-001",
-                    "status": "mitigated",
-                    "action": "add_reviewer_overlay",
-                    "reviewer_guidance": "Use verified raw page and page image fallbacks for this object.",
-                    "preferred_source_paths": ["work/paper/parsed/page_images/page_001.png"],
+                    "status": "repaired",
+                    "action": "write_repaired_overlay_artifact",
+                    "reviewer_guidance": "Use the repaired overlay artifact after checking it against the page image fallback.",
+                    "preferred_source_paths": ["work/paper/repair/repaired_artifacts/table_1_repaired.csv"],
                 }
             ]
         }

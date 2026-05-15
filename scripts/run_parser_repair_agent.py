@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -17,6 +19,10 @@ DEFAULT_SCHEMA = "schemas/parser_repair_plan.schema.json"
 DEFAULT_TEMPLATE = "prompts/templates/parser_repair_plan.txt"
 PLAN_FILENAME = "parser_repair_plan.json"
 NOTES_FILENAME = "parser_repair_notes.md"
+MANIFEST_FILENAME = "repair_manifest.json"
+REPAIRED_ARTIFACTS_DIR = "repaired_artifacts"
+
+SAFE_ARTIFACT_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def repo_relative(path: Path, repo: Path) -> str:
@@ -35,6 +41,68 @@ def validate_plan(plan: dict[str, Any], schema_path: Path, paper_id: str) -> lis
     return errors
 
 
+def repaired_artifacts(plan: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    artifacts: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for repair in plan.get("repairs", []):
+        if not isinstance(repair, dict):
+            continue
+        for artifact in repair.get("repaired_artifacts") or []:
+            if isinstance(artifact, dict):
+                artifacts.append((repair, artifact))
+    return artifacts
+
+
+def validate_artifact_filenames(plan: dict[str, Any]) -> list[str]:
+    errors = []
+    filenames: list[str] = []
+    for _repair, artifact in repaired_artifacts(plan):
+        filename = artifact.get("filename")
+        if not isinstance(filename, str) or not SAFE_ARTIFACT_FILENAME_RE.fullmatch(filename):
+            errors.append(f"invalid repaired artifact filename: {filename!r}")
+            continue
+        filenames.append(filename)
+    duplicates = sorted({filename for filename in filenames if filenames.count(filename) > 1})
+    for filename in duplicates:
+        errors.append(f"duplicate repaired artifact filename: {filename}")
+    return errors
+
+
+def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path) -> dict[str, Any]:
+    artifacts_dir = output_dir / REPAIRED_ARTIFACTS_DIR
+    manifest_path = output_dir / MANIFEST_FILENAME
+    manifest: dict[str, Any] = {
+        "paper_id": plan.get("paper_id"),
+        "repair_mode": plan.get("repair_mode", "plan"),
+        "artifact_count": 0,
+        "artifacts": [],
+    }
+    artifact_items = repaired_artifacts(plan)
+    if artifact_items:
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+    for repair, artifact in artifact_items:
+        filename = artifact["filename"]
+        output_path = artifacts_dir / filename
+        content = str(artifact["content"])
+        output_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+        manifest["artifacts"].append(
+            {
+                "parser_finding_id": repair.get("parser_finding_id"),
+                "path": repo_relative(output_path, repo),
+                "artifact_type": artifact.get("artifact_type"),
+                "description": artifact.get("description"),
+                "source_paths": artifact.get("source_paths", []),
+                "confidence": artifact.get("confidence"),
+                "caveats": artifact.get("caveats", []),
+                "sha256": digest,
+                "bytes": output_path.stat().st_size,
+            }
+        )
+    manifest["artifact_count"] = len(manifest["artifacts"])
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return manifest
+
+
 def repair_notes_markdown(plan: dict[str, Any]) -> str:
     lines = [
         "# Parser Repair Notes",
@@ -47,6 +115,7 @@ def repair_notes_markdown(plan: dict[str, Any]) -> str:
         "",
     ]
     for repair in plan.get("repairs", []):
+        generated = repair.get("repaired_artifacts") or []
         lines.extend(
             [
                 f"### {repair.get('parser_finding_id', 'unknown finding')}",
@@ -57,6 +126,21 @@ def repair_notes_markdown(plan: dict[str, Any]) -> str:
                 f"- Residual risk: {repair.get('residual_risk', '')}",
             ]
         )
+        if generated:
+            lines.append("- Repaired overlay artifacts:")
+            for artifact in generated:
+                filename = artifact.get("filename", "unknown")
+                lines.append(
+                    "  - `{}` ({}, confidence: {}): {}".format(
+                        filename,
+                        artifact.get("artifact_type", "unknown"),
+                        artifact.get("confidence", "unknown"),
+                        artifact.get("description", ""),
+                    )
+                )
+                caveats = artifact.get("caveats") or []
+                if caveats:
+                    lines.append("    Caveats: " + "; ".join(str(item) for item in caveats))
         preferred = repair.get("preferred_source_paths") or []
         if preferred:
             lines.append("- Prefer these artifacts:")
@@ -89,6 +173,9 @@ def render_repair_prompt(
     schema_path: Path,
     repair_plan_output: Path,
     repair_notes_output: Path,
+    repair_mode: str,
+    repaired_artifacts_dir: Path,
+    repair_manifest_output: Path,
 ) -> str:
     template = template_path.read_text(encoding="utf-8")
     return render_template(
@@ -100,6 +187,9 @@ def render_repair_prompt(
             "schema_path": repo_relative(schema_path, repo),
             "repair_plan_output": repo_relative(repair_plan_output, repo),
             "repair_notes_output": repo_relative(repair_notes_output, repo),
+            "repair_mode": repair_mode,
+            "repaired_artifacts_dir": repo_relative(repaired_artifacts_dir, repo),
+            "repair_manifest_output": repo_relative(repair_manifest_output, repo),
         },
     )
 
@@ -114,6 +204,12 @@ def main() -> int:
     parser.add_argument("--schema-path", default=DEFAULT_SCHEMA)
     parser.add_argument("--prompt-template", default=DEFAULT_TEMPLATE)
     parser.add_argument("--notes-output", default=None)
+    parser.add_argument(
+        "--repair-mode",
+        choices=["plan", "overlay"],
+        default="plan",
+        help="plan writes guidance only; overlay also asks for narrow repaired overlay artifacts.",
+    )
     parser.add_argument(
         "--plan-input",
         default=None,
@@ -147,6 +243,8 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     notes_output.parent.mkdir(parents=True, exist_ok=True)
     plan_output = output_dir / PLAN_FILENAME
+    repaired_artifacts_dir = output_dir / REPAIRED_ARTIFACTS_DIR
+    repair_manifest_output = output_dir / MANIFEST_FILENAME
 
     if args.plan_input:
         plan_input = Path(args.plan_input)
@@ -164,6 +262,9 @@ def main() -> int:
             schema_path=schema_path,
             repair_plan_output=plan_output,
             repair_notes_output=notes_output,
+            repair_mode=args.repair_mode,
+            repaired_artifacts_dir=repaired_artifacts_dir,
+            repair_manifest_output=repair_manifest_output,
         )
         started_at = time.time() - 1.0
         run_required(
@@ -184,18 +285,25 @@ def main() -> int:
         require_fresh_file(plan_output, started_at, "parser repair plan")
         plan = json.loads(plan_output.read_text(encoding="utf-8"))
 
+    if "repair_mode" not in plan:
+        plan["repair_mode"] = args.repair_mode
+        plan_output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     errors = validate_plan(plan, schema_path, args.paper_id)
+    errors.extend(validate_artifact_filenames(plan))
     if errors:
         raise RuntimeError("Parser repair plan failed validation: " + "; ".join(errors))
 
+    manifest = write_repaired_artifacts(plan, output_dir, repo)
     notes_output.write_text(repair_notes_markdown(plan), encoding="utf-8")
     print(
         json.dumps(
             {
                 "paper_id": args.paper_id,
                 "repair_count": len(plan.get("repairs", [])),
+                "repaired_artifact_count": manifest["artifact_count"],
                 "plan": repo_relative(plan_output, repo),
                 "notes": repo_relative(notes_output, repo),
+                "manifest": repo_relative(repair_manifest_output, repo),
             },
             indent=2,
         )

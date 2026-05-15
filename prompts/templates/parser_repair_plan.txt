@@ -11,10 +11,13 @@ Return one JSON object that strictly conforms to:
 
 For this run:
 - paper_id = "{paper_id}"
+- repair_mode = "{repair_mode}"
 - output repair plan path = `{repair_plan_output}`
 - reviewer repair-notes path = `{repair_notes_output}`
+- repaired overlay artifact directory = `{repaired_artifacts_dir}`
+- repair manifest path = `{repair_manifest_output}`
 
-Your job is to decide whether parser-quality findings can be mitigated before substantive reviewers run.
+Your job is to decide whether parser-quality findings can be mitigated or repaired before substantive reviewers run.
 
 Scope:
 - Use only existing parsed artifacts and parser-quality findings.
@@ -22,6 +25,12 @@ Scope:
 - Do not modify raw PDFs, raw data, or source documents.
 - Prefer safe fallback guidance when the existing page text, raw text, page image, crop image, words, blocks, or inventory artifacts already let reviewers verify the evidence.
 - Mark issues as requiring deterministic preprocessing changes when they need regenerated crops, OCR, table extraction, or page text ordering.
+- Never ask reviewers to treat a repaired overlay artifact as the original parse. Repaired artifacts are reviewer aids with provenance and caveats.
+
+Mode behavior:
+- In plan mode, provide routing/caveat guidance only. Do not include repaired_artifacts unless a small, evidence-preserving overlay artifact is clearly justified.
+- In overlay mode, attempt a narrow repaired overlay artifact only when the existing parsed artifacts provide enough evidence to reconstruct the affected object faithfully. Examples include a small corrected CSV from legible page text, a corrected caption from raw page text, a clean reviewer-safe excerpt from scrambled normalized text, or an equation transcription from reliable source text.
+- In overlay mode, if the source evidence is insufficient, do not create repaired_artifacts. Set status to requires_reprocess or not_repairable, choose the appropriate action, and state caveats in residual_risk and limitations.
 
 For each high- or medium-severity parser_artifact finding in the parser-quality output:
 - create exactly one repair entry
@@ -32,9 +41,21 @@ For each high- or medium-severity parser_artifact finding in the parser-quality 
 - give concise reviewer_guidance that can be inserted into downstream reviewer prompts
 - include verification_steps that a human or deterministic script could use to check the mitigation
 - state residual_risk honestly
+- in overlay mode, when you can faithfully repair a narrow artifact, include repaired_artifacts with:
+  - filename using only letters, numbers, dots, underscores, and hyphens
+  - artifact_type
+  - source_paths that support every generated value or phrase
+  - content to write into the repaired overlay file
+  - confidence and caveats
+
+Repaired overlay artifact rules:
+- Keep repaired artifact content small and tightly scoped to the parser finding.
+- CSV content must be plain comma-separated text with a header row when the source supports it.
+- Markdown/text content must preserve source wording where possible and avoid editorial rewriting.
+- Use repaired overlay artifacts to aid review, not to replace deterministic preprocessing.
 
 For low-severity parser findings, include a repair entry only when it materially changes how reviewers should read evidence.
 
-Write reviewer_brief as a concise handoff note for downstream reviewers. It should tell reviewers what to trust, what to avoid, and what remains unresolved.
+Write reviewer_brief as a concise handoff note for downstream reviewers. It should tell reviewers what to trust, what repaired overlay artifacts exist, what to avoid, and what remains unresolved.
 
 Do not include process notes about skill availability, tooling, session state, or token use.

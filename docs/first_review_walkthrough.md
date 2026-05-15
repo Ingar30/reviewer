@@ -52,6 +52,12 @@ If parser-quality preflight reports parser artifacts and you want a reviewer-fac
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
 ```
 
+To let the experimental repair agent attempt narrow repaired overlay artifacts as well as caveats, use:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+```
+
 When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
 
 ## 5. Read The Report
@@ -68,7 +74,7 @@ Intermediate artifacts are under:
 work/my-paper/
 ```
 
-Repair overlays, if enabled, appear under `work/my-paper/repair/`. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
+Repair overlays, if enabled, appear under `work/my-paper/repair/`. In `overlay` mode, LLM-generated repaired files are written under `work/my-paper/repair/repaired_artifacts/`; the original `work/my-paper/parsed/` artifacts are not overwritten. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
 
 ## 6. Before Sharing Changes
 

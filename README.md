@@ -17,7 +17,7 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. optionally runs a parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
+4. optionally runs an experimental parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
 5. dynamically selects optional reviewers while always running mandatory reviewers
 6. validates every reviewer JSON output against schema and semantic checks
 7. normalizes and deduplicates reviewer findings into an editor bundle
@@ -130,7 +130,7 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
-- `work/<paper_id>/repair/`: optional parser repair plan and reviewer-facing repair notes.
+- `work/<paper_id>/repair/`: optional parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
@@ -189,6 +189,15 @@ Run all enabled review-stage reviewers without selector filtering:
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection static
 ```
+
+Experimental parser repair modes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+```
+
+`plan` writes reviewer guidance only. `overlay` may also write narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, plus `repair_manifest.json`. Neither mode overwrites `work/<paper_id>/parsed/`.
 
 Use an explicit paper id when needed:
 

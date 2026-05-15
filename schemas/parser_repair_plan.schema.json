@@ -13,6 +13,10 @@
       "type": "string",
       "minLength": 1
     },
+    "repair_mode": {
+      "type": "string",
+      "enum": ["plan", "overlay"]
+    },
     "repairs": {
       "type": "array",
       "items": {
@@ -28,11 +32,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["mitigated", "partially_mitigated", "requires_reprocess", "not_repairable"]
+            "enum": ["repaired", "mitigated", "partially_mitigated", "requires_reprocess", "not_repairable"]
           },
           "action": {
             "type": "string",
             "enum": [
+              "write_repaired_overlay_artifact",
               "prefer_existing_fallback",
               "add_reviewer_overlay",
               "requires_deterministic_preprocess_change",
@@ -67,6 +72,61 @@
           "residual_risk": {
             "type": "string",
             "minLength": 1
+          },
+          "repaired_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "filename": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]+$",
+                  "minLength": 1
+                },
+                "artifact_type": {
+                  "type": "string",
+                  "enum": ["text", "table_csv", "table_markdown", "caption", "equation", "crossref", "other"]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low"]
+                },
+                "caveats": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "filename",
+                "artifact_type",
+                "description",
+                "content",
+                "source_paths",
+                "confidence",
+                "caveats"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [

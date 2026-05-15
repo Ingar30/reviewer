@@ -7,8 +7,13 @@ from typing import Any
 
 
 TARGET_SEVERITIES = {"high", "medium"}
-MITIGATED_STATUSES = {"mitigated", "partially_mitigated"}
-SAFE_ACTIONS = {"prefer_existing_fallback", "add_reviewer_overlay", "requires_deterministic_preprocess_change"}
+MITIGATED_STATUSES = {"repaired", "mitigated", "partially_mitigated"}
+SAFE_ACTIONS = {
+    "write_repaired_overlay_artifact",
+    "prefer_existing_fallback",
+    "add_reviewer_overlay",
+    "requires_deterministic_preprocess_change",
+}
 
 
 def repo_root() -> Path:

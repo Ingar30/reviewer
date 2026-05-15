@@ -545,19 +545,20 @@ def main() -> int:
     parser.add_argument(
         "--parser-repair",
         choices=["off", "plan", "overlay"],
-        default="off",
+        default="overlay",
         help=(
-            "Optionally run experimental parser repair before substantive review. "
-            "plan writes reviewer guidance; overlay also writes narrow repaired overlay artifacts."
+            "Parser repair mode after parser-quality preflight. Default: overlay. "
+            "plan writes reviewer guidance; overlay also writes narrow repaired overlay artifacts; "
+            "off skips parser repair."
         ),
     )
     parser.add_argument(
         "--reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
-        default=None,
+        default="xhigh",
         help=(
-            "Override Codex model_reasoning_effort for all Codex agents in this run. "
-            "When omitted, the project default from .codex/config.toml is used."
+            "Codex model_reasoning_effort for all Codex agents in this run. "
+            "Default: xhigh."
         ),
     )
     args = parser.parse_args()

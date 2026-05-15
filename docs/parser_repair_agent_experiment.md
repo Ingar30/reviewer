@@ -6,7 +6,7 @@ Test whether adding another LLM agent after parser-quality preflight can address
 
 ## Implementation Tested
 
-The experiment adds an opt-in parser repair planner, with a newer experimental overlay mode:
+This historical experiment introduced a parser repair planner and newer overlay mode. The current wrapper now runs overlay mode by default when parser-quality preflight reports high- or medium-severity parser artifacts:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
@@ -194,7 +194,7 @@ It should not be described as fully fixing parser issues. In the successful synt
 
 ## Recommendation
 
-Incorporate the parser repair planner and overlay repair mode as opt-in experimental steps, not as the default reviewer workflow.
+Incorporate the parser repair planner and overlay repair mode into the default reviewer workflow, while preserving `--parser-repair off` for faster or cheaper runs and `--parser-repair plan` for guidance-only repair.
 
 Use it when:
 

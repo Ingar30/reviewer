@@ -8,7 +8,7 @@ The normal workflow is:
 2. Preprocess each paper into structured artifacts under `work/<paper_id>/parsed/`.
 3. Render run-specific prompts under `work/<paper_id>/prompts/`.
 4. Run parser-quality preflight before substantive review.
-5. Optionally run experimental parser repair planning or overlay repair when parser-quality preflight reports high- or medium-severity parser artifacts.
+5. Run parser repair overlay by default when parser-quality preflight reports high- or medium-severity parser artifacts, unless `--parser-repair off` is explicitly requested.
 6. Use dynamic reviewer selection by default to choose optional reviewers while mandatory reviewers always run.
 7. Store the selector decision under `work/<paper_id>/selection/` and use the selected reviewer roster for downstream stages.
 8. Rerender prompts for the selected reviewer roster, including parser repair notes when present.
@@ -37,7 +37,7 @@ The normal workflow is:
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
 - Dynamic reviewer selection is the default for fresh wrapper runs; static mode is available when all enabled reviewers should run.
-- Parser repair is opt-in. When enabled with `--parser-repair plan` or `--parser-repair overlay`, run it only after parser-quality preflight and only when high- or medium-severity `parser_artifact` findings are reported.
+- Parser repair overlay is the default for fresh wrapper runs. Run it only after parser-quality preflight and only when high- or medium-severity `parser_artifact` findings are reported. `--parser-repair off` skips repair, and `--parser-repair plan` writes guidance without overlay artifacts.
 - Parser repair overlays route reviewers to safer existing artifacts. In `overlay` mode, they may also create narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, but they must not overwrite `work/<paper_id>/parsed/` or replace OCR, table reconstruction, figure crop regeneration, or deterministic preprocessing fixes.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.

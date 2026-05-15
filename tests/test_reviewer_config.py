@@ -1030,7 +1030,7 @@ class ReviewerConfigTests(unittest.TestCase):
                 "## Review Configuration",
                 "reference_auditor ran.",
                 "## Highest-Priority Cross-Agent Findings",
-                "A source was checked.",
+                "A source was checked at https://example.org/source.",
                 "## Suggested Revision Priorities",
                 "Revise the citation.",
                 "## Additional Findings",
@@ -1048,6 +1048,44 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(external_source_urls(bundle), {"https://example.org/source"})
         self.assertTrue(any("missing external-sources appendix" in failure for failure in failures))
         self.assertEqual(fixed, [])
+
+    def test_report_checker_allows_uncited_bundle_external_urls(self) -> None:
+        bundle = {
+            "canonical_findings": [
+                {
+                    "canonical_id": "CANON-001",
+                    "source_findings": [{"reviewer": "literature_auditor", "id": "LIT-001"}],
+                    "source_objects": [
+                        {
+                            "source_object": {
+                                "id": "SRC-001",
+                                "url": "https://example.org/unused-source",
+                            }
+                        }
+                    ],
+                }
+            ]
+        }
+        report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "summary",
+                "## Review Configuration",
+                "literature_auditor ran.",
+                "## Highest-Priority Cross-Agent Findings",
+                "A source-informed issue was summarized without citing the URL.",
+                "## Suggested Revision Priorities",
+                "Revise the literature discussion.",
+                "## Additional Findings",
+                "No additional findings.",
+                f"{TRACEABILITY_APPENDIX_HEADING}",
+                "| Report section | Finding | Canonical ID | Source finding IDs |",
+                "| Literature | citation | CANON-001 | literature_auditor:LIT-001 |",
+            ]
+        )
+
+        self.assertEqual(report_failures(report, bundle=bundle, min_chars=0), [])
 
     def test_shareable_repo_check_allows_placeholders_only_in_private_dirs(self) -> None:
         paths = [

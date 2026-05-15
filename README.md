@@ -190,20 +190,22 @@ Run all enabled review-stage reviewers without selector filtering:
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection static
 ```
 
-Experimental parser repair modes:
+Use an explicit paper id when needed:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
+```
+
+## Experimental Features
+
+Parser repair modes can be enabled when you want better parsing support for difficult papers:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
 ```
 
-`plan` writes reviewer guidance only. `overlay` may also write narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, plus `repair_manifest.json`. Neither mode overwrites `work/<paper_id>/parsed/`.
-
-Use an explicit paper id when needed:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
-```
+`plan` writes reviewer guidance only. `overlay` may also write narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, plus `repair_manifest.json`. These modes can improve auditability by routing reviewers away from unsafe parsed tables, figures, or captions and toward safer fallback artifacts. Neither mode overwrites `work/<paper_id>/parsed/`. Because parser repair uses an extra LLM step, it adds runtime and token usage and should be treated as experimental.
 
 ## License
 

@@ -18,6 +18,7 @@ from reviewer_config import ReviewerConfig, load_reviewers_config, write_reviewe
 SELECTOR_TEMPLATE = "reviewer_selection.txt"
 SELECTOR_OUTPUT = "reviewer_selection.json"
 MIN_EDITOR_REPORT_CHARS = 2000
+REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high", "xhigh")
 EDITOR_REPORT_REQUIRED_HEADINGS = [
     "## Executive Summary",
     "## Review Configuration",
@@ -52,6 +53,16 @@ def codex_command() -> str:
         if resolved:
             return resolved
     raise FileNotFoundError("Could not find Codex CLI on PATH. Install Codex or add codex.cmd to PATH.")
+
+
+def codex_exec_command(*, reasoning_effort: str | None = None, search: bool = False) -> list[str]:
+    command = [codex_command()]
+    if search:
+        command.append("--search")
+    if reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    command.append("exec")
+    return command
 
 
 def run_command(label: str, command: list[str], cwd: Path, log_dir: Path, input_text: str | None = None) -> RunResult:
@@ -93,6 +104,7 @@ def start_reviewer(
     reviews_dir: Path,
     schema_path: Path,
     log_dir: Path,
+    reasoning_effort: str | None = None,
 ) -> tuple[ReviewerConfig, subprocess.Popen[str], Path, Path]:
     prompt_path = prompts_dir / reviewer.prompt
     output_path = reviews_dir / reviewer.output
@@ -100,12 +112,9 @@ def start_reviewer(
     stderr_path = log_dir / f"{reviewer.name}.stderr.log"
     prompt_text = prompt_path.read_text(encoding="utf-8")
 
-    command = [codex_command()]
-    if reviewer.search:
-        command.append("--search")
+    command = codex_exec_command(reasoning_effort=reasoning_effort, search=reviewer.search)
     command.extend(
         [
-            "exec",
             "--output-schema",
             str(schema_path),
             "--output-last-message",
@@ -293,6 +302,7 @@ def run_reviewer_selector(
     selection_schema_path: Path,
     log_dir: Path,
     parser_repair_notes: Path | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[dict, float]:
     selection_dir.mkdir(parents=True, exist_ok=True)
     output_path = selection_dir / SELECTOR_OUTPUT
@@ -308,8 +318,7 @@ def run_reviewer_selector(
     run_required(
         "reviewer-selector",
         [
-            codex_command(),
-            "exec",
+            *codex_exec_command(reasoning_effort=reasoning_effort),
             "--output-schema",
             str(selection_schema_path.relative_to(repo)),
             "--output-last-message",
@@ -420,12 +429,21 @@ def run_reviewer_batch(
     reviews_dir: Path,
     schema_path: Path,
     log_dir: Path,
+    reasoning_effort: str | None = None,
 ) -> float:
     if not reviewers:
         return time.time() - 1.0
     reviewer_started_at = time.time() - 1.0
     running = [
-        start_reviewer(reviewer, repo, prompts_dir, reviews_dir, schema_path.relative_to(repo), log_dir)
+        start_reviewer(
+            reviewer,
+            repo,
+            prompts_dir,
+            reviews_dir,
+            schema_path.relative_to(repo),
+            log_dir,
+            reasoning_effort,
+        )
         for reviewer in reviewers
     ]
     reviewer_results = [wait_reviewer(*item) for item in running]
@@ -533,6 +551,15 @@ def main() -> int:
             "plan writes reviewer guidance; overlay also writes narrow repaired overlay artifacts."
         ),
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help=(
+            "Override Codex model_reasoning_effort for all Codex agents in this run. "
+            "When omitted, the project default from .codex/config.toml is used."
+        ),
+    )
     args = parser.parse_args()
 
     repo = repo_root()
@@ -577,6 +604,8 @@ def main() -> int:
 
     print(f"[paper] {paper_id}")
     print(f"[pdf] {pdf_path}")
+    if args.reasoning_effort:
+        print(f"[reasoning] {args.reasoning_effort}")
 
     run_required(
         "preprocess",
@@ -608,7 +637,7 @@ def main() -> int:
     )
 
     preflight_started_at = run_reviewer_batch(
-        preflight_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir
+        preflight_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir, args.reasoning_effort
     )
     preflight_errors = validate_reviewer_batch(
         preflight_reviewers,
@@ -655,7 +684,12 @@ def main() -> int:
                     str(log_dir.relative_to(repo)),
                     "--repair-mode",
                     args.parser_repair,
-                ],
+                ]
+                + (
+                    ["--reasoning-effort", args.reasoning_effort]
+                    if args.reasoning_effort
+                    else []
+                ),
                 repo,
                 log_dir,
             )
@@ -674,6 +708,7 @@ def main() -> int:
             selection_schema_path,
             log_dir,
             active_parser_repair_notes,
+            args.reasoning_effort,
         )
         selection_errors = validate_selection_output(selection, paper_id, mandatory_reviewers, optional_reviewers)
         if selection_errors:
@@ -718,7 +753,7 @@ def main() -> int:
             )
 
     reviewer_started_at = run_reviewer_batch(
-        standard_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir
+        standard_reviewers, repo, prompts_dir, reviews_dir, schema_path, log_dir, args.reasoning_effort
     )
     validation_errors = validate_reviewer_batch(
         standard_reviewers,
@@ -779,8 +814,7 @@ def main() -> int:
     editor_result = run_required(
         "editor",
         [
-            codex_command(),
-            "exec",
+            *codex_exec_command(reasoning_effort=args.reasoning_effort),
             "--output-last-message",
             str(report_path.relative_to(repo)),
             "-",

@@ -31,10 +31,10 @@ def run_command(command: list[str], cwd: Path, *, input_text: str | None = None)
         raise RuntimeError(f"Command failed with exit code {completed.returncode}: {' '.join(command)}")
 
 
-def codex_command() -> str:
-    from review_paper import codex_command as resolve_codex_command
+def codex_exec_command(reasoning_effort: str | None = None) -> list[str]:
+    from review_paper import codex_exec_command as resolve_codex_exec_command
 
-    return resolve_codex_command()
+    return resolve_codex_exec_command(reasoning_effort=reasoning_effort)
 
 
 def main() -> int:
@@ -44,6 +44,15 @@ def main() -> int:
         "--run-editor",
         action="store_true",
         help="Run Codex editor and final report check. By default only rerenders prompts and rebuilds editor input.",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["minimal", "low", "medium", "high", "xhigh"],
+        default=None,
+        help=(
+            "Override Codex model_reasoning_effort when --run-editor is used. "
+            "When omitted, the project default from .codex/config.toml is used."
+        ),
     )
     args = parser.parse_args()
 
@@ -117,8 +126,7 @@ def main() -> int:
         editor_text = editor_input.read_text(encoding="utf-8")
         run_command(
             [
-                codex_command(),
-                "exec",
+                *codex_exec_command(args.reasoning_effort),
                 "--output-last-message",
                 str(report.relative_to(repo)),
                 "-",

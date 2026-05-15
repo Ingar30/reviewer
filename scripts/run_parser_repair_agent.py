@@ -12,7 +12,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from render_prompts import render_template
-from review_paper import codex_command, repo_root, require_fresh_file, run_required
+from review_paper import REASONING_EFFORT_CHOICES, codex_exec_command, repo_root, require_fresh_file, run_required
 
 
 DEFAULT_SCHEMA = "schemas/parser_repair_plan.schema.json"
@@ -329,6 +329,15 @@ def main() -> int:
         default=None,
         help="Use an existing plan JSON and only validate/write notes; useful for deterministic tests.",
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help=(
+            "Override Codex model_reasoning_effort for the parser repair planner. "
+            "When omitted, the project default from .codex/config.toml is used."
+        ),
+    )
     args = parser.parse_args()
 
     repo = repo_root()
@@ -384,8 +393,7 @@ def main() -> int:
         run_required(
             "parser-repair-planner",
             [
-                codex_command(),
-                "exec",
+                *codex_exec_command(reasoning_effort=args.reasoning_effort),
                 "--output-schema",
                 repo_relative(schema_path, repo),
                 "--output-last-message",

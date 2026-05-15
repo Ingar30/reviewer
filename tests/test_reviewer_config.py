@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,7 @@ from run_parser_repair_agent import (  # noqa: E402
     write_repaired_artifacts,
 )
 from review_paper import (  # noqa: E402
+    codex_exec_command,
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
     plausible_editor_report,
@@ -598,6 +600,14 @@ class ReviewerConfigTests(unittest.TestCase):
         selected = selected_reviewers_from_selection(selection, mandatory, optional)
 
         self.assertEqual([reviewer.name for reviewer in selected], ["crossref_auditor", "model_equation_auditor"])
+
+    def test_codex_exec_command_can_override_reasoning(self) -> None:
+        with mock.patch("review_paper.codex_command", return_value="codex"):
+            self.assertEqual(
+                codex_exec_command(reasoning_effort="xhigh", search=True),
+                ["codex", "--search", "-c", 'model_reasoning_effort="xhigh"', "exec"],
+            )
+            self.assertEqual(codex_exec_command(), ["codex", "exec"])
 
     def test_normalize_preserves_structured_contract_fields(self) -> None:
         reviews_dir = self.config_path("reviews_marker.json").parent / "reviews"

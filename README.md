@@ -103,6 +103,14 @@ The intermediate parsed artifacts, prompts, logs, reviewer outputs, selection ou
 work/my-paper/
 ```
 
+By default, Codex agents use the project reasoning setting in `.codex/config.toml`, currently `high`. For harder or more expensive runs, override it at launch:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reasoning-effort xhigh
+```
+
+Allowed values are `minimal`, `low`, `medium`, `high`, and `xhigh`.
+
 ## Repository Map
 
 Tracked project machinery:

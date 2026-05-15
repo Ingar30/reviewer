@@ -17,7 +17,7 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. optionally runs an experimental parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
+4. runs parser repair overlay when parser-quality preflight reports high- or medium-severity parser artifacts
 5. dynamically selects optional reviewers while always running mandatory reviewers
 6. validates every reviewer JSON output against schema and semantic checks
 7. normalizes and deduplicates reviewer findings into an editor bundle
@@ -103,10 +103,10 @@ The intermediate parsed artifacts, prompts, logs, reviewer outputs, selection ou
 work/my-paper/
 ```
 
-By default, Codex agents use the project reasoning setting in `.codex/config.toml`, currently `high`. For harder or more expensive runs, override it at launch:
+By default, Codex agents use `xhigh` reasoning for full review runs. For faster or cheaper runs, override it at launch:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reasoning-effort xhigh
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reasoning-effort high
 ```
 
 Allowed values are `minimal`, `low`, `medium`, `high`, and `xhigh`.
@@ -138,7 +138,7 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
-- `work/<paper_id>/repair/`: optional parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts.
+- `work/<paper_id>/repair/`: parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts when parser-quality preflight reports repairable artifacts.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
@@ -188,10 +188,10 @@ Optional reviewers are selected dynamically by default:
 - core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
 - narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
 
-After `parser_quality_auditor`, an optional experimental parser-repair step can be enabled. It adds repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions, but it adds runtime and token usage and is off by default. To run the review with the parser repair overlay enabled, use the following command:
+After `parser_quality_auditor`, parser repair overlay runs by default when high- or medium-severity parser artifacts are reported. It adds repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions. To skip this for a faster or cheaper run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair off
 ```
 
 Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.

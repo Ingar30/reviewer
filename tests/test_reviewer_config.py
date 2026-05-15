@@ -1233,8 +1233,9 @@ class ReviewerConfigTests(unittest.TestCase):
     def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
 
-        self.assertIn("5 to 9 optional reviewers", prompt)
-        self.assertIn("at most 2 pilot reviewers", prompt)
+        self.assertIn("7 to 10 optional reviewers", prompt)
+        self.assertIn("up to 3 pilot reviewers", prompt)
+        self.assertIn("not redundant", prompt)
         self.assertIn("Use skipped_optional_reviewers", prompt)
 
     def test_preprocess_page_quality_summary_flags_low_text_and_order_instability(self) -> None:

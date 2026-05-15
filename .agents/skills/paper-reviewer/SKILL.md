@@ -34,7 +34,7 @@ The pipeline stages are:
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch preflight reviewers from `config/reviewers.json`.
 6. Validate preflight JSON and stop on blocking parser-quality failures.
-7. If `--parser-repair plan` is enabled and parser-quality preflight reports high- or medium-severity parser artifacts, run `scripts/run_parser_repair_agent.py` and write `work/<paper_id>/repair/parser_repair_notes.md`.
+7. By default, if parser-quality preflight reports high- or medium-severity parser artifacts, run `scripts/run_parser_repair_agent.py` in overlay mode and write `work/<paper_id>/repair/parser_repair_notes.md` plus narrow repaired overlay artifacts.
 8. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
 9. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
 10. Rerender prompts using the selected reviewer roster and parser repair notes when present.
@@ -46,7 +46,7 @@ The pipeline stages are:
 16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
 Use `--reviewer-selection static` only when all enabled review-stage reviewers should run.
-Use `--parser-repair plan` only when parser-quality issues should be converted into a reviewer-facing repair overlay before substantive reviewers run.
+Use `--parser-repair off` only when parser repair should be skipped for a faster or cheaper run. Use `--parser-repair plan` when parser-quality issues should be converted into reviewer-facing guidance without writing overlay artifacts.
 
 ## Editor-only refresh
 If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when the change is limited to editor prompt/report presentation:
@@ -73,7 +73,7 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 - If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
 - Do not bury parser/preprocessing issues when they materially distort auditability of a central formula, table, figure, citation target, or quantitative claim. Keep them in the parser-caveats section, but mention them explicitly in prose and treat them as revision-priority material when the auditability risk is substantial.
 - Treat `scripts/check_final_report.py` as a structure and traceability smoke check, not as independent verification that external sources are real or current.
-- Treat institutional context, power/multiple testing, design/randomization, and economic magnitude reviewers as narrow optional pilots. They should run only when the selected paper has strong cues for those risks.
+- Treat institutional context, power/multiple testing, design/randomization, and economic magnitude reviewers as optional pilots. They should run when the selected paper has distinct, concrete cues for those risks; do not skip a pilot reviewer solely to keep the roster short when it is likely to catch a non-overlapping material issue.
 - If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
 
 ## Output conventions

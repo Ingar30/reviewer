@@ -54,6 +54,7 @@ Repaired overlay artifact rules:
 - CSV content must be plain comma-separated text with a header row when the source supports it.
 - Markdown/text content must preserve source wording where possible and avoid editorial rewriting.
 - Preserve Unicode characters exactly when source artifacts contain them. Do not emit mojibake such as `Ã—`, `âˆ—`, `â€™`, or `â€“`; use the source character directly, or use a plain ASCII fallback only when the source character is ambiguous.
+- Do not encode symbols as NUL-prefixed codepoint text such as `\u0000d7` or `\u00002217`; write `×`, `∗`, or an ASCII fallback directly.
 - Use repaired overlay artifacts to aid review, not to replace deterministic preprocessing.
 
 For low-severity parser findings, include a repair entry only when it materially changes how reviewers should read evidence.

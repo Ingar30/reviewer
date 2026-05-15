@@ -23,6 +23,7 @@ MANIFEST_FILENAME = "repair_manifest.json"
 REPAIRED_ARTIFACTS_DIR = "repaired_artifacts"
 
 SAFE_ARTIFACT_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+NUL_CODEPOINT_RE = re.compile("\x00([0-9A-Fa-f]{2,6})")
 MOJIBAKE_MARKERS = ("Ã", "Â", "â", "ï¿½", "\ufffd")
 TEXT_SOURCE_SUFFIXES = {".csv", ".json", ".md", ".txt"}
 MAX_SOURCE_CHARS = 200_000
@@ -91,6 +92,19 @@ def repair_mojibake_text(text: str) -> tuple[str, bool]:
     return "".join(fixed_lines), changed
 
 
+def control_char_score(text: str) -> int:
+    return sum(1 for char in text if ord(char) < 32 and char not in "\n\r\t")
+
+
+def repair_nul_codepoints(text: str) -> tuple[str, bool]:
+    def replace(match: re.Match[str]) -> str:
+        value = int(match.group(1), 16)
+        return chr(value) if 32 <= value <= 0x10FFFF else match.group(0)
+
+    fixed = NUL_CODEPOINT_RE.sub(replace, text)
+    return fixed, fixed != text
+
+
 def source_mojibake_score(source_paths: list[str], repo: Path) -> int | None:
     scores = []
     for source_path in source_paths:
@@ -127,12 +141,20 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
         output_path = artifacts_dir / filename
         raw_content = str(artifact["content"])
         raw_score = mojibake_score(raw_content)
+        raw_control_score = control_char_score(raw_content)
         content, normalized_mojibake = repair_mojibake_text(raw_content)
+        content, normalized_control_codepoints = repair_nul_codepoints(content)
         repaired_score = mojibake_score(content)
+        repaired_control_score = control_char_score(content)
         artifact["content"] = content.rstrip()
         if normalized_mojibake:
             caveats = artifact.setdefault("caveats", [])
             normalization_note = "Common UTF-8/CP1252 mojibake was normalized deterministically before writing."
+            if normalization_note not in caveats:
+                caveats.append(normalization_note)
+        if normalized_control_codepoints:
+            caveats = artifact.setdefault("caveats", [])
+            normalization_note = "NUL-prefixed Unicode codepoints were normalized deterministically before writing."
             if normalization_note not in caveats:
                 caveats.append(normalization_note)
         source_score = source_mojibake_score(artifact.get("source_paths", []), repo)
@@ -145,6 +167,15 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
                     "warning": "suspicious_mojibake_remaining",
                     "mojibake_score": repaired_score,
                     "source_mojibake_score": source_score,
+                }
+            )
+        if repaired_control_score:
+            warnings.append("control_characters_remaining")
+            manifest["quality_warnings"].append(
+                {
+                    "path": repo_relative(output_path, repo),
+                    "warning": "control_characters_remaining",
+                    "control_char_score": repaired_control_score,
                 }
             )
         output_path.write_text(content.rstrip() + "\n", encoding="utf-8")
@@ -163,6 +194,9 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
                     "mojibake_score_after": repaired_score,
                     "source_mojibake_score": source_score,
                     "normalized_mojibake": normalized_mojibake,
+                    "control_char_score_before": raw_control_score,
+                    "control_char_score_after": repaired_control_score,
+                    "normalized_control_codepoints": normalized_control_codepoints,
                     "warnings": warnings,
                 },
                 "sha256": digest,
@@ -173,6 +207,9 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
     manifest["quality_summary"] = {
         "normalized_mojibake_artifact_count": sum(
             1 for artifact in manifest["artifacts"] if artifact["quality"]["normalized_mojibake"]
+        ),
+        "normalized_control_codepoint_artifact_count": sum(
+            1 for artifact in manifest["artifacts"] if artifact["quality"]["normalized_control_codepoints"]
         ),
         "warning_count": len(manifest["quality_warnings"]),
     }
@@ -371,7 +408,10 @@ def main() -> int:
         raise RuntimeError("Parser repair plan failed validation: " + "; ".join(errors))
 
     manifest = write_repaired_artifacts(plan, output_dir, repo)
-    if manifest["quality_summary"]["normalized_mojibake_artifact_count"]:
+    if (
+        manifest["quality_summary"]["normalized_mojibake_artifact_count"]
+        or manifest["quality_summary"]["normalized_control_codepoint_artifact_count"]
+    ):
         plan_output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     notes_output.write_text(repair_notes_markdown(plan), encoding="utf-8")
     print(

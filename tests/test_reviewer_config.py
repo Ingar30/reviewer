@@ -32,9 +32,11 @@ from preprocess_pdf import page_quality_summary, portable_path, should_append_ra
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
 from run_parser_repair_agent import (  # noqa: E402
+    control_char_score,
     mojibake_score,
     repair_notes_markdown,
     repair_mojibake_text,
+    repair_nul_codepoints,
     validate_artifact_filenames,
     validate_plan,
     write_repaired_artifacts,
@@ -1425,6 +1427,48 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
         self.assertTrue(manifest["artifacts"][0]["quality"]["normalized_mojibake"])
         self.assertEqual(manifest["artifacts"][0]["quality"]["mojibake_score_after"], 0)
+
+    def test_parser_repair_normalizes_nul_codepoint_artifacts(self) -> None:
+        root = self.config_path("parser_repair_control_marker.txt").parent
+        output_dir = root / "parser-repair-control-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        content = "row_label,column_1\nBlack \x00d7 Discrimination,-996.193\x002217\x002217\x002217\n"
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": content,
+                            "source_paths": ["work/paper-x/parsed/tables/table_1.txt"],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the source table."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        fixed, changed = repair_nul_codepoints(content)
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+        written = artifact_path.read_text(encoding="utf-8")
+
+        self.assertTrue(changed)
+        self.assertEqual(control_char_score(fixed), 0)
+        self.assertIn("Black × Discrimination,-996.193∗∗∗", written)
+        self.assertEqual(manifest["quality_summary"]["normalized_control_codepoint_artifact_count"], 1)
+        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
+        self.assertEqual(manifest["artifacts"][0]["quality"]["control_char_score_after"], 0)
 
     def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
         parser_quality = {

@@ -23,6 +23,9 @@ MANIFEST_FILENAME = "repair_manifest.json"
 REPAIRED_ARTIFACTS_DIR = "repaired_artifacts"
 
 SAFE_ARTIFACT_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+MOJIBAKE_MARKERS = ("Ã", "Â", "â", "ï¿½", "\ufffd")
+TEXT_SOURCE_SUFFIXES = {".csv", ".json", ".md", ".txt"}
+MAX_SOURCE_CHARS = 200_000
 
 
 def repo_relative(path: Path, repo: Path) -> str:
@@ -67,6 +70,45 @@ def validate_artifact_filenames(plan: dict[str, Any]) -> list[str]:
     return errors
 
 
+def mojibake_score(text: str) -> int:
+    return sum(text.count(marker) for marker in MOJIBAKE_MARKERS)
+
+
+def repair_mojibake_text(text: str) -> tuple[str, bool]:
+    fixed_lines: list[str] = []
+    changed = False
+    for line in text.splitlines(keepends=True):
+        try:
+            candidate = line.encode("cp1252").decode("utf-8")
+        except UnicodeError:
+            fixed_lines.append(line)
+            continue
+        if mojibake_score(candidate) < mojibake_score(line) and "\ufffd" not in candidate:
+            fixed_lines.append(candidate)
+            changed = changed or candidate != line
+        else:
+            fixed_lines.append(line)
+    return "".join(fixed_lines), changed
+
+
+def source_mojibake_score(source_paths: list[str], repo: Path) -> int | None:
+    scores = []
+    for source_path in source_paths:
+        path = Path(source_path)
+        if not path.is_absolute():
+            path = repo / path
+        if path.suffix.lower() not in TEXT_SOURCE_SUFFIXES or not path.exists():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")[:MAX_SOURCE_CHARS]
+        except UnicodeError:
+            continue
+        scores.append(mojibake_score(text))
+    if not scores:
+        return None
+    return sum(scores)
+
+
 def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path) -> dict[str, Any]:
     artifacts_dir = output_dir / REPAIRED_ARTIFACTS_DIR
     manifest_path = output_dir / MANIFEST_FILENAME
@@ -74,6 +116,7 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
         "paper_id": plan.get("paper_id"),
         "repair_mode": plan.get("repair_mode", "plan"),
         "artifact_count": 0,
+        "quality_warnings": [],
         "artifacts": [],
     }
     artifact_items = repaired_artifacts(plan)
@@ -82,7 +125,28 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
     for repair, artifact in artifact_items:
         filename = artifact["filename"]
         output_path = artifacts_dir / filename
-        content = str(artifact["content"])
+        raw_content = str(artifact["content"])
+        raw_score = mojibake_score(raw_content)
+        content, normalized_mojibake = repair_mojibake_text(raw_content)
+        repaired_score = mojibake_score(content)
+        artifact["content"] = content.rstrip()
+        if normalized_mojibake:
+            caveats = artifact.setdefault("caveats", [])
+            normalization_note = "Common UTF-8/CP1252 mojibake was normalized deterministically before writing."
+            if normalization_note not in caveats:
+                caveats.append(normalization_note)
+        source_score = source_mojibake_score(artifact.get("source_paths", []), repo)
+        warnings = []
+        if repaired_score and (source_score is None or repaired_score > source_score):
+            warnings.append("suspicious_mojibake_remaining")
+            manifest["quality_warnings"].append(
+                {
+                    "path": repo_relative(output_path, repo),
+                    "warning": "suspicious_mojibake_remaining",
+                    "mojibake_score": repaired_score,
+                    "source_mojibake_score": source_score,
+                }
+            )
         output_path.write_text(content.rstrip() + "\n", encoding="utf-8")
         digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
         manifest["artifacts"].append(
@@ -94,11 +158,24 @@ def write_repaired_artifacts(plan: dict[str, Any], output_dir: Path, repo: Path)
                 "source_paths": artifact.get("source_paths", []),
                 "confidence": artifact.get("confidence"),
                 "caveats": artifact.get("caveats", []),
+                "quality": {
+                    "mojibake_score_before": raw_score,
+                    "mojibake_score_after": repaired_score,
+                    "source_mojibake_score": source_score,
+                    "normalized_mojibake": normalized_mojibake,
+                    "warnings": warnings,
+                },
                 "sha256": digest,
                 "bytes": output_path.stat().st_size,
             }
         )
     manifest["artifact_count"] = len(manifest["artifacts"])
+    manifest["quality_summary"] = {
+        "normalized_mojibake_artifact_count": sum(
+            1 for artifact in manifest["artifacts"] if artifact["quality"]["normalized_mojibake"]
+        ),
+        "warning_count": len(manifest["quality_warnings"]),
+    }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
@@ -294,6 +371,8 @@ def main() -> int:
         raise RuntimeError("Parser repair plan failed validation: " + "; ".join(errors))
 
     manifest = write_repaired_artifacts(plan, output_dir, repo)
+    if manifest["quality_summary"]["normalized_mojibake_artifact_count"]:
+        plan_output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     notes_output.write_text(repair_notes_markdown(plan), encoding="utf-8")
     print(
         json.dumps(

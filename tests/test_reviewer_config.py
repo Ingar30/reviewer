@@ -32,7 +32,9 @@ from preprocess_pdf import page_quality_summary, portable_path, should_append_ra
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
 from run_parser_repair_agent import (  # noqa: E402
+    mojibake_score,
     repair_notes_markdown,
+    repair_mojibake_text,
     validate_artifact_filenames,
     validate_plan,
     write_repaired_artifacts,
@@ -187,6 +189,13 @@ class ReviewerConfigTests(unittest.TestCase):
             if path.exists():
                 path.unlink()
         except PermissionError:
+            pass
+
+    def cleanup_dir(self, path: Path) -> None:
+        try:
+            if path.exists():
+                path.rmdir()
+        except OSError:
             pass
 
     def config_path(self, name: str) -> Path:
@@ -1302,8 +1311,8 @@ class ReviewerConfigTests(unittest.TestCase):
         output_dir = self.config_path("parser_repair_overlay_marker.txt").parent / "parser-repair-output"
         artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
         manifest_path = output_dir / "repair_manifest.json"
-        self.addCleanup(lambda: output_dir.exists() and output_dir.rmdir())
-        self.addCleanup(lambda: (output_dir / "repaired_artifacts").exists() and (output_dir / "repaired_artifacts").rmdir())
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
         self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
         self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
         plan = {
@@ -1334,6 +1343,50 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(manifest["artifacts"][0]["parser_finding_id"], "PARSER-001")
         self.assertIn("sha256", manifest["artifacts"][0])
         self.assertTrue(manifest_path.exists())
+
+    def test_parser_repair_normalizes_overlay_mojibake(self) -> None:
+        root = self.config_path("parser_repair_mojibake_marker.txt").parent
+        source_path = root / "source_table.txt"
+        output_dir = root / "parser-repair-mojibake-output"
+        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
+        manifest_path = output_dir / "repair_manifest.json"
+        self.addCleanup(self.cleanup_dir, output_dir)
+        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
+        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
+        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
+        self.addCleanup(lambda: source_path.exists() and source_path.unlink())
+        source_path.write_text("Black × Discrimination -996.193∗∗∗\n", encoding="utf-8")
+        plan = {
+            "paper_id": "paper-x",
+            "repair_mode": "overlay",
+            "repairs": [
+                {
+                    "parser_finding_id": "PARSER-001",
+                    "repaired_artifacts": [
+                        {
+                            "filename": "table_1_repaired.csv",
+                            "artifact_type": "table_csv",
+                            "description": "Reviewer-safe reconstruction of Table 1.",
+                            "content": "row_label,column_1\nBlack Ã— Discrimination,-996.193âˆ—âˆ—âˆ—\n",
+                            "source_paths": [str(source_path.relative_to(REPO_ROOT))],
+                            "confidence": "medium",
+                            "caveats": ["Use only with the source table."],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        fixed, changed = repair_mojibake_text(plan["repairs"][0]["repaired_artifacts"][0]["content"])
+        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
+
+        self.assertTrue(changed)
+        self.assertLess(mojibake_score(fixed), mojibake_score("Black Ã— Discrimination,-996.193âˆ—âˆ—âˆ—"))
+        self.assertIn("Black × Discrimination,-996.193∗∗∗", artifact_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["quality_summary"]["normalized_mojibake_artifact_count"], 1)
+        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
+        self.assertTrue(manifest["artifacts"][0]["quality"]["normalized_mojibake"])
+        self.assertEqual(manifest["artifacts"][0]["quality"]["mojibake_score_after"], 0)
 
     def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
         parser_quality = {

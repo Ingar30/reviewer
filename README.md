@@ -29,7 +29,7 @@ Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed 
 
 ## Quick Start
 
-### 1. Get The Repository
+### 1. Get the Repository
 
 ```powershell
 git clone https://github.com/Ingar30/reviewer.git
@@ -70,14 +70,23 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-### 4. Check The Install
+### 4. Check the Install
+
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest
 .\.venv\Scripts\python.exe scripts\check_environment.py
 ```
 
-### 5. Add A Paper Locally
+macOS/Linux:
+
+```bash
+./.venv/bin/python -m unittest
+./.venv/bin/python scripts/check_environment.py
+```
+
+### 5. Add a Paper Locally
 
 Put a source PDF in `inputs/`. Files in `inputs/` are ignored by Git.
 
@@ -85,10 +94,18 @@ Put a source PDF in `inputs/`. Files in `inputs/` are ignored by Git.
 inputs/my-paper.pdf
 ```
 
-### 6. Run A Review
+### 6. Run a Review
+
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
+```
+
+macOS/Linux:
+
+```bash
+./.venv/bin/python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
 ```
 
 The final report will be written to:

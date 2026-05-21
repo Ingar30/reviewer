@@ -36,3 +36,7 @@ Slides/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local Codex/OpenAI CLI runtime state; keep only project config tracked
+.codex/*
+!.codex/config.toml

@@ -34,6 +34,8 @@ inputs/my-paper.pdf
 
 Do not commit this file. The directory is ignored by Git except for `inputs/README.md`.
 
+Preprocessing stays local, but the review prompts send parsed manuscript text to OpenAI through Codex. Search-enabled reviewers may also issue manuscript-derived web queries. Confirm that the manuscript's confidentiality terms permit this before continuing.
+
 ## 4. Run The Reviewer
 
 ```powershell
@@ -46,21 +48,7 @@ Use an explicit ID if the filename is long or sensitive:
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
 ```
 
-Parser repair overlay runs by default when parser-quality preflight reports high- or medium-severity parser artifacts. It adds reviewer-facing repair notes and narrow overlay artifacts before substantive review.
-
-To write repair guidance without overlay artifacts, use:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
-```
-
-For a faster or cheaper run that skips parser repair, use:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair off
-```
-
-Parser repair can improve auditability by routing reviewers away from unsafe parsed tables, figures, or captions and toward safer fallback artifacts. It adds runtime and token usage. When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
+Substantive reviewers read the parser-quality output and route around deterministic artifacts marked unsafe. The workflow does not generate repaired parser content. If page text, coordinates, crops, and page images are insufficient for a reliable check, the reviewer returns `cannot_verify`.
 
 ## 5. Read The Report
 
@@ -76,7 +64,7 @@ Intermediate artifacts are under:
 work/my-paper/
 ```
 
-Repair overlays, if enabled, appear under `work/my-paper/repair/`. In `overlay` mode, LLM-generated repaired files are written under `work/my-paper/repair/repaired_artifacts/`; the original `work/my-paper/parsed/` artifacts are not overwritten. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
+The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, and logs.
 
 ## 6. Before Sharing Changes
 

@@ -13,11 +13,10 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from check_final_report import GRAMMAR_APPENDIX_HEADING, TRACEABILITY_APPENDIX_HEADING, report_failures, external_source_urls  # noqa: E402
+from check_environment import REQUIRED_MODULES  # noqa: E402
 from check_shareable_repo import private_tracking_violations  # noqa: E402
 from check_tracked_sensitive_names import suspicious_files  # noqa: E402
-from evaluate_parser_repair import evaluate_plan  # noqa: E402
 from evaluate_prior_runs import aggregate, selector_metrics  # noqa: E402
-from render_prompts import append_parser_repair_note  # noqa: E402
 from build_editor_input import (  # noqa: E402
     ADDITIONAL_FINDINGS_SECTION,
     GRAMMAR_APPENDIX_SECTION,
@@ -29,26 +28,29 @@ from build_editor_input import (  # noqa: E402
     route_finding,
 )
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
-from preprocess_pdf import page_quality_summary, portable_path, should_append_raw_caption_continuation  # noqa: E402
+from preprocess_pdf import (  # noqa: E402
+    attach_captions_to_auto_tables,
+    caption_table_quality,
+    choose_normalized_text,
+    extract_reference_list,
+    is_heading,
+    native_blocks_are_column_major,
+    page_quality_summary,
+    parse_captioned_table_rows,
+    portable_path,
+    rect_overlap_ratio,
+    should_append_raw_caption_continuation,
+    split_trailing_table_cells,
+    structure_captioned_table_rows,
+)
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
-from run_parser_repair_agent import (  # noqa: E402
-    control_char_score,
-    mojibake_score,
-    repair_notes_markdown,
-    repair_mojibake_text,
-    repair_nul_codepoints,
-    validate_artifact_filenames,
-    validate_plan,
-    write_repaired_artifacts,
-)
 from review_paper import (  # noqa: E402
     codex_exec_command,
     extract_editor_report_from_transcript,
     parser_quality_gate_findings,
     plausible_editor_report,
     recover_editor_report_if_needed,
-    repairable_parser_findings,
     render_selector_prompt,
     selected_reviewers_from_selection,
     validate_selection_output,
@@ -105,6 +107,7 @@ def finding(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "id": "NUM-001",
         "category": "rounding_error",
+        "finding_summary": "The reported percentage conflicts with Table 1.",
         "issue_type": "manuscript_issue",
         "severity": "medium",
         "confidence": "high",
@@ -245,6 +248,12 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(next(item for item in reviewers if item.name == "grammar_auditor").normalization_role, "copyedit")
         self.assertEqual(next(item for item in reviewers if item.name == "crossref_auditor").selection_policy, "mandatory")
         self.assertEqual(next(item for item in reviewers if item.name == "numerical_auditor").selection_policy, "optional")
+
+    def test_environment_check_requires_only_runtime_dependencies(self) -> None:
+        self.assertEqual(
+            REQUIRED_MODULES,
+            ["fitz", "pdfplumber", "pandas", "jsonschema", "tabulate"],
+        )
 
     def test_disabled_reviewers_are_skipped_by_default(self) -> None:
         path = self.config_path("disabled_reviewers.json")
@@ -465,13 +474,71 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(any("undeclared source object ids" in error for error in errors))
 
+    def test_semantic_errors_validate_local_source_provenance(self) -> None:
+        paper_id = "provenance-test"
+        parsed_dir = REPO_ROOT / "work" / paper_id / "parsed"
+        source_path = parsed_dir / "pages" / "page_001.md"
+        manifest_path = parsed_dir / "manifest.json"
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_text("verified source", encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps({"summary": {"page_count": 2}}), encoding="utf-8"
+        )
+        self.addCleanup(self.cleanup_dir, REPO_ROOT / "work" / paper_id)
+        self.addCleanup(self.cleanup_dir, parsed_dir)
+        self.addCleanup(self.cleanup_dir, source_path.parent)
+        self.addCleanup(self.cleanup_path, manifest_path)
+        self.addCleanup(self.cleanup_path, source_path)
+
+        item = finding(
+            source_objects=[
+                {
+                    **finding()["source_objects"][0],
+                    "path": f"work/{paper_id}/parsed/pages/page_001.md",
+                    "page": 1,
+                }
+            ]
+        )
+        data = review_output([item])
+        data["paper_id"] = paper_id
+
+        self.assertEqual(semantic_errors(data, [reviewer_config()], repo=REPO_ROOT), [])
+
+        item["source_objects"][0]["path"] = (
+            f"work/{paper_id}/parsed/pages/page_001.md; work/{paper_id}/parsed/manifest.json"
+        )
+        errors = semantic_errors(data, [reviewer_config()], repo=REPO_ROOT)
+        self.assertTrue(any("one file" in error for error in errors))
+
+        item["source_objects"][0]["path"] = "README.md"
+        errors = semantic_errors(data, [reviewer_config()], repo=REPO_ROOT)
+        self.assertTrue(any("must stay under" in error for error in errors))
+
+        source = item["source_objects"][0]
+        source["type"] = "external"
+        source["path"] = f"work/{paper_id}/parsed/pages/page_001.md"
+        source["url"] = "https://example.com/source"
+        errors = semantic_errors(data, [reviewer_config()], repo=REPO_ROOT)
+        self.assertTrue(any("path must be null for external evidence" in error for error in errors))
+
+        source["path"] = None
+        source["url"] = None
+        errors = semantic_errors(data, [reviewer_config()], repo=REPO_ROOT)
+        self.assertTrue(any("url is required for external evidence" in error for error in errors))
+
+        source["type"] = "text"
+        source["url"] = "https://example.com/source"
+        errors = semantic_errors(data, [reviewer_config()], repo=REPO_ROOT)
+        self.assertTrue(any("path is required for parsed manuscript evidence" in error for error in errors))
+        self.assertTrue(any("url must be null for parsed manuscript evidence" in error for error in errors))
+
     def test_parser_quality_gate_blocks_only_high_confidence_blockers(self) -> None:
         high_blocker = finding(
             id="PARSER-001",
             issue_type="parser_artifact",
             severity="high",
             confidence="high",
-            assessment="no",
+            assessment="yes",
         )
         medium_warning = finding(
             id="PARSER-002",
@@ -504,28 +571,6 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual([finding["id"] for finding in blockers], ["PARSER-001"])
         self.assertEqual([finding["id"] for finding in warnings], ["PARSER-002", "PARSER-003"])
-
-    def test_repairable_parser_findings_returns_only_reported_parser_issues(self) -> None:
-        data = review_output(
-            [
-                finding(id="PARSER-001", issue_type="parser_artifact", severity="medium"),
-                finding(
-                    id="PARSER-002",
-                    issue_type="parser_artifact",
-                    severity="high",
-                    confidence="high",
-                    assessment="no",
-                ),
-                finding(id="PARSER-003", issue_type="parser_artifact", severity="low"),
-                finding(id="NUM-001", issue_type="manuscript_issue", severity="high"),
-            ],
-            reviewer_name="parser_quality_auditor",
-        )
-
-        self.assertEqual(
-            [finding["id"] for finding in repairable_parser_findings(data)],
-            ["PARSER-002", "PARSER-001"],
-        )
 
     def test_validate_selection_output_rejects_unknown_mandatory_and_duplicate_reviewers(self) -> None:
         mandatory = [
@@ -565,6 +610,61 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertTrue(any("mandatory" in error for error in errors))
         self.assertTrue(any("not an enabled optional reviewer" in error for error in errors))
 
+    def test_validate_selection_output_requires_complete_optional_accounting(self) -> None:
+        optional = [
+            reviewer_config(
+                "identification_auditor", "ID", selection_policy="optional"
+            )
+        ]
+        selection = {
+            "paper_id": "paper-x",
+            "paper_type": "empirical_causal",
+            "selection_confidence": "high",
+            "selected_optional_reviewers": [],
+            "skipped_optional_reviewers": [],
+            "notes": [],
+        }
+
+        errors = validate_selection_output(selection, "paper-x", [], optional)
+
+        self.assertTrue(any("neither selected nor skipped" in error for error in errors))
+
+    def test_validate_selection_output_enforces_roster_and_pilot_caps(self) -> None:
+        optional = [
+            reviewer_config(f"optional_{index}", f"OPT{index}", selection_policy="optional")
+            for index in range(10)
+        ]
+        selection = {
+            "paper_id": "paper-x",
+            "paper_type": "mixed",
+            "selection_confidence": "high",
+            "selected_optional_reviewers": [
+                {"name": reviewer.name, "reason": "Distinct material cue."}
+                for reviewer in optional
+            ],
+            "skipped_optional_reviewers": [],
+            "notes": [],
+        }
+
+        errors = validate_selection_output(selection, "paper-x", [], optional)
+
+        self.assertTrue(any("count exceeds 9" in error for error in errors))
+
+        pilot_names = [
+            "data_availability_replication_auditor",
+            "institutional_context_auditor",
+            "power_multiple_testing_auditor",
+        ]
+        pilots = [
+            reviewer_config(name, f"PILOT{index}", selection_policy="optional")
+            for index, name in enumerate(pilot_names)
+        ]
+        selection["selected_optional_reviewers"] = [
+            {"name": reviewer.name, "reason": "Distinct material cue."} for reviewer in pilots
+        ]
+        errors = validate_selection_output(selection, "paper-x", [], pilots)
+        self.assertTrue(any("pilot reviewer count exceeds 2" in error for error in errors))
+
     def test_selected_reviewers_from_selection_combines_mandatory_and_optional(self) -> None:
         mandatory = [reviewer_config("crossref_auditor", "CROSSREF")]
         optional = [
@@ -601,11 +701,21 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual([reviewer.name for reviewer in selected], ["crossref_auditor", "model_equation_auditor"])
 
-    def test_codex_exec_command_can_override_reasoning(self) -> None:
+    def test_codex_exec_command_can_override_model_and_reasoning(self) -> None:
         with mock.patch("review_paper.codex_command", return_value="codex"):
             self.assertEqual(
-                codex_exec_command(reasoning_effort="xhigh", search=True),
-                ["codex", "--search", "-c", 'model_reasoning_effort="xhigh"', "exec"],
+                codex_exec_command(
+                    model="gpt-5.6-terra", reasoning_effort="max", search=True
+                ),
+                [
+                    "codex",
+                    "--search",
+                    "--model",
+                    "gpt-5.6-terra",
+                    "-c",
+                    'model_reasoning_effort="max"',
+                    "exec",
+                ],
             )
             self.assertEqual(codex_exec_command(), ["codex", "exec"])
 
@@ -681,6 +791,32 @@ class ReviewerConfigTests(unittest.TestCase):
         )
 
         self.assertTrue(should_merge(group, "claim_evidence_auditor", related, "manuscript_issue"))
+
+    def test_should_not_merge_unrelated_numeric_findings_on_same_page(self) -> None:
+        base = finding(
+            category="numeric_error",
+            finding_summary="The response-rate percentage is calculated incorrectly.",
+            claim_text="The response rate is 39.6 percent.",
+        )
+        group = {
+            "issue_class": "manuscript_issue",
+            "source_reviewers": ["numerical_auditor"],
+            "finding_summary": base["finding_summary"],
+            "claim_text": base["claim_text"],
+            "primary_quote": "39.6 percent",
+            "locations": [base["location"]],
+            "source_objects": [],
+            "claim_evidence_links": [],
+            "categories": [base["category"]],
+        }
+        unrelated = finding(
+            id="NUM-002",
+            category="numeric_error",
+            finding_summary="A log coefficient is interpreted as an exact percentage change.",
+            claim_text="The coefficient of 0.411 means an exact 41.1 percent increase.",
+        )
+
+        self.assertFalse(should_merge(group, "claim_evidence_auditor", unrelated, "manuscript_issue"))
 
     def test_editor_brief_priority_scoring_and_routing(self) -> None:
         high_manuscript = {
@@ -988,7 +1124,7 @@ class ReviewerConfigTests(unittest.TestCase):
             [
                 "# Multi-Agent Paper Review Report",
                 "## Executive Summary",
-                "CANON-001 grammar_auditor:GRAM-001",
+                "A copyediting issue requires correction.",
                 "## Review Configuration",
                 "grammar_auditor ran.",
                 "## Highest-Priority Cross-Agent Findings",
@@ -1038,7 +1174,7 @@ class ReviewerConfigTests(unittest.TestCase):
             [
                 "# Multi-Agent Paper Review Report",
                 "## Executive Summary",
-                "CANON-001 reference_auditor:REF-001",
+                "A reference-integrity issue requires correction.",
                 "## Review Configuration",
                 "reference_auditor ran.",
                 "## Highest-Priority Cross-Agent Findings",
@@ -1098,6 +1234,44 @@ class ReviewerConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(report_failures(report, bundle=bundle, min_chars=0), [])
+
+    def test_report_checker_rejects_wrong_traceability_mapping_and_invented_url(self) -> None:
+        bundle = {
+            "canonical_findings": [
+                {
+                    "canonical_id": "CANON-001",
+                    "source_findings": [{"reviewer": "numerical_auditor", "id": "NUM-001"}],
+                },
+                {
+                    "canonical_id": "CANON-002",
+                    "source_findings": [{"reviewer": "claim_evidence_auditor", "id": "CEA-001"}],
+                },
+            ]
+        }
+        report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "A correction is needed. https://invented.example/source",
+                "## Review Configuration",
+                "The configured reviewers ran.",
+                "## Highest-Priority Cross-Agent Findings",
+                "One issue is material.",
+                "## Suggested Revision Priorities",
+                "Correct the claim.",
+                "## Additional Findings",
+                "No additional findings.",
+                TRACEABILITY_APPENDIX_HEADING,
+                "| Report section | Finding | Canonical ID | Source finding IDs |",
+                "| Priority | first | CANON-001 | claim_evidence_auditor:CEA-001 |",
+                "| Additional | second | CANON-002 | numerical_auditor:NUM-001 |",
+            ]
+        )
+
+        failures = report_failures(report, bundle=bundle, min_chars=0)
+
+        self.assertTrue(any("wrong canonical row" in failure for failure in failures))
+        self.assertTrue(any("not present in reviewer evidence" in failure for failure in failures))
 
     def test_shareable_repo_check_allows_placeholders_only_in_private_dirs(self) -> None:
         paths = [
@@ -1227,14 +1401,14 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual(paths.parsed_dir, REPO_ROOT / "work" / "paper-x" / "parsed")
         self.assertEqual(paths.selected_reviewers_config_path.name, "selected_reviewers.json")
-        self.assertEqual(paths.parser_repair_notes_path.name, "parser_repair_notes.md")
         self.assertEqual(paths.report_path, REPO_ROOT / "outputs" / "paper-x" / "report.md")
+        self.assertEqual(paths.run_manifest_path, REPO_ROOT / "work" / "paper-x" / "run_manifest.json")
 
     def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
 
-        self.assertIn("7 to 10 optional reviewers", prompt)
-        self.assertIn("up to 3 pilot reviewers", prompt)
+        self.assertIn("5 to 9 optional reviewers", prompt)
+        self.assertIn("up to 2 pilot reviewers", prompt)
         self.assertIn("not redundant", prompt)
         self.assertIn("Use skipped_optional_reviewers", prompt)
 
@@ -1275,6 +1449,194 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(summary["low_text_pages"], [])
         self.assertEqual(summary["sparse_plausible_pages"], [3])
 
+    def test_preprocess_quality_flags_ocr_and_reading_order_review(self) -> None:
+        summary = page_quality_summary(
+            [
+                {
+                    "pdf_page_number": 7,
+                    "raw_text": "short native text",
+                    "normalized_text": "short native text",
+                    "likely_scanned": False,
+                    "ocr_recommended": True,
+                    "two_column_detected": True,
+                    "landscape": False,
+                    "raw_sorted_similarity": 0.5,
+                }
+            ]
+        )
+
+        self.assertEqual(summary["ocr_recommended_pages"], [7])
+        self.assertEqual(summary["two_column_pages"], [7])
+        self.assertEqual(summary["reading_order_review_pages"], [7])
+
+    def test_two_column_normalization_uses_verified_native_column_order(self) -> None:
+        blocks = [
+            [60, 50, 280, 300, "left column", 0, 0],
+            [315, 50, 535, 300, "right column", 1, 0],
+        ]
+
+        self.assertTrue(native_blocks_are_column_major(blocks, 595))
+        text, strategy = choose_normalized_text(
+            "left column\nright column",
+            "left right interleaved",
+            blocks,
+            595,
+            True,
+        )
+        self.assertEqual(text, "left column\nright column")
+        self.assertEqual(strategy, "native_content_order_two_column")
+
+    def test_two_column_normalization_rejects_native_column_reentry(self) -> None:
+        blocks = [
+            [60, 50, 280, 100, "left one", 0, 0],
+            [315, 50, 535, 100, "right", 1, 0],
+            [60, 120, 280, 180, "left two", 2, 0],
+        ]
+
+        self.assertFalse(native_blocks_are_column_major(blocks, 595))
+        text, strategy = choose_normalized_text("native", "sorted", blocks, 595, True)
+        self.assertEqual(text, "sorted")
+        self.assertEqual(strategy, "coordinate_sorted")
+
+    def test_heading_filter_rejects_chart_and_body_fragments(self) -> None:
+        self.assertFalse(is_heading("0.87 Prefer more tangible assets Tax on consumers 0.39"))
+        self.assertFalse(is_heading("x. By the principle of state-wise dominance"))
+        self.assertFalse(is_heading("EP EP"))
+        self.assertTrue(is_heading("4 Results"))
+        self.assertTrue(is_heading("IV. Robustness Checks"))
+
+    def test_table_cells_preserve_signs_percentages_and_pairs(self) -> None:
+        label, cells = split_trailing_table_cells(
+            "Estimated effects −0.68 94.8%*** (0.21)*** (5, 1)"
+        )
+
+        self.assertEqual(label, "Estimated effects")
+        self.assertEqual(cells, ["−0.68", "94.8%***", "(0.21)***", "(5, 1)"])
+
+        spaced_label, spaced_cells = split_trailing_table_cells("Treatment 6.2 % 100 %")
+        self.assertEqual(spaced_label, "Treatment")
+        self.assertEqual(spaced_cells, ["6.2 %", "100 %"])
+
+        header_label, header_cells = split_trailing_table_cells("Model Loss Acc. F1")
+        self.assertEqual(header_label, "Model Loss Acc. F1")
+        self.assertEqual(header_cells, [])
+
+        missing_label, missing_cells = split_trailing_table_cells("LSA - 0.726 0.755")
+        self.assertEqual(missing_label, "LSA")
+        self.assertEqual(missing_cells, ["-", "0.726", "0.755"])
+
+    def test_reference_inventory_uses_hanging_indents_and_stops_at_appendix(self) -> None:
+        page = {
+            "pdf_page_number": 9,
+            "page_label": "9",
+            "page_width": 595.0,
+            "positioned_lines": [
+                {"text": "References", "bbox": [72, 490, 130, 502], "is_page_footer": False},
+                {"text": "Ada Author and Ben Writer. 2024.", "bbox": [72, 512, 290, 523], "is_page_footer": False},
+                {"text": "A careful paper.", "bbox": [83, 524, 180, 535], "is_page_footer": False},
+                {"text": "Cara Scholar. 2025. Another paper.", "bbox": [72, 545, 290, 556], "is_page_footer": False},
+                {"text": "Appendix A. Materials", "bbox": [307, 566, 520, 577], "is_page_footer": False},
+            ],
+        }
+
+        references = extract_reference_list([page])
+
+        self.assertEqual(len(references), 2)
+        self.assertIn("A careful paper", references[0]["text"])
+        self.assertEqual(references[1]["text"], "Cara Scholar. 2025. Another paper.")
+
+    def test_reference_inventory_keeps_wide_single_column_continuations(self) -> None:
+        page = {
+            "pdf_page_number": 25,
+            "page_label": "25",
+            "page_width": 595.0,
+            "positioned_lines": [
+                {"text": "References", "bbox": [71, 650, 162, 662], "is_page_footer": False},
+                {"text": "Ada Author (2024): A long title ending with", "bbox": [71, 686, 524, 698], "is_page_footer": False},
+                {"text": "the journal name and page range.", "bbox": [83, 710, 524, 722], "is_page_footer": False},
+                {"text": "Ben Writer (2025): Another paper.", "bbox": [71, 740, 524, 752], "is_page_footer": False},
+                {"text": "A Additional Figures and Tables", "bbox": [71, 770, 361, 782], "is_page_footer": False},
+            ],
+        }
+
+        references = extract_reference_list([page])
+
+        self.assertEqual(len(references), 2)
+        self.assertIn("journal name and page range", references[0]["text"])
+
+    def test_caption_table_parser_stops_before_following_section(self) -> None:
+        rows = parse_captioned_table_rows(
+            [
+                "Table 4: Treatments and sample sizes",
+                "Baseline 993 1,023",
+                "3.2 Implementation and Sample",
+                "The experiment was conducted in three studies.",
+            ]
+        )
+        status, flags = caption_table_quality(rows)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source_text"], "Baseline 993 1,023")
+        self.assertEqual(status, "caption_text_needs_visual_verification")
+        self.assertEqual(flags, [])
+
+    def test_caption_table_parser_promotes_exact_semantic_headers(self) -> None:
+        rows = parse_captioned_table_rows(
+            [
+                "Model Ex. 1 Ex. 2 Ex. 3",
+                "Baseline 0.24 -0.68 0.32",
+                "Alternative 0.46 -0.54 0.28",
+            ]
+        )
+
+        columns, csv_rows, structured_rows, promoted = structure_captioned_table_rows(rows)
+
+        self.assertTrue(promoted)
+        self.assertEqual(columns, ["Model", "Ex. 1", "Ex. 2", "Ex. 3"])
+        self.assertEqual(len(structured_rows), 2)
+        self.assertEqual(csv_rows[0], ["Baseline", "0.24", "-0.68", "0.32"])
+
+    def test_native_table_candidate_inside_figure_is_suppressed_by_overlap_rule(self) -> None:
+        candidate = [80.0, 54.0, 282.0, 226.0]
+        figure = [67.0, 42.0, 295.0, 251.0]
+        adjacent = [300.0, 42.0, 550.0, 251.0]
+
+        self.assertEqual(rect_overlap_ratio(candidate, figure), 1.0)
+        self.assertEqual(rect_overlap_ratio(candidate, adjacent), 0.0)
+
+    def test_auto_table_keeps_matching_caption_and_unmatched_fallback(self) -> None:
+        captions = [
+            {
+                "page": 2,
+                "label": "1",
+                "caption": "Table 1: Main estimates",
+                "caption_source": "word_lines",
+                "caption_bbox": [10, 100, 300, 120],
+                "crop_bbox": [10, 90, 300, 300],
+            },
+            {
+                "page": 3,
+                "label": "2",
+                "caption": "Table 2: Robustness",
+                "caption_source": "word_lines",
+                "caption_bbox": [10, 100, 300, 120],
+                "crop_bbox": [10, 90, 300, 300],
+            },
+        ]
+        auto_tables = [
+            {
+                "page": 2,
+                "bbox": [20, 130, 290, 280],
+                "status": "auto_extracted_needs_visual_verification",
+            }
+        ]
+
+        matched = attach_captions_to_auto_tables(captions, auto_tables)
+
+        self.assertEqual(matched, {0})
+        self.assertEqual(auto_tables[0]["table_label"], "1")
+        self.assertEqual(auto_tables[0]["caption"], "Table 1: Main estimates")
+
     def test_portable_path_uses_absolute_path_when_outside_root(self) -> None:
         root = Path("C:/repo")
         inside = root / "work" / "paper"
@@ -1282,260 +1644,6 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertEqual(portable_path(inside, root), "work/paper")
         self.assertEqual(portable_path(outside, root), str(outside))
-
-    def test_parser_repair_plan_validation_and_notes(self) -> None:
-        plan = {
-            "paper_id": "paper-x",
-            "run_status": "ok",
-            "summary": "Prepared a parser repair overlay.",
-            "repair_mode": "overlay",
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-001",
-                    "issue_summary": "Table extraction is unreliable.",
-                    "status": "repaired",
-                    "action": "write_repaired_overlay_artifact",
-                    "reviewer_guidance": "Use the repaired overlay CSV only after checking it against the page image.",
-                    "preferred_source_paths": ["work/paper-x/repair/repaired_artifacts/table_1_repaired.csv"],
-                    "avoid_source_paths": ["work/paper-x/parsed/tables/table_1.csv"],
-                    "verification_steps": ["Compare the crop with the page image."],
-                    "residual_risk": "Values still require visual verification.",
-                    "repaired_artifacts": [
-                        {
-                            "filename": "table_1_repaired.csv",
-                            "artifact_type": "table_csv",
-                            "description": "Reviewer-safe reconstruction of Table 1.",
-                            "content": "variable,value\nalpha,1\nbeta,2",
-                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
-                            "confidence": "medium",
-                            "caveats": ["Reconstructed from page image evidence."],
-                        }
-                    ],
-                }
-            ],
-            "reviewer_brief": "Use image fallback for Table 1.",
-            "limitations": ["The overlay CSV does not replace deterministic table extraction."],
-        }
-
-        schema_path = REPO_ROOT / "schemas" / "parser_repair_plan.schema.json"
-        self.assertEqual(validate_plan(plan, schema_path, "paper-x"), [])
-        self.assertEqual(validate_artifact_filenames(plan), [])
-        notes = repair_notes_markdown(plan)
-
-        self.assertIn("PARSER-001", notes)
-        self.assertIn("table_1_repaired.csv", notes)
-        self.assertIn("work/paper-x/repair/repaired_artifacts/table_1_repaired.csv", notes)
-        self.assertIn("The overlay CSV does not replace deterministic table extraction.", notes)
-
-    def test_parser_repair_schema_is_strict_structured_output_compatible(self) -> None:
-        schema = json.loads((REPO_ROOT / "schemas" / "parser_repair_plan.schema.json").read_text(encoding="utf-8"))
-
-        self.assertEqual(strict_structured_output_schema_errors(schema), [])
-
-    def test_parser_repair_plan_accepts_empty_repaired_artifacts(self) -> None:
-        plan = {
-            "paper_id": "paper-x",
-            "run_status": "partial",
-            "summary": "Prepared fallback guidance.",
-            "repair_mode": "overlay",
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-002",
-                    "issue_summary": "Page text is not in safe reading order.",
-                    "status": "requires_reprocess",
-                    "action": "requires_deterministic_preprocess_change",
-                    "reviewer_guidance": "Use page images rather than normalized text for this table.",
-                    "preferred_source_paths": ["work/paper-x/parsed/page_images/page_010.png"],
-                    "avoid_source_paths": ["work/paper-x/parsed/pages/page_010.md"],
-                    "verification_steps": ["Compare the normalized text with the page image."],
-                    "residual_risk": "No faithful text overlay can be created from the parsed text.",
-                    "repaired_artifacts": [],
-                }
-            ],
-            "reviewer_brief": "Use page-image fallback for the affected table.",
-            "limitations": ["Requires deterministic reprocessing for a real table repair."],
-        }
-
-        self.assertEqual(validate_plan(plan, REPO_ROOT / "schemas" / "parser_repair_plan.schema.json", "paper-x"), [])
-
-    def test_parser_repair_writes_overlay_artifacts_and_manifest(self) -> None:
-        output_dir = self.config_path("parser_repair_overlay_marker.txt").parent / "parser-repair-output"
-        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
-        manifest_path = output_dir / "repair_manifest.json"
-        self.addCleanup(self.cleanup_dir, output_dir)
-        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
-        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
-        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
-        plan = {
-            "paper_id": "paper-x",
-            "repair_mode": "overlay",
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-001",
-                    "repaired_artifacts": [
-                        {
-                            "filename": "table_1_repaired.csv",
-                            "artifact_type": "table_csv",
-                            "description": "Reviewer-safe reconstruction of Table 1.",
-                            "content": "variable,value\nalpha,1\nbeta,2\n",
-                            "source_paths": ["work/paper-x/parsed/page_images/page_001.png"],
-                            "confidence": "medium",
-                            "caveats": ["Use only with the page image."],
-                        }
-                    ],
-                }
-            ],
-        }
-
-        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
-
-        self.assertEqual(artifact_path.read_text(encoding="utf-8"), "variable,value\nalpha,1\nbeta,2\n")
-        self.assertEqual(manifest["artifact_count"], 1)
-        self.assertEqual(manifest["artifacts"][0]["parser_finding_id"], "PARSER-001")
-        self.assertIn("sha256", manifest["artifacts"][0])
-        self.assertTrue(manifest_path.exists())
-
-    def test_parser_repair_normalizes_overlay_mojibake(self) -> None:
-        root = self.config_path("parser_repair_mojibake_marker.txt").parent
-        source_path = root / "source_table.txt"
-        output_dir = root / "parser-repair-mojibake-output"
-        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
-        manifest_path = output_dir / "repair_manifest.json"
-        self.addCleanup(self.cleanup_dir, output_dir)
-        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
-        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
-        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
-        self.addCleanup(lambda: source_path.exists() and source_path.unlink())
-        source_path.write_text("Black × Discrimination -996.193∗∗∗\n", encoding="utf-8")
-        plan = {
-            "paper_id": "paper-x",
-            "repair_mode": "overlay",
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-001",
-                    "repaired_artifacts": [
-                        {
-                            "filename": "table_1_repaired.csv",
-                            "artifact_type": "table_csv",
-                            "description": "Reviewer-safe reconstruction of Table 1.",
-                            "content": "row_label,column_1\nBlack Ã— Discrimination,-996.193âˆ—âˆ—âˆ—\n",
-                            "source_paths": [str(source_path.relative_to(REPO_ROOT))],
-                            "confidence": "medium",
-                            "caveats": ["Use only with the source table."],
-                        }
-                    ],
-                }
-            ],
-        }
-
-        fixed, changed = repair_mojibake_text(plan["repairs"][0]["repaired_artifacts"][0]["content"])
-        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
-
-        self.assertTrue(changed)
-        self.assertLess(mojibake_score(fixed), mojibake_score("Black Ã— Discrimination,-996.193âˆ—âˆ—âˆ—"))
-        self.assertIn("Black × Discrimination,-996.193∗∗∗", artifact_path.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["quality_summary"]["normalized_mojibake_artifact_count"], 1)
-        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
-        self.assertTrue(manifest["artifacts"][0]["quality"]["normalized_mojibake"])
-        self.assertEqual(manifest["artifacts"][0]["quality"]["mojibake_score_after"], 0)
-
-    def test_parser_repair_normalizes_nul_codepoint_artifacts(self) -> None:
-        root = self.config_path("parser_repair_control_marker.txt").parent
-        output_dir = root / "parser-repair-control-output"
-        artifact_path = output_dir / "repaired_artifacts" / "table_1_repaired.csv"
-        manifest_path = output_dir / "repair_manifest.json"
-        self.addCleanup(self.cleanup_dir, output_dir)
-        self.addCleanup(self.cleanup_dir, output_dir / "repaired_artifacts")
-        self.addCleanup(lambda: manifest_path.exists() and manifest_path.unlink())
-        self.addCleanup(lambda: artifact_path.exists() and artifact_path.unlink())
-        content = "row_label,column_1\nBlack \x00d7 Discrimination,-996.193\x002217\x002217\x002217\n"
-        plan = {
-            "paper_id": "paper-x",
-            "repair_mode": "overlay",
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-001",
-                    "repaired_artifacts": [
-                        {
-                            "filename": "table_1_repaired.csv",
-                            "artifact_type": "table_csv",
-                            "description": "Reviewer-safe reconstruction of Table 1.",
-                            "content": content,
-                            "source_paths": ["work/paper-x/parsed/tables/table_1.txt"],
-                            "confidence": "medium",
-                            "caveats": ["Use only with the source table."],
-                        }
-                    ],
-                }
-            ],
-        }
-
-        fixed, changed = repair_nul_codepoints(content)
-        manifest = write_repaired_artifacts(plan, output_dir, REPO_ROOT)
-        written = artifact_path.read_text(encoding="utf-8")
-
-        self.assertTrue(changed)
-        self.assertEqual(control_char_score(fixed), 0)
-        self.assertIn("Black × Discrimination,-996.193∗∗∗", written)
-        self.assertEqual(manifest["quality_summary"]["normalized_control_codepoint_artifact_count"], 1)
-        self.assertEqual(manifest["quality_summary"]["warning_count"], 0)
-        self.assertEqual(manifest["artifacts"][0]["quality"]["control_char_score_after"], 0)
-
-    def test_parser_repair_evaluation_scores_coverage_and_guidance(self) -> None:
-        parser_quality = {
-            "findings": [
-                {
-                    "id": "PARSER-001",
-                    "issue_type": "parser_artifact",
-                    "severity": "medium",
-                },
-                {
-                    "id": "PARSER-002",
-                    "issue_type": "parser_artifact",
-                    "severity": "low",
-                },
-            ]
-        }
-        plan = {
-            "repairs": [
-                {
-                    "parser_finding_id": "PARSER-001",
-                    "status": "repaired",
-                    "action": "write_repaired_overlay_artifact",
-                    "reviewer_guidance": "Use the repaired overlay artifact after checking it against the page image fallback.",
-                    "preferred_source_paths": ["work/paper/repair/repaired_artifacts/table_1_repaired.csv"],
-                }
-            ]
-        }
-
-        metrics = evaluate_plan(parser_quality, plan)
-
-        self.assertEqual(metrics["target_finding_count"], 1)
-        self.assertEqual(metrics["covered_count"], 1)
-        self.assertEqual(metrics["mitigated_count"], 1)
-        self.assertEqual(metrics["score"], 100.0)
-
-    def test_render_prompts_can_append_parser_repair_overlay(self) -> None:
-        rendered = append_parser_repair_note("Audit:\n`work/paper/parsed`\n", "work/paper/repair/parser_repair_notes.md")
-
-        self.assertIn("Parser repair overlay", rendered)
-        self.assertIn("work/paper/repair/parser_repair_notes.md", rendered)
-        self.assertIn("preferred fallback artifacts", rendered)
-
-    def test_selector_prompt_can_include_parser_repair_overlay(self) -> None:
-        prompt = render_selector_prompt(
-            REPO_ROOT,
-            "paper-x",
-            REPO_ROOT / "work" / "paper-x" / "parsed",
-            [reviewer_config("numerical_auditor", "NUM", selection_policy="optional")],
-            REPO_ROOT / "schemas" / "reviewer_selection.schema.json",
-            REPO_ROOT / "work" / "paper-x" / "repair" / "parser_repair_notes.md",
-        )
-
-        self.assertIn("Parser repair overlay available before reviewer selection", prompt)
-        self.assertIn("parser_repair_notes.md", prompt)
-        self.assertIn("verified fallback artifacts", prompt)
-
 
 if __name__ == "__main__":
     unittest.main()

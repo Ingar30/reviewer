@@ -77,6 +77,14 @@ def short_text(value: Any, limit: int = 120) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
+def finding_problem_text(finding: dict[str, Any]) -> str:
+    return compact(
+        finding.get("finding_summary")
+        or finding.get("evidence_summary")
+        or finding.get("claim_text")
+    )
+
+
 def finding_confidence(finding: dict[str, Any]) -> str:
     return str(finding.get("confidence") or "medium")
 
@@ -333,7 +341,7 @@ def editor_brief_markdown(
                     finding.get("severity"),
                     finding_confidence(finding),
                     ", ".join(sorted(reviewer_names(finding))),
-                    short_text(finding.get("claim_text")),
+                    short_text(finding_problem_text(finding)),
                 ]
                 for finding, _section, _reason, score in synthesis_candidates
             ],
@@ -349,7 +357,7 @@ def editor_brief_markdown(
                     finding_area(finding),
                     canonical_id_text(finding),
                     primary_location_text(finding),
-                    short_text(finding.get("claim_text")),
+                    short_text(finding_problem_text(finding)),
                 ]
                 for finding, section, _reason, score in sorted(
                     routed,
@@ -383,7 +391,7 @@ def editor_brief_markdown(
             [
                 [
                     section,
-                    short_text(finding.get("claim_text")),
+                    short_text(finding_problem_text(finding)),
                     canonical_id_text(finding),
                     source_id_text(finding),
                 ]

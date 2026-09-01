@@ -5,8 +5,8 @@ The workflow is meant to be forkable without changing the privacy boundary: sour
 ## Main Extension Points
 
 - `config/reviewers.json`: reviewer roster, metadata, search needs, stage, and selection policy.
-- `prompts/templates/`: reusable prompts for reviewers, reviewer selection, parser repair, and the editor.
-- `schemas/`: JSON output contracts for reviewer outputs, reviewer selection, and parser repair plans.
+- `prompts/templates/`: reusable prompts for reviewers, reviewer selection, and the editor.
+- `schemas/`: JSON output contracts for reviewer outputs and reviewer selection.
 - `scripts/validate_review_json.py`: semantic checks beyond JSON Schema.
 - `scripts/normalize_review_outputs.py`: canonicalization and deduplication of reviewer findings.
 - `scripts/build_editor_input.py`: editor bundle presentation and section routing.
@@ -26,7 +26,7 @@ Search-enabled reviewers should declare `"search": true` and should return `cann
 
 ## Adding A Wrapper Or Forked Workflow
 
-Use `scripts/pipeline_paths.py` for paper-specific runtime paths instead of recreating `work/<paper_id>/...` and `outputs/<paper_id>/...` strings. This keeps editor refresh, full pipeline runs, parser repair, and forked wrappers aligned.
+Use `scripts/pipeline_paths.py` for paper-specific runtime paths instead of recreating `work/<paper_id>/...` and `outputs/<paper_id>/...` strings. This keeps editor refresh, full pipeline runs, and forked wrappers aligned.
 
 Forked workflows should preserve the same shareability rule: only project machinery, docs, tests, schemas, prompts, and placeholder README files are tracked. Run:
 

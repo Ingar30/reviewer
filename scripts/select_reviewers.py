@@ -7,6 +7,7 @@ from pathlib import Path
 from pipeline_paths import SELECTED_REVIEWERS_CONFIG
 from reviewer_config import load_reviewers_config, write_reviewers_config
 from review_paper import (
+    REASONING_EFFORT_CHOICES,
     run_reviewer_selector,
     selected_reviewers_from_selection,
     validate_selection_output,
@@ -21,11 +22,25 @@ def main() -> int:
     parser.add_argument("--log-dir", required=True)
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
     parser.add_argument(
-        "--parser-repair-notes",
+        "--model",
         default=None,
-        help="Optional parser repair notes to include in the selector prompt.",
+        help="Override the Codex model. When omitted, .codex/config.toml is used.",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Override Codex model_reasoning_effort.",
+    )
+    parser.add_argument(
+        "--timeout-minutes",
+        type=float,
+        default=15.0,
+        help="Selector timeout. Default: 15 minutes.",
     )
     args = parser.parse_args()
+    if args.timeout_minutes <= 0:
+        raise ValueError("--timeout-minutes must be greater than zero")
 
     repo = Path(__file__).resolve().parents[1]
     parsed_dir = Path(args.parsed_dir)
@@ -37,9 +52,6 @@ def main() -> int:
     log_dir = Path(args.log_dir)
     if not log_dir.is_absolute():
         log_dir = repo / log_dir
-    parser_repair_notes = Path(args.parser_repair_notes) if args.parser_repair_notes else None
-    if parser_repair_notes and not parser_repair_notes.is_absolute():
-        parser_repair_notes = repo / parser_repair_notes
 
     reviewers_config = Path(args.reviewers_config)
     if not reviewers_config.is_absolute():
@@ -58,7 +70,9 @@ def main() -> int:
         selection_dir,
         repo / "schemas" / "reviewer_selection.schema.json",
         log_dir,
-        parser_repair_notes,
+        args.model,
+        args.reasoning_effort,
+        args.timeout_minutes * 60,
     )
     errors = validate_selection_output(selection, args.paper_id, mandatory_reviewers, optional_reviewers)
     if errors:
@@ -76,9 +90,6 @@ def main() -> int:
                 ],
                 "selection_path": str((selection_dir / "reviewer_selection.json").relative_to(repo)),
                 "selected_reviewers_config": str((selection_dir / SELECTED_REVIEWERS_CONFIG).relative_to(repo)),
-                "parser_repair_notes": (
-                    str(parser_repair_notes.relative_to(repo)) if parser_repair_notes else None
-                ),
             },
             indent=2,
         )

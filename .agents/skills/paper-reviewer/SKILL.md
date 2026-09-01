@@ -34,10 +34,10 @@ The pipeline stages are:
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch preflight reviewers from `config/reviewers.json`.
 6. Validate preflight JSON and stop on blocking parser-quality failures.
-7. By default, if parser-quality preflight reports high- or medium-severity parser artifacts, run `scripts/run_parser_repair_agent.py` in overlay mode and write `work/<paper_id>/repair/parser_repair_notes.md` plus narrow repaired overlay artifacts.
+7. Route substantive reviewers around parser-quality warnings using the deterministic artifacts and parser-quality JSON.
 8. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
 9. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
-10. Rerender prompts using the selected reviewer roster and parser repair notes when present.
+10. Rerender prompts using the selected reviewer roster and parser-quality guidance.
 11. Launch mandatory review-stage reviewers and selected optional reviewers.
 12. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
 13. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
@@ -46,16 +46,15 @@ The pipeline stages are:
 16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
 Use `--reviewer-selection static` only when all enabled review-stage reviewers should run.
-Use `--parser-repair off` only when parser repair should be skipped for a faster or cheaper run. Use `--parser-repair plan` when parser-quality issues should be converted into reviewer-facing guidance without writing overlay artifacts.
 
 ## Editor-only refresh
-If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when the change is limited to editor prompt/report presentation:
-1. Rerender prompts with `scripts/render_prompts.py`, passing `--reviewers-config work/<paper_id>/selection/selected_reviewers.json`.
-2. Rebuild editor input with `scripts/build_editor_input.py`, passing the same selected reviewer config.
-3. Run the editor with `codex exec --output-last-message outputs/<paper_id>/report.md -`.
-4. Smoke-check with `scripts/check_final_report.py --input outputs/<paper_id>/report.md --bundle work/<paper_id>/editor/normalized_bundle.json`.
+If parsed artifacts, all selected reviewer JSON files, and `work/<paper_id>/selection/selected_reviewers.json` already exist, use `scripts/refresh_editor.py --paper-id <paper_id>` to resume synthesis without rerunning reviewers. The helper:
+1. Validates every selected reviewer JSON against the schema, semantic rules, and provenance constraints.
+2. Rebuilds `work/<paper_id>/editor/normalized_bundle.json` from the validated reviews.
+3. Rerenders prompts and rebuilds editor input using the selected reviewer config.
+4. With `--run-editor`, reruns the editor and smoke-checks the final report.
 
-Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewer selection, or normalized findings need to change.
+Do not use editor-only refresh when reviewer evidence, parser artifacts, or reviewer selection needs to change. Correct or rerun invalid reviewer output first; the helper will refuse to synthesize it.
 
 Use editor-only refresh to test narrowly scoped editor prompt changes against the same evidence bundle before changing the full workflow. This is especially useful for checking whether report emphasis improved without changing reviewer evidence, such as when adjusting how parser/preprocessing caveats are surfaced in prose.
 
@@ -67,7 +66,7 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 - Preserve exact source locations whenever possible.
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
 - Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
-- Treat parser repair notes as routing guidance to existing safer artifacts, not as evidence that OCR, tables, figures, or page ordering were actually regenerated.
+- Never generate or infer repaired parser content. If deterministic artifacts do not support a reliable check, use `cannot_verify`.
 - Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
 - Literature and novelty critiques must be grounded in concrete studies or marked `cannot_verify`; do not assert lack of novelty from vague prior-work impressions.
 - If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
@@ -78,7 +77,6 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`
-- Parser repair overlays: `work/<paper_id>/repair/`
 - Reviewer selection: `work/<paper_id>/selection/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`

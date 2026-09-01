@@ -55,6 +55,16 @@ def similarity(a: str | None, b: str | None) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+def finding_summary(finding: dict[str, Any]) -> str:
+    summary = finding.get("finding_summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    evidence = finding.get("evidence_summary")
+    if isinstance(evidence, str) and evidence.strip():
+        return evidence.strip()
+    return str(finding.get("claim_text") or "").strip()
+
+
 def location_page(finding: dict[str, Any]) -> int | None:
     location = finding.get("location") or {}
     page = location.get("page")
@@ -66,16 +76,13 @@ def source_object_keys(finding: dict[str, Any]) -> set[str]:
     for source in finding.get("source_objects", []) or []:
         if not isinstance(source, dict):
             continue
-        for field in ("id", "path", "label", "url"):
+        for field in ("path", "url"):
             value = source.get(field)
             if isinstance(value, str) and value.strip():
                 keys.add(f"{field}:{compact_text(value)}")
     for link in finding.get("claim_evidence_links", []) or []:
         if not isinstance(link, dict):
             continue
-        for source_id in link.get("source_object_ids", []) or []:
-            if isinstance(source_id, str) and source_id.strip():
-                keys.add(f"id:{compact_text(source_id)}")
     return keys
 
 
@@ -83,15 +90,10 @@ def group_source_object_keys(group: dict[str, Any]) -> set[str]:
     keys = set()
     for source in group.get("source_objects", []) or []:
         source_object = source.get("source_object") or {}
-        for field in ("id", "path", "label", "url"):
+        for field in ("path", "url"):
             value = source_object.get(field)
             if isinstance(value, str) and value.strip():
                 keys.add(f"{field}:{compact_text(value)}")
-    for link in group.get("claim_evidence_links", []) or []:
-        link_object = link.get("link") or {}
-        for source_id in link_object.get("source_object_ids", []) or []:
-            if isinstance(source_id, str) and source_id.strip():
-                keys.add(f"id:{compact_text(source_id)}")
     return keys
 
 
@@ -124,26 +126,29 @@ def should_merge(group: dict[str, Any], reviewer: str, finding: dict[str, Any], 
     if page is not None and group_pages and page not in group_pages:
         return False
 
+    summary = finding_summary(finding)
     claim = finding.get("claim_text")
     quote = (finding.get("location") or {}).get("text_quote")
+    summary_similarity = similarity(group.get("finding_summary"), summary)
     claim_similarity = similarity(group.get("claim_text"), claim)
     quote_similarity = similarity(group.get("primary_quote"), quote)
     if reviewer in group.get("source_reviewers", []):
-        return claim_similarity >= 0.85 or quote_similarity >= 0.85
+        return (
+            summary_similarity >= 0.85
+            or claim_similarity >= 0.85
+            or quote_similarity >= 0.85
+        )
 
-    if claim_similarity >= 0.52:
+    if summary_similarity >= 0.68:
         return True
-    if quote_similarity >= 0.62:
+    if claim_similarity >= 0.75:
+        return True
+    if quote_similarity >= 0.80:
         return True
     if source_object_keys(finding) & group_source_object_keys(group):
-        if claim_similarity >= 0.35 or quote_similarity >= 0.35:
+        if summary_similarity >= 0.52 or claim_similarity >= 0.50 or quote_similarity >= 0.60:
             return True
-
-    categories = " ".join(group.get("categories", []))
-    new_category = compact_text(finding.get("category"))
-    numeric_overlap = any(token in categories for token in ["numeric", "sign", "table_text"])
-    numeric_overlap = numeric_overlap and any(token in new_category for token in ["numeric", "sign", "table_text"])
-    return bool(numeric_overlap and page is not None and page in group_pages)
+    return False
 
 
 def stronger_severity(left: str, right: str) -> str:
@@ -166,6 +171,9 @@ def add_to_group(group: dict[str, Any], reviewer: str, finding: dict[str, Any]) 
         group["source_reviewers"].append(reviewer)
     if finding.get("category") not in group["categories"]:
         group["categories"].append(finding.get("category"))
+    group["source_assessments"].append(
+        {"reviewer": reviewer, "id": finding_id, "assessment": finding.get("assessment")}
+    )
     group["severity"] = stronger_severity(group["severity"], finding.get("severity", "low"))
     group["assessment"] = stronger_assessment(group["assessment"], finding.get("assessment", "yes"))
     group["confidence"] = weaker_confidence(group["confidence"], finding.get("confidence", "medium"))
@@ -204,6 +212,7 @@ def new_group(reviewer: str, finding: dict[str, Any], klass: str) -> dict[str, A
         "source_reviewers": [],
         "source_findings": [],
         "categories": [],
+        "finding_summary": finding_summary(finding),
         "claim_text": finding.get("claim_text", ""),
         "primary_location": location,
         "primary_quote": location.get("text_quote"),
@@ -215,6 +224,7 @@ def new_group(reviewer: str, finding: dict[str, Any], klass: str) -> dict[str, A
         "claim_evidence_links": [],
         "numeric_checks": [],
         "suggested_fixes": [],
+        "source_assessments": [],
     }
     add_to_group(group, reviewer, finding)
     return group
@@ -275,6 +285,15 @@ def normalize(paper_id: str, reviews_dir: Path, reviewers: list[ReviewerConfig])
     )
     for index, group in enumerate(groups, start=1):
         group["canonical_id"] = f"CANON-{index:03d}"
+        assessment_counts = Counter(
+            item.get("assessment") for item in group.get("source_assessments", [])
+        )
+        group["assessment_counts"] = {
+            str(key): value for key, value in assessment_counts.items() if key is not None
+        }
+        group["assessment_consensus"] = (
+            "agreed" if len(group["assessment_counts"]) <= 1 else "mixed"
+        )
 
     return {
         "paper_id": paper_id,

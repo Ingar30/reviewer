@@ -36,3 +36,4 @@ Slides/
 Thumbs.db
 .vscode/
 .idea/
+.playwright-cli/

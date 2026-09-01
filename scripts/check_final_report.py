@@ -18,6 +18,10 @@ TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
 EXTERNAL_SOURCES_APPENDIX_RE = re.compile(r"^## Appendix: External Sources", re.MULTILINE)
 HEADING_RE = re.compile(r"^## ", re.MULTILINE)
 URL_RE = re.compile(r"https?://[^\s<>\]\)]+")
+CANONICAL_ID_RE = re.compile(r"\bCANON-\d{3}\b")
+SOURCE_ID_RE = re.compile(
+    r"\b[a-z][a-z0-9_]*:(?:[A-Z][A-Z0-9_-]*-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b"
+)
 
 META_NOTE_RE = re.compile(
     r"\b(?:done\.|wrote the final|report (?:is|was) saved|saved to|appears only under ignored status)\b",
@@ -59,6 +63,67 @@ def external_sources_appendix_text(text: str) -> str:
     return text[match.start():end]
 
 
+def heading_section_text(text: str, heading: str) -> str:
+    start = text.find(heading)
+    if start < 0:
+        return ""
+    next_heading = HEADING_RE.search(text, start + len(heading))
+    end = next_heading.start() if next_heading else len(text)
+    return text[start:end]
+
+
+def traceability_failures(text: str, bundle: dict) -> list[str]:
+    failures = []
+    appendix = heading_section_text(text, TRACEABILITY_APPENDIX_HEADING)
+    if not appendix:
+        return [f"missing traceability appendix heading: {TRACEABILITY_APPENDIX_HEADING}"]
+
+    body = text.replace(appendix, "", 1)
+    if CANONICAL_ID_RE.search(body) or SOURCE_ID_RE.search(body):
+        failures.append("canonical and source finding identifiers must appear only in the traceability appendix")
+
+    expected_by_canonical = {}
+    expected_source_ids = set()
+    for finding in bundle.get("canonical_findings", []):
+        if not isinstance(finding, dict):
+            continue
+        canonical_id = finding.get("canonical_id")
+        if not canonical_id:
+            continue
+        source_ids = {
+            f"{source.get('reviewer')}:{source.get('id')}"
+            for source in finding.get("source_findings", [])
+            if source.get("reviewer") and source.get("id")
+        }
+        expected_by_canonical[str(canonical_id)] = source_ids
+        expected_source_ids.update(source_ids)
+
+    actual_canonical_ids = set(CANONICAL_ID_RE.findall(appendix))
+    unknown_canonical_ids = actual_canonical_ids - set(expected_by_canonical)
+    for canonical_id in sorted(unknown_canonical_ids):
+        failures.append(f"unknown canonical identifier in traceability appendix: {canonical_id}")
+
+    actual_source_ids = set(SOURCE_ID_RE.findall(appendix))
+    for source_id in sorted(actual_source_ids - expected_source_ids):
+        failures.append(f"unknown source finding identifier in traceability appendix: {source_id}")
+
+    table_rows = [line for line in appendix.splitlines() if line.strip().startswith("|")]
+    for canonical_id, expected_sources in expected_by_canonical.items():
+        matching_rows = [row for row in table_rows if canonical_id in CANONICAL_ID_RE.findall(row)]
+        if not matching_rows:
+            failures.append(f"missing canonical identifier from traceability table: {canonical_id}")
+            continue
+        if len(matching_rows) != 1:
+            failures.append(f"canonical identifier must appear in exactly one traceability row: {canonical_id}")
+            continue
+        row_sources = set(SOURCE_ID_RE.findall(matching_rows[0]))
+        for source_id in sorted(expected_sources - row_sources):
+            failures.append(f"missing source finding identifier from {canonical_id} row: {source_id}")
+        for source_id in sorted(row_sources - expected_sources):
+            failures.append(f"source finding identifier is mapped to the wrong canonical row {canonical_id}: {source_id}")
+    return failures
+
+
 def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2000) -> list[str]:
     failures = []
     if len(text.strip()) < min_chars:
@@ -72,8 +137,7 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
         failures.append("report does not mention canonical or source finding identifiers")
 
     if bundle:
-        if TRACEABILITY_APPENDIX_HEADING not in text:
-            failures.append(f"missing traceability appendix heading: {TRACEABILITY_APPENDIX_HEADING}")
+        failures.extend(traceability_failures(text, bundle))
         if bundle_has_copyedit_findings(bundle) and GRAMMAR_APPENDIX_HEADING not in text:
             failures.append(f"missing grammar appendix heading: {GRAMMAR_APPENDIX_HEADING}")
         bundle_urls = external_source_urls(bundle)
@@ -81,19 +145,13 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
         appendix_urls = urls_in_text(appendix)
         body_text = text.replace(appendix, "") if appendix else text
         cited_bundle_urls = urls_in_text(body_text) & bundle_urls
+        unknown_urls = urls_in_text(text) - bundle_urls
+        for url in sorted(unknown_urls):
+            failures.append(f"report cites URL not present in reviewer evidence: {url}")
         if cited_bundle_urls and not appendix:
             failures.append("missing external-sources appendix heading despite external source URLs cited in report")
         for url in sorted(cited_bundle_urls - appendix_urls):
             failures.append(f"missing external source URL from external-sources appendix: {url}")
-        for finding in bundle.get("canonical_findings", []):
-            canonical_id = finding.get("canonical_id")
-            if canonical_id and canonical_id not in text:
-                failures.append(f"missing canonical identifier from bundle: {canonical_id}")
-            for source in finding.get("source_findings", []):
-                reviewer = source.get("reviewer")
-                source_id = source.get("id")
-                if reviewer and source_id and f"{reviewer}:{source_id}" not in text:
-                    failures.append(f"missing source finding identifier from bundle: {reviewer}:{source_id}")
     return failures
 
 

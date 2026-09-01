@@ -17,7 +17,7 @@ For a fresh paper, the wrapper:
 1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
 2. renders run-specific prompts under `work/<paper_id>/prompts/`
 3. runs parser-quality preflight before substantive review
-4. runs parser repair overlay when parser-quality preflight reports high- or medium-severity parser artifacts
+4. routes reviewers around artifacts flagged by parser-quality preflight using retained deterministic evidence
 5. dynamically selects optional reviewers while always running mandatory reviewers
 6. validates every reviewer JSON output against schema and semantic checks
 7. normalizes and deduplicates reviewer findings into an editor bundle
@@ -25,7 +25,9 @@ For a fresh paper, the wrapper:
 9. runs the editor to write `outputs/<paper_id>/report.md`
 10. smoke-checks final report structure and traceability
 
-Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are local/private by default.
+Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are excluded from Git by default.
+
+The deterministic PDF preprocessing step runs locally. The review itself is not fully local: rendered prompts contain parsed manuscript text and are sent through the authenticated Codex CLI to OpenAI. Reviewers configured with `search: true` may also send manuscript-derived search queries to the web-search service. Do not review a confidential manuscript unless its disclosure terms permit those transmissions.
 
 ## Quick Start
 
@@ -103,13 +105,47 @@ The intermediate parsed artifacts, prompts, logs, reviewer outputs, selection ou
 work/my-paper/
 ```
 
-By default, Codex agents use `xhigh` reasoning for full review runs. For faster or cheaper runs, override it at launch:
+By default, Codex agents use `gpt-5.6-sol` with `xhigh` reasoning for full review runs. Override the model and reasoning effort at launch when comparing quality, latency, or cost:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reasoning-effort high
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --model gpt-5.6-terra --reasoning-effort high
 ```
 
-Allowed values are `minimal`, `low`, `medium`, `high`, and `xhigh`.
+Current GPT-5.6 reasoning values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`. The legacy `minimal` value remains accepted for older compatible models. Omit `--model` to use `.codex/config.toml`. OpenAI's [current model guide](https://developers.openai.com/api/docs/guides/latest-model.md) identifies Sol as the flagship GPT-5.6 model and Terra as the lower-price quality/cost option.
+
+Use Sol/xhigh for a quality-first full review. Sol/high is a reasonable measured alternative for routine editor refreshes or comparison runs when turnaround matters. Reserve `max` for unusually difficult mathematical, theoretical, or adversarial checks after benchmarking it on the relevant task; higher effort should not be assumed to improve every stage.
+
+The following editor-only benchmark used the same 419,638-byte paper9 evidence bundle. Times are wall-clock seconds on one machine and token counts are those reported by Codex, so they are representative rather than billing or runtime guarantees.
+
+| Model and effort | Seconds | Reported tokens | Report bytes | Result |
+| --- | ---: | ---: | ---: | --- |
+| `gpt-5.6-terra` / `high` | 119 | 112,150 | 25,326 | Valid; concise |
+| `gpt-5.6-sol` / `high` | 297 | 123,191 | 34,199 | Valid; detailed |
+| `gpt-5.6-sol` / `xhigh` | 386 | 125,629 | 30,885 | Valid; strongest prioritization |
+
+A full paper run is substantially larger because preflight, selection, each selected reviewer, and the editor are separate model calls. Reviewer count, web-search needs, paper length, cache state, service load, and reasoning effort all affect total time and token use.
+
+One representative 12-page quality-first run selected 12 substantive reviewers and used four-way reviewer concurrency. Its active model stages took about 5,223 seconds (87 minutes) and reported 1,547,361 tokens: 1,350 seconds for Sol/xhigh parser preflight, about 95 seconds for Sol/medium selection, 3,279 seconds for the Sol/xhigh reviewer panel, and 499 seconds for the final Sol/xhigh editor. That run predates the stage-specific preflight default; a separate Sol/high preflight on the improved parser took 748 seconds and reported 143,658 tokens. Treat these as scale examples, not estimates or billing guarantees.
+
+The wrapper runs at most four reviewer agents concurrently by default and records the PDF hash, effective model and stage-specific reasoning effort, workflow options, Git state, selected roster, and elapsed time in `work/<paper_id>/run_manifest.json`. Parser preflight uses `high`, reviewer selection uses `medium`, and substantive reviewers plus the editor use `xhigh` by default. Evidence-heavy stages fail after 45 minutes and selector routing after 15 minutes. These limits bound how long the wrapper waits and make stalls visible; descendant-process cleanup remains platform dependent. Use `--max-parallel-reviewers`, `--agent-timeout-minutes`, or `--selector-timeout-minutes` to tune constrained or rate-limited setups.
+
+If a run stops after a valid parser-quality preflight, resume without paying for that stage again:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-paper" --resume-after-preflight
+```
+
+Resume is allowed only when both the existing run manifest and deterministic parsed manifest record the same PDF SHA-256 hash, and every configured preflight output still passes reviewer identity, schema, semantic, provenance, and parser-gate checks.
+
+If all selected reviewer JSON files already exist, resume synthesis without rerunning the panel. The helper validates every selected review, rebuilds the normalized bundle, rerenders prompts, and rebuilds editor input before optionally running the editor:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\refresh_editor.py --paper-id "my-paper" --run-editor --model gpt-5.6-sol --reasoning-effort xhigh
+```
+
+PDF preprocessing remains local and deterministic. Native PDF text, word/block coordinates, page images, and visual crops are retained as the source artifacts. A two-column page uses native content-stream order only when its block sequence verifies a left-column-then-right-column layout; otherwise the coordinate-sorted text remains in use and the page is flagged for review. Caption extraction uses native positioned lines so adjacent columns are not merged. Figure and table crops may be anchored to nearby native raster/vector or text bounds, including the common case where content appears above its caption. Native table candidates substantially contained in a positively anchored figure region are suppressed, and semantic table headers are promoted only when they exactly match the observed data shape. Reference inventories use positioned hanging indents and explicit bibliography boundaries. All caption-derived table cells remain marked for visual verification. On one machine, final preprocessing took about 13 seconds for 12 pages, 25 seconds for 30 pages, and 148 seconds for 75 pages.
+
+The page index and manifest also flag image-heavy pages where OCR may be needed, unresolved two-column or landscape reading order, and heuristic table outputs that require visual verification. The default setup does not install or run a separate ML document parser or OCR engine, and it never silently replaces native text with inferred text.
 
 ## Repository Map
 
@@ -138,13 +174,12 @@ Local/private runtime locations:
 - `inputs/`: source PDFs.
 - `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
 - `work/<paper_id>/prompts/`: rendered run-specific prompts.
-- `work/<paper_id>/repair/`: parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts when parser-quality preflight reports repairable artifacts.
 - `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
 - `work/<paper_id>/reviews/`: reviewer JSON outputs.
 - `work/<paper_id>/editor/`: normalized bundle and editor input.
 - `outputs/<paper_id>/report.md`: final human-readable report.
 
-Private papers and generated review artifacts are local by default. Do not commit source PDFs, `work/` artifacts, `outputs/` reports, logs, rendered prompts, reviewer JSON, or credentials. See `SECURITY.md` and `docs/public_release_checklist.md` for the full release checklist.
+Private papers and generated review artifacts are excluded from Git by default, but review prompts are sent to OpenAI and search-enabled reviewers may issue manuscript-derived web queries. Do not commit source PDFs, `work/` artifacts, `outputs/` reports, logs, rendered prompts, reviewer JSON, or credentials. See `SECURITY.md` and `docs/public_release_checklist.md` for the full release checklist.
 
 ## Open Development
 
@@ -185,14 +220,10 @@ Mandatory reviewers always run:
 
 Optional reviewers are selected dynamically by default:
 
-- core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
-- narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
+- core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, and `model_equation_auditor`
+- narrower pilot reviewers: `data_availability_replication_auditor`, `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
 
-After `parser_quality_auditor`, parser repair overlay runs by default when high- or medium-severity parser artifacts are reported. It adds repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions. To skip this for a faster or cheaper run:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair off
-```
+Substantive reviewers read the parser-quality output and avoid unsafe deterministic artifacts. The workflow has no LLM-generated preprocessing or repair layer. When deterministic page text, coordinates, crops, or images cannot support a reliable check, reviewers must return `cannot_verify` rather than reconstructing content.
 
 Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
 

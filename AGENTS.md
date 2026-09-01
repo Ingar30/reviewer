@@ -8,10 +8,10 @@ The normal workflow is:
 2. Preprocess each paper into structured artifacts under `work/<paper_id>/parsed/`.
 3. Render run-specific prompts under `work/<paper_id>/prompts/`.
 4. Run parser-quality preflight before substantive review.
-5. Run parser repair overlay by default when parser-quality preflight reports high- or medium-severity parser artifacts, unless `--parser-repair off` is explicitly requested.
+5. Route substantive reviewers around parser-quality warnings using deterministic artifacts.
 6. Use dynamic reviewer selection by default to choose optional reviewers while mandatory reviewers always run.
 7. Store the selector decision under `work/<paper_id>/selection/` and use the selected reviewer roster for downstream stages.
-8. Rerender prompts for the selected reviewer roster, including parser repair notes when present.
+8. Rerender prompts for the selected reviewer roster with parser-quality guidance.
 9. Run the selected reviewer agents on the parsed artifacts.
 10. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
 11. Normalize and deduplicate reviewer outputs into an editor bundle.
@@ -22,7 +22,6 @@ The normal workflow is:
 ## Canonical file locations
 - Source PDFs: `inputs/`
 - Parsed artifacts: `work/<paper_id>/parsed/`
-- Parser repair overlays: `work/<paper_id>/repair/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Reviewer selection: `work/<paper_id>/selection/`
 - Final reports: `outputs/<paper_id>/`
@@ -37,12 +36,11 @@ The normal workflow is:
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
 - Dynamic reviewer selection is the default for fresh wrapper runs; static mode is available when all enabled reviewers should run.
-- Parser repair overlay is the default for fresh wrapper runs. Run it only after parser-quality preflight and only when high- or medium-severity `parser_artifact` findings are reported. `--parser-repair off` skips repair, and `--parser-repair plan` writes guidance without overlay artifacts.
-- Parser repair overlays route reviewers to safer existing artifacts. In `overlay` mode, they may also create narrow LLM-generated repaired artifacts under `work/<paper_id>/repair/repaired_artifacts/`, but they must not overwrite `work/<paper_id>/parsed/` or replace OCR, table reconstruction, figure crop regeneration, or deterministic preprocessing fixes.
+- Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.
 - If preprocessing artifacts are missing or clearly poor, fail clearly instead of guessing.
-- Editor-only refresh is allowed when parsed artifacts, reviewer JSON, selected reviewer config, and the normalized editor bundle already exist. Rerender prompts, rebuild editor input, rerun only the editor, and then smoke-check the final report.
+- Editor-only refresh is allowed when parsed artifacts, all selected reviewer JSON files, and the selected reviewer config already exist. Revalidate the reviews, rebuild the normalized bundle and editor input, rerun only the editor, and then smoke-check the final report.
 
 ## Preprocessing rules
 - Preserve original page numbering.

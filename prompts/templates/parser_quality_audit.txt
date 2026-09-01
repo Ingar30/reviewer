@@ -22,6 +22,11 @@ Focus on parser defects that could poison downstream reviewers:
 - figure/table extraction failures
 - inventory contradictions, such as visible captions or embedded images missing from structured inventories
 
+Table inventory status rules:
+- `auto_extracted_suspect`, `caption_text_contaminated`, and `caption_text_unstructured` are unsafe as primary evidence.
+- `auto_extracted_needs_visual_verification` and `caption_text_needs_visual_verification` are deterministic candidates, not verified tables. Compare them with the cited page image or crop before relying on column alignment, signs, or values.
+- Never infer missing cells, signs, values, or formulas to make a table look complete.
+
 Use these severity rules:
 - high: downstream reviewers cannot safely operate on a major evidence class or substantial page range, and no usable page-text/image fallback exists
 - medium: reviewers can proceed, but one evidence class or important object may be incomplete or misleading; use this for missing table/figure inventories when page text or page images still provide usable fallback evidence

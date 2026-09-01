@@ -14,6 +14,12 @@ Hard rules:
 - Do not emit replacement-question sequences such as ?? or ???; if source text contains characters that may render unreliably, paraphrase or normalize the quote to readable ASCII.
 - Do not invent findings.
 - Preserve uncertainty, especially cannot_verify cases.
+- Write for the paper's authors in a precise, calm, and constructive voice. Do not use ridicule, adversarial language, or speculate about competence or motives.
+- Do not make an acceptance or rejection recommendation. The purpose is to help the authors correct and improve the manuscript.
+- Distinguish verified errors and necessary qualifications from optional development advice. Do not present a limitation, omitted extension, or alternative design as an error unless the evidence shows that it invalidates or materially overstates a claim the paper actually makes.
+- Lead with narrow, actionable improvements: factual accuracy, faithful descriptions of the paper, internal consistency, numerical and mathematical correctness, evidence support, research-design validity, reproducibility, source identity, and reliable interpretation. A false or unsupported description of the paper belongs in this core even when it appears in positioning or novelty language.
+- Place broader positioning, additional literature, extensions, and nonessential presentation advice later in the report. Label these as development opportunities rather than required corrections unless they repair a false or materially misleading claim.
+- When recommending a revision, explain the smallest adequate correction or qualification. Do not reflexively demand new analyses, new data, or a different research design when more precise language would resolve the issue.
 - Preserve exact locations when available.
 - Use confidence, source_objects, claim_evidence_links, numeric_check, and cannot_verify_reason fields when they are present in the normalized bundle.
 - In literature-positioning and novelty sections, preserve the key study names or author-year labels from source_objects when they are central to the critique; do not replace concrete study grounding with only generic phrases such as "adjacent work" or "prior studies."
@@ -28,11 +34,12 @@ Hard rules:
 - Do not bury parser/preprocessing issues that materially distort a central formula, table, figure, citation target, or quantitative claim. When such an artifact affects interpretation of a main result or blocks reliable verification of an important claim, mention it explicitly in the prose of the Parser and Preprocessing Caveats section, and elevate it into Suggested Revision Priorities when the auditability risk is substantial.
 - Separate reference-integrity problems from low-severity reference-maintenance updates.
 - Put copyedit_issue findings only in the grammar appendix unless they materially affect the meaning of a substantive issue.
-- Do not silently soften strong reviewer findings.
+- Preserve strong findings when the evidence warrants them, while expressing them neutrally and proportionately.
 - Keep the main report readable. Do not place canonical IDs or source finding IDs in the body of the report except in the final traceability appendix.
 - Use the canonical IDs and source finding IDs exactly as listed in the normalized editor bundle.
 - Include a Review Configuration section in prose, not as a table. Briefly state which optional reviewer agents were used and why; mention mandatory baseline reviewers only briefly. Mention partial or failed reviewer statuses only when they materially limit confidence in the report.
 - Start with cross-agent synthesis. Do not organize any report section by agent.
+- In the Executive Summary and Highest-Priority Cross-Agent Findings, prioritize correctable accuracy and auditability issues. Reserve broad implications and optional development advice for Literature Positioning and Novelty or the end of Additional Findings.
 - Use the Highest-Priority Cross-Agent Findings section for the strongest high-confidence issues recommended by the deterministic editor brief. Aim for 3 to 8 top-level issues when the evidence supports that range; use fewer than 3 if fewer high-confidence issues exist, and never exceed 8. Place remaining issues in Additional Findings or the appropriate domain section.
 - Use Additional Findings for lower-priority findings that were not elevated to cross-agent synthesis. Do not organize this section by agent.
 - Include a final Appendix: Traceability Map table that maps every canonical finding in the normalized bundle to its source finding IDs.

@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -66,11 +67,22 @@ NUMBER_PATTERN = re.compile(
 )
 
 CROSSREF_LABEL_RE = r"(?:[A-Z]\.)?\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*|\d+[A-Za-z]?"
+CROSSREF_KIND_RE = (
+    r"Tables?|Figures?|Figs?\.|Sections?|Appendices|Appendixes|Appendix|"
+    r"Eqs?\.|Equations?"
+)
 CROSSREF_PATTERN = re.compile(
-    rf"\b(?P<kind>Table|Figure|Fig\.|Section|Appendix|Eq\.|Equation)"
+    rf"\b(?P<kind>{CROSSREF_KIND_RE})"
     rf"\s+(?:\((?P<label_paren>{CROSSREF_LABEL_RE})\)(?![A-Za-z])|(?P<label>{CROSSREF_LABEL_RE})(?![A-Za-z]))",
     re.IGNORECASE,
 )
+CROSSREF_SERIES_PATTERN = re.compile(
+    rf"\b(?P<kind>{CROSSREF_KIND_RE})\s+"
+    rf"(?P<labels>\(?(?:{CROSSREF_LABEL_RE})\)?"
+    rf"(?:\s*(?:,|and|or|to|through|[-\u2013\u2014])\s*\(?(?:{CROSSREF_LABEL_RE})\)?)+)",
+    re.IGNORECASE,
+)
+CROSSREF_EXPLICIT_LABEL_RE = re.compile(rf"\(?({CROSSREF_LABEL_RE})\)?")
 FIGURE_TABLE_XREF_LABEL_RE = re.compile(
     r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.\d+(?:\.\d+)*[A-Za-z]?)$"
 )
@@ -99,7 +111,32 @@ REF_SECTION_END_RE = re.compile(
     re.IGNORECASE,
 )
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}[a-z]?\b", re.IGNORECASE)
-REFERENCE_HYPHEN_BREAK_RE = re.compile(r"(?<=[A-Za-zÀ-ÖØ-öø-ÿ])-\s+(?=[a-zà-öø-ÿ])")
+HYPHENATED_LINE_JOIN_RE = re.compile(
+    r"(?<=[A-Za-zÀ-ÖØ-öø-ÿ])-\s+(?=[A-Za-zÀ-ÖØ-öø-ÿ])"
+)
+NUMBERED_HEADING_NUMBER_RE = re.compile(r"^[1-9](?:\.\d+){0,4}$")
+SPACING_ACCENT_TO_COMBINING = {
+    "\u0060": "\u0300",
+    "\u00b4": "\u0301",
+    "\u005e": "\u0302",
+    "\u007e": "\u0303",
+    "\u00a8": "\u0308",
+    "\u02c7": "\u030c",
+    "\u02da": "\u030a",
+}
+# CMEX is Knuth's Computer Modern math-extension font. These observed slots were
+# verified against rendered source pages; substitutions remain font- and position-bound.
+CMEX_KNOWN_GLYPHS = {
+    0: "(",
+    1: ")",
+    16: "(",
+    17: ")",
+    ord("("): "{",
+    ord("h"): "[",
+    ord("i"): "]",
+}
+CMEX_PASSTHROUGH_GLYPHS: set[str] = set()
+ALLOWED_TEXT_CONTROLS = {"\t", "\n", "\r", "\f"}
 TABLE_TRAILING_CELL_RE = re.compile(
     r"(?<!\S)(?P<cell>"
     r"\(\s*[-−]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)"
@@ -136,6 +173,14 @@ class PageMeta:
     normalized_text_strategy: str
     landscape: bool
     raw_sorted_similarity: float
+    known_font_glyph_repair_count: int
+    positioned_accent_composition_count: int
+    uncomposed_spacing_accent_count: int
+    positioned_font_glyph_repair_count: int
+    unresolved_math_glyph_count: int
+    unresolved_math_glyph_codes: list[str]
+    residual_control_character_count: int
+    residual_control_character_codes: list[str]
 
 
 def slugify(value: str) -> str:
@@ -174,9 +219,13 @@ def context_around(text: str, start: int, end: int, window: int = 100) -> str:
     return " ".join(text[before:after].split())
 
 
-def join_reference_chunks(chunks: list[str]) -> str:
+def join_text_chunks_preserving_hyphens(chunks: list[str]) -> str:
     text = " ".join(chunk.strip() for chunk in chunks if chunk.strip())
-    return REFERENCE_HYPHEN_BREAK_RE.sub("", text).strip()
+    return HYPHENATED_LINE_JOIN_RE.sub("-", text).strip()
+
+
+def join_reference_chunks(chunks: list[str]) -> str:
+    return join_text_chunks_preserving_hyphens(chunks)
 
 
 def repeated_author_entry_start(text: str, current: dict[str, Any] | None) -> bool:
@@ -234,12 +283,364 @@ def normalize_page_text(text: str) -> str:
     return text.strip() + "\n"
 
 
-def extract_page_text(page: fitz.Page) -> tuple[str, str, list[list[Any]], list[list[Any]]]:
+def normalized_font_family(font: object) -> str:
+    return re.sub(r"^[A-Z]{6}\+", "", str(font or "")).upper()
+
+
+def positioned_accent_overlaps_base(
+    accent: dict[str, Any],
+    accent_font: object,
+    accent_size: object,
+    base: dict[str, Any],
+    base_font: object,
+    base_size: object,
+) -> bool:
+    accent_bbox = accent.get("bbox")
+    base_bbox = base.get("bbox")
+    accent_origin = accent.get("origin")
+    base_origin = base.get("origin")
+    if not all(
+        isinstance(value, (list, tuple)) and len(value) >= 2
+        for value in (accent_bbox, base_bbox, accent_origin, base_origin)
+    ):
+        return False
+    if normalized_font_family(accent_font) != normalized_font_family(base_font):
+        return False
+    try:
+        accent_width = float(accent_bbox[2]) - float(accent_bbox[0])
+        base_width = float(base_bbox[2]) - float(base_bbox[0])
+        horizontal_overlap = min(float(accent_bbox[2]), float(base_bbox[2])) - max(
+            float(accent_bbox[0]), float(base_bbox[0])
+        )
+        baseline_gap = abs(float(accent_origin[1]) - float(base_origin[1]))
+        size_gap = abs(float(accent_size) - float(base_size))
+        max_size = max(float(accent_size), float(base_size), 1.0)
+    except (IndexError, TypeError, ValueError):
+        return False
+    return (
+        accent_width > 0
+        and base_width > 0
+        and horizontal_overlap / min(accent_width, base_width) >= 0.45
+        and baseline_gap <= max(0.8, max_size * 0.12)
+        and size_gap <= max_size * 0.08
+    )
+
+
+def cmex_glyph_replacement(font: object, value: str) -> str | None:
+    if not value or not re.fullmatch(r"CMEX\d+", normalized_font_family(font)):
+        return None
+    return CMEX_KNOWN_GLYPHS.get(ord(value[0]))
+
+
+def rawdict_alignment_plans(
+    text_dict: dict[str, Any],
+) -> tuple[str, dict[int, str], dict[int, tuple[str, dict[int, str]]], list[dict[str, Any]]]:
+    full_parts: list[str] = []
+    full_length = 0
+    full_repairs: dict[int, str] = {}
+    block_plans: dict[int, tuple[str, dict[int, str]]] = {}
+    coordinate_repairs: list[dict[str, Any]] = []
+
+    text_blocks = [block for block in text_dict.get("blocks", []) if block.get("type", 0) == 0]
+    for text_block_index, block in enumerate(text_blocks):
+        block_number = int(block.get("number", text_block_index))
+        block_parts: list[str] = []
+        block_repairs: dict[int, str] = {}
+        block_length = 0
+        for line_index, line in enumerate(block.get("lines", [])):
+            if line_index:
+                block_parts.append("\n")
+                block_length += 1
+            for span in line.get("spans", []):
+                font = span.get("font")
+                for char in span.get("chars", []):
+                    value = str(char.get("c", ""))
+                    replacement = cmex_glyph_replacement(font, value)
+                    position = block_length
+                    block_parts.append(value)
+                    block_length += len(value)
+                    if replacement is None or replacement == value:
+                        continue
+                    block_repairs[position] = replacement
+                    coordinate_repairs.append(
+                        {
+                            "source": value,
+                            "replacement": replacement,
+                            "bbox": list(char.get("bbox", [])),
+                            "block_number": block_number,
+                            "font_family": normalized_font_family(font),
+                            "code": f"U+{ord(value[0]):04X}",
+                        }
+                    )
+        block_text = "".join(block_parts)
+        block_plans[block_number] = (block_text, block_repairs)
+        if full_parts:
+            full_parts.append("\n")
+            full_length += 1
+        full_offset = full_length
+        full_parts.append(block_text)
+        full_length += len(block_text)
+        for position, replacement in block_repairs.items():
+            full_repairs[full_offset + position] = replacement
+
+    if full_parts:
+        full_parts.append("\n")
+    return "".join(full_parts), full_repairs, block_plans, coordinate_repairs
+
+
+def align_positioned_glyph_repairs(
+    source_text: str,
+    target_text: str,
+    source_repairs: dict[int, str],
+    minimum_similarity: float = 0.9,
+) -> tuple[str, int]:
+    if not source_repairs:
+        return target_text, 0
+    matcher = SequenceMatcher(None, source_text, target_text, autojunk=False)
+    if matcher.ratio() < minimum_similarity:
+        return target_text, 0
+    source_to_target: dict[int, int] = {}
+    for source_start, target_start, size in matcher.get_matching_blocks():
+        for delta in range(size):
+            source_to_target[source_start + delta] = target_start + delta
+    target_chars = list(target_text)
+    applied = 0
+    for source_position, replacement in source_repairs.items():
+        target_position = source_to_target.get(source_position)
+        if target_position is None:
+            continue
+        target_chars[target_position] = replacement
+        applied += 1
+    return "".join(target_chars), applied
+
+
+def positioned_text_repair_plan(text_dict: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any]]:
+    native_text, native_repairs, block_plans, coordinate_repairs = rawdict_alignment_plans(
+        text_dict
+    )
+    accent_pair_totals: dict[str, int] = {}
+    accepted_accent_counts: dict[str, int] = {}
+    accepted_accent_values: dict[str, str] = {}
+    spacing_accent_count = 0
+    unresolved_math_glyph_count = 0
+    unresolved_math_glyph_codes: set[str] = set()
+
+    for block in text_dict.get("blocks", []):
+        for line in block.get("lines", []):
+            line_chars: list[tuple[dict[str, Any], object, object]] = []
+            for span in line.get("spans", []):
+                font = span.get("font")
+                size = span.get("size")
+                for char in span.get("chars", []):
+                    line_chars.append((char, font, size))
+                    value = str(char.get("c", ""))
+                    if not value:
+                        continue
+                    font_family = normalized_font_family(font)
+                    if re.fullmatch(r"CMEX\d+", font_family):
+                        replacement = cmex_glyph_replacement(font, value)
+                        if replacement is None and value not in CMEX_PASSTHROUGH_GLYPHS:
+                            unresolved_math_glyph_count += 1
+                            unresolved_math_glyph_codes.add(
+                                f"{font_family}:U+{ord(value[0]):04X}"
+                            )
+            for index, (accent, accent_font, accent_size) in enumerate(line_chars[:-1]):
+                accent_value = str(accent.get("c", ""))
+                combining = SPACING_ACCENT_TO_COMBINING.get(accent_value)
+                if combining is None:
+                    continue
+                spacing_accent_count += 1
+                base, base_font, base_size = line_chars[index + 1]
+                base_value = str(base.get("c", ""))
+                source = accent_value + base_value
+                accent_pair_totals[source] = accent_pair_totals.get(source, 0) + 1
+                if not base_value.isalpha() or not positioned_accent_overlaps_base(
+                    accent,
+                    accent_font,
+                    accent_size,
+                    base,
+                    base_font,
+                    base_size,
+                ):
+                    continue
+                composed = unicodedata.normalize("NFC", base_value + combining)
+                if len(composed) != 1 or composed == base_value:
+                    continue
+                accepted_accent_counts[source] = accepted_accent_counts.get(source, 0) + 1
+                accepted_accent_values[source] = composed
+
+    replacements: dict[str, str] = {}
+    known_font_glyph_repair_count = len(coordinate_repairs)
+
+    positioned_accent_composition_count = 0
+    for source, count in accepted_accent_counts.items():
+        if count == accent_pair_totals.get(source):
+            replacements[source] = accepted_accent_values[source]
+            positioned_accent_composition_count += count
+
+    return replacements, {
+        "known_font_glyph_repair_count": known_font_glyph_repair_count,
+        "positioned_accent_composition_count": positioned_accent_composition_count,
+        "uncomposed_spacing_accent_count": max(
+            0, spacing_accent_count - positioned_accent_composition_count
+        ),
+        "positioned_font_glyph_repair_count": len(coordinate_repairs),
+        "unresolved_math_glyph_count": unresolved_math_glyph_count,
+        "unresolved_math_glyph_codes": sorted(unresolved_math_glyph_codes),
+        "_native_positioned_text": native_text,
+        "_native_positioned_repairs": native_repairs,
+        "_block_positioned_plans": block_plans,
+        "_coordinate_glyph_repairs": coordinate_repairs,
+    }
+
+
+def page_text_repair_plan(page: fitz.Page) -> tuple[dict[str, str], dict[str, Any]]:
+    return positioned_text_repair_plan(page.get_text("rawdict", sort=False) or {})
+
+
+def apply_text_repairs(text: str, replacements: dict[str, str]) -> str:
+    for source in sorted(replacements, key=len, reverse=True):
+        text = text.replace(source, replacements[source])
+    return text
+
+
+def apply_known_font_glyph_repairs(text: str, font: object) -> str:
+    if not re.fullmatch(r"CMEX\d+", normalized_font_family(font)):
+        return text
+    return "".join(cmex_glyph_replacement(font, char) or char for char in text)
+
+
+def bbox_contains_center(container: list[Any], item: list[Any], tolerance: float = 0.75) -> bool:
+    if len(container) != 4 or len(item) != 4:
+        return False
+    try:
+        center_x = (float(item[0]) + float(item[2])) / 2
+        center_y = (float(item[1]) + float(item[3])) / 2
+        return (
+            float(container[0]) - tolerance <= center_x <= float(container[2]) + tolerance
+            and float(container[1]) - tolerance <= center_y <= float(container[3]) + tolerance
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def repaired_word_records(
+    records: list[list[Any]],
+    replacements: dict[str, str],
+    coordinate_repairs: list[dict[str, Any]],
+) -> tuple[list[list[Any]], int]:
+    repaired: list[list[Any]] = []
+    positioned_applied = 0
+    for record in records:
+        item = list(record)
+        if len(item) <= 4 or not isinstance(item[4], str):
+            repaired.append(item)
+            continue
+        text = item[4]
+        candidates = sorted(
+            (
+                repair
+                for repair in coordinate_repairs
+                if bbox_contains_center(item[:4], repair.get("bbox", []))
+            ),
+            key=lambda repair: (
+                float(repair["bbox"][0]),
+                float(repair["bbox"][1]),
+            ),
+        )
+        sources = "".join(str(repair["source"]) for repair in candidates)
+        if candidates and text == sources:
+            text = "".join(str(repair["replacement"]) for repair in candidates)
+            positioned_applied += len(candidates)
+        item[4] = apply_text_repairs(text, replacements)
+        repaired.append(item)
+    return repaired, positioned_applied
+
+
+def repaired_block_records(
+    records: list[list[Any]],
+    replacements: dict[str, str],
+    block_plans: dict[int, tuple[str, dict[int, str]]],
+) -> tuple[list[list[Any]], int]:
+    repaired: list[list[Any]] = []
+    positioned_applied = 0
+    for record in records:
+        item = list(record)
+        if len(item) > 5 and isinstance(item[4], str):
+            try:
+                block_number = int(item[5])
+            except (TypeError, ValueError):
+                block_number = -1
+            source_text, source_repairs = block_plans.get(block_number, ("", {}))
+            text, applied = align_positioned_glyph_repairs(
+                source_text, item[4], source_repairs
+            )
+            positioned_applied += applied
+            item[4] = apply_text_repairs(text, replacements)
+        repaired.append(item)
+    return repaired, positioned_applied
+
+
+def disallowed_control_character_codes(text: str) -> list[str]:
+    return sorted(
+        {
+            f"U+{ord(char):04X}"
+            for char in text
+            if ord(char) < 32 and char not in ALLOWED_TEXT_CONTROLS
+        }
+    )
+
+
+def disallowed_control_character_count(text: str) -> int:
+    return sum(
+        1
+        for char in text
+        if ord(char) < 32 and char not in ALLOWED_TEXT_CONTROLS
+    )
+
+
+def extract_page_text(
+    page: fitz.Page,
+    replacements: dict[str, str] | None = None,
+    repair_summary: dict[str, Any] | None = None,
+) -> tuple[str, str, list[list[Any]], list[list[Any]]]:
+    replacements = replacements or {}
     raw_text = page.get_text("text", sort=False) or ""
     sorted_text = page.get_text("text", sort=True) or raw_text
     words = page.get_text("words", sort=True) or []
     blocks = page.get_text("blocks", sort=False) or []
-    return raw_text, sorted_text, words, blocks if isinstance(blocks, list) else []
+    summary = repair_summary if repair_summary is not None else {}
+    native_text = str(summary.get("_native_positioned_text", ""))
+    native_repairs = summary.get("_native_positioned_repairs", {})
+    block_plans = summary.get("_block_positioned_plans", {})
+    coordinate_repairs = summary.get("_coordinate_glyph_repairs", [])
+    raw_text, raw_applied = align_positioned_glyph_repairs(
+        native_text, raw_text, native_repairs
+    )
+    sorted_text, sorted_applied = align_positioned_glyph_repairs(
+        native_text, sorted_text, native_repairs
+    )
+    repaired_words, word_applied = repaired_word_records(
+        words, replacements, coordinate_repairs
+    )
+    repaired_blocks, block_applied = repaired_block_records(
+        blocks if isinstance(blocks, list) else [], replacements, block_plans
+    )
+    if repair_summary is not None:
+        repair_summary.update(
+            {
+                "raw_positioned_glyph_repair_applied_count": raw_applied,
+                "sorted_positioned_glyph_repair_applied_count": sorted_applied,
+                "word_positioned_glyph_repair_applied_count": word_applied,
+                "block_positioned_glyph_repair_applied_count": block_applied,
+            }
+        )
+    return (
+        apply_text_repairs(raw_text, replacements),
+        apply_text_repairs(sorted_text, replacements),
+        repaired_words,
+        repaired_blocks,
+    )
 
 
 def native_blocks_are_column_major(blocks: list[list[Any]], page_width: float) -> bool:
@@ -268,9 +669,20 @@ def choose_normalized_text(
     blocks: list[list[Any]],
     page_width: float,
     two_column_detected: bool,
+    repair_summary: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     if two_column_detected and native_blocks_are_column_major(blocks, page_width):
         return raw_text, "native_content_order_two_column"
+    if repair_summary is not None:
+        planned = int(repair_summary.get("positioned_font_glyph_repair_count", 0))
+        raw_applied = int(
+            repair_summary.get("raw_positioned_glyph_repair_applied_count", 0)
+        )
+        sorted_applied = int(
+            repair_summary.get("sorted_positioned_glyph_repair_applied_count", 0)
+        )
+        if planned and sorted_applied < planned and raw_applied == planned:
+            return raw_text, "native_content_order_font_fidelity"
     return sorted_text, "coordinate_sorted"
 
 
@@ -442,16 +854,25 @@ def union_bboxes(bboxes: list[list[float]]) -> list[float]:
     ]
 
 
-def positioned_text_lines(page: fitz.Page) -> list[dict[str, Any]]:
+def positioned_text_lines(
+    page: fitz.Page, replacements: dict[str, str] | None = None
+) -> list[dict[str, Any]]:
+    if replacements is None:
+        replacements, _repair_summary = page_text_repair_plan(page)
     lines: list[dict[str, Any]] = []
     text_dict = page.get_text("dict", sort=False) or {}
     for block in text_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
-            text = clean_inline_text(
-                "".join(str(span.get("text", "")) for span in line.get("spans", []))
+            spans = line.get("spans", [])
+            span_text = "".join(
+                apply_known_font_glyph_repairs(
+                    str(span.get("text", "")), span.get("font")
+                )
+                for span in spans
             )
+            text = clean_inline_text(apply_text_repairs(span_text, replacements))
             bbox = [float(value) for value in line.get("bbox", [])]
             if not text or len(bbox) != 4:
                 continue
@@ -459,6 +880,7 @@ def positioned_text_lines(page: fitz.Page) -> list[dict[str, Any]]:
                 {
                     "text": text,
                     "bbox": bbox,
+                    "is_bold": any(int(span.get("flags", 0)) & 16 for span in spans),
                     "is_page_footer": bool(re.fullmatch(r"\d+", text))
                     and bbox[1] > float(page.rect.height) * 0.82,
                 }
@@ -668,6 +1090,47 @@ def complete_heading(lines: list[str], start_index_0based: int) -> str:
     return clean_inline_text(" ".join(heading_parts))
 
 
+def positioned_numbered_headings(lines: list[dict[str, Any]]) -> list[dict[str, str]]:
+    headings: list[dict[str, str]] = []
+    for number_line in lines:
+        number = clean_inline_text(str(number_line.get("text", "")))
+        number_bbox = number_line.get("bbox")
+        if (
+            not NUMBERED_HEADING_NUMBER_RE.fullmatch(number)
+            or not number_line.get("is_bold")
+            or not isinstance(number_bbox, (list, tuple))
+            or len(number_bbox) != 4
+        ):
+            continue
+        candidates: list[tuple[float, str]] = []
+        for title_line in lines:
+            title = clean_inline_text(str(title_line.get("text", "")))
+            title_bbox = title_line.get("bbox")
+            if (
+                title_line is number_line
+                or not title
+                or not title_line.get("is_bold")
+                or not isinstance(title_bbox, (list, tuple))
+                or len(title_bbox) != 4
+            ):
+                continue
+            y_gap = abs(float(title_bbox[1]) - float(number_bbox[1]))
+            x_gap = float(title_bbox[0]) - float(number_bbox[2])
+            heading = clean_inline_text(f"{number} {title}")
+            plausible_title = (
+                len(title) <= 120
+                and title[:1].isupper()
+                and not title.endswith((".", ",", ";", ":"))
+                and not ANY_CAPTION_RE.match(title)
+            )
+            if y_gap <= 1.5 and 0 <= x_gap <= 42 and plausible_title:
+                candidates.append((x_gap, title))
+        if candidates:
+            _gap, title = min(candidates, key=lambda candidate: candidate[0])
+            headings.append({"number": number, "title": title, "heading": f"{number} {title}"})
+    return headings
+
+
 def extract_sections(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -675,9 +1138,37 @@ def extract_sections(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]
     for page in page_records:
         page_no = page["pdf_page_number"]
         lines = page["normalized_text"].splitlines()
+        numbered_headings: dict[str, list[dict[str, str]]] = {}
+        for candidate in positioned_numbered_headings(page.get("positioned_lines", [])):
+            numbered_headings.setdefault(candidate["number"], []).append(candidate)
+        pending_title_to_skip: str | None = None
         for idx, line in enumerate(lines, start=1):
-            if is_heading(line):
+            normalized_line = clean_inline_text(line)
+            if pending_title_to_skip and not normalized_line:
+                continue
+            if pending_title_to_skip and normalized_line == pending_title_to_skip:
+                pending_title_to_skip = None
+                continue
+            pending_title_to_skip = None
+
+            heading = None
+            candidates = numbered_headings.get(normalized_line, [])
+            next_nonempty = next(
+                (clean_inline_text(value) for value in lines[idx:] if clean_inline_text(value)),
+                None,
+            )
+            matched_candidate = next(
+                (candidate for candidate in candidates if candidate["title"] == next_nonempty),
+                None,
+            )
+            if matched_candidate is not None:
+                heading = matched_candidate["heading"]
+                candidates.remove(matched_candidate)
+                pending_title_to_skip = matched_candidate["title"]
+            elif is_heading(line):
                 heading = complete_heading(lines, idx - 1)
+
+            if heading is not None:
                 if current is not None:
                     current["end_page"] = page_no
                     current["end_line"] = idx - 1 if idx > 1 else None
@@ -755,7 +1246,7 @@ def extract_numbers(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def valid_crossref_label(kind: str, label: str | None) -> bool:
     if not label:
         return False
-    normalized_kind = kind.lower().rstrip(".")
+    normalized_kind = normalized_crossref_kind(kind)
     if normalized_kind in {"table", "figure", "fig"}:
         return bool(FIGURE_TABLE_XREF_LABEL_RE.fullmatch(label))
     if normalized_kind == "section":
@@ -769,21 +1260,142 @@ def valid_crossref_label(kind: str, label: str | None) -> bool:
 
 def normalized_crossref_kind(kind: str) -> str:
     normalized = kind.lower().rstrip(".")
-    return "figure" if normalized == "fig" else normalized
+    aliases = {
+        "tables": "table",
+        "fig": "figure",
+        "figs": "figure",
+        "figures": "figure",
+        "sections": "section",
+        "appendices": "appendix",
+        "appendixes": "appendix",
+        "eq": "equation",
+        "eqs": "equation",
+        "equations": "equation",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def extract_cross_page_hyphenated_crossrefs(
+    page_records: list[dict[str, Any]],
+    seen: set[tuple[int, str, str]],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    recognized_words = {
+        "table": "Table",
+        "tables": "Table",
+        "figure": "Figure",
+        "figures": "Figure",
+        "section": "Section",
+        "sections": "Section",
+        "appendix": "Appendix",
+        "appendices": "Appendix",
+        "equation": "Equation",
+        "equations": "Equation",
+    }
+    for page_index, page in enumerate(page_records[:-1]):
+        text = page["normalized_text"]
+        next_page = page_records[page_index + 1]
+        next_lines = [
+            line.strip()
+            for line in next_page["normalized_text"].splitlines()
+            if line.strip()
+        ]
+        offset = 0
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            left_match = re.search(r"\b(?P<left>[A-Za-z]{2,})-$", line.strip())
+            if not left_match:
+                offset += len(line) + 1
+                continue
+            for continuation in next_lines[:20]:
+                right_match = re.match(
+                    rf"(?P<right>[a-z]{{2,}})\s+(?P<label>{CROSSREF_LABEL_RE})(?![A-Za-z])",
+                    continuation,
+                )
+                if not right_match:
+                    continue
+                word = (left_match.group("left") + right_match.group("right")).lower()
+                display_kind = recognized_words.get(word)
+                label = right_match.group("label")
+                if display_kind is None or not valid_crossref_label(display_kind, label):
+                    continue
+                key = (
+                    page["pdf_page_number"],
+                    normalized_crossref_kind(display_kind),
+                    label,
+                )
+                if key in seen:
+                    break
+                seen.add(key)
+                out.append(
+                    {
+                        "page": page["pdf_page_number"],
+                        "page_label": page["page_label"],
+                        "reference_text": f"{display_kind} {label}",
+                        "kind": display_kind,
+                        "label": label,
+                        "line_number": line_number,
+                        "match_start": offset + left_match.start("left"),
+                        "match_end": offset + len(line),
+                        "context": clean_inline_text(
+                            f"{line.strip()} [page break] {continuation}"
+                        ),
+                        "source": "cross_page_hyphenated_reference",
+                        "continuation_page": next_page["pdf_page_number"],
+                    }
+                )
+                break
+            offset += len(line) + 1
+    return out
 
 
 def extract_crossrefs(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    seen_all: set[tuple[int, str, str]] = set()
     for page in page_records:
         seen_page_kind_label: set[tuple[int, str, str]] = set()
         text = page["normalized_text"]
+        for match in CROSSREF_SERIES_PATTERN.finditer(text):
+            for label_match in CROSSREF_EXPLICIT_LABEL_RE.finditer(match.group("labels")):
+                label = label_match.group(1)
+                if not valid_crossref_label(match.group("kind"), label):
+                    continue
+                key = (
+                    page["pdf_page_number"],
+                    normalized_crossref_kind(match.group("kind")),
+                    label,
+                )
+                if key in seen_page_kind_label:
+                    continue
+                seen_page_kind_label.add(key)
+                seen_all.add(key)
+                label_start = match.start("labels") + label_match.start(1)
+                out.append(
+                    {
+                        "page": page["pdf_page_number"],
+                        "page_label": page["page_label"],
+                        "reference_text": match.group(0),
+                        "kind": match.group("kind"),
+                        "label": label,
+                        "line_number": line_number_for_offset(text, label_start),
+                        "match_start": label_start,
+                        "match_end": match.start("labels") + label_match.end(1),
+                        "context": context_around(text, match.start(), match.end()),
+                        "source": "coordinated_text_reference",
+                    }
+                )
         for match in CROSSREF_PATTERN.finditer(text):
             label = match.group("label") or match.group("label_paren")
             if not valid_crossref_label(match.group("kind"), label):
                 continue
-            seen_page_kind_label.add(
-                (page["pdf_page_number"], normalized_crossref_kind(match.group("kind")), label)
+            key = (
+                page["pdf_page_number"],
+                normalized_crossref_kind(match.group("kind")),
+                label,
             )
+            if key in seen_page_kind_label:
+                continue
+            seen_page_kind_label.add(key)
+            seen_all.add(key)
             out.append(
                 {
                     "page": page["pdf_page_number"],
@@ -825,7 +1437,9 @@ def extract_crossrefs(page_records: list[dict[str, Any]]) -> list[dict[str, Any]
                     }
                 )
                 seen_page_kind_label.add(key)
+                seen_all.add(key)
             offset += len(raw_line) + 1
+    out.extend(extract_cross_page_hyphenated_crossrefs(page_records, seen_all))
     return out
 
 
@@ -1049,7 +1663,14 @@ def extract_raw_captioned_items_for_page(
 ) -> list[dict[str, Any]]:
     pattern = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
     display_kind = "Table" if kind == "table" else "Figure"
-    raw_lines = [clean_inline_text(line) for line in (page.get_text("text", sort=False) or "").splitlines()]
+    replacements, repair_summary = page_text_repair_plan(page)
+    raw_text, _applied = align_positioned_glyph_repairs(
+        str(repair_summary.get("_native_positioned_text", "")),
+        page.get_text("text", sort=False) or "",
+        repair_summary.get("_native_positioned_repairs", {}),
+    )
+    raw_text = apply_text_repairs(raw_text, replacements)
+    raw_lines = [clean_inline_text(line) for line in raw_text.splitlines()]
     lines = [line for line in raw_lines if line]
     items: list[dict[str, Any]] = []
 
@@ -1069,7 +1690,7 @@ def extract_raw_captioned_items_for_page(
                 caption_end += 1
             else:
                 break
-        title = clean_inline_text(" ".join(title_parts))
+        title = clean_inline_text(join_text_chunks_preserving_hyphens(title_parts))
         next_caption_idx = None
         for j in range(caption_end + 1, len(lines)):
             if ANY_CAPTION_RE.match(lines[j]):
@@ -1179,7 +1800,7 @@ def extract_captioned_items(
                     body_lines = []
                     caption_source = "positioned_lines_visual_anchor"
 
-            title = clean_inline_text(" ".join(title_parts))
+            title = clean_inline_text(join_text_chunks_preserving_hyphens(title_parts))
             items.append(
                 {
                     "kind": kind,
@@ -1788,6 +2409,11 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
     two_column_pages = []
     landscape_pages = []
     reading_order_review_pages = []
+    font_fidelity_order_fallback_pages = []
+    known_font_glyph_repair_pages = []
+    positioned_accent_composition_pages = []
+    unresolved_math_glyph_pages = []
+    residual_control_character_pages = []
     raw_normalized_ratios = []
     suspicious_order_pages = []
     normalized_text_strategies: dict[str, int] = {}
@@ -1801,11 +2427,22 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
             two_column_pages.append(page_number)
         if page.get("landscape"):
             landscape_pages.append(page_number)
+        if page.get("known_font_glyph_repair_count", 0):
+            known_font_glyph_repair_pages.append(page_number)
+        if page.get("positioned_accent_composition_count", 0):
+            positioned_accent_composition_pages.append(page_number)
+        if page.get("unresolved_math_glyph_count", 0):
+            unresolved_math_glyph_pages.append(page_number)
+        if page.get("residual_control_character_count", 0):
+            residual_control_character_pages.append(page_number)
         strategy = page.get("normalized_text_strategy", "coordinate_sorted")
         normalized_text_strategies[strategy] = normalized_text_strategies.get(strategy, 0) + 1
         two_column_unresolved = page.get("two_column_detected") and strategy != "native_content_order_two_column"
+        font_fidelity_fallback = strategy == "native_content_order_font_fidelity"
+        if font_fidelity_fallback:
+            font_fidelity_order_fallback_pages.append(page_number)
         if (
-            (two_column_unresolved or page.get("landscape"))
+            (two_column_unresolved or font_fidelity_fallback or page.get("landscape"))
             and page.get("raw_sorted_similarity", 1.0) < 0.9
         ):
             reading_order_review_pages.append(page_number)
@@ -1835,7 +2472,12 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
         "two_column_pages": two_column_pages,
         "landscape_pages": landscape_pages,
         "reading_order_review_pages": reading_order_review_pages,
+        "font_fidelity_order_fallback_pages": font_fidelity_order_fallback_pages,
         "suspicious_order_pages": suspicious_order_pages,
+        "known_font_glyph_repair_pages": known_font_glyph_repair_pages,
+        "positioned_accent_composition_pages": positioned_accent_composition_pages,
+        "unresolved_math_glyph_pages": unresolved_math_glyph_pages,
+        "residual_control_character_pages": residual_control_character_pages,
         "normalized_text_strategies": normalized_text_strategies,
         "raw_normalized_char_ratio_median": round(median_ratio, 3) if median_ratio is not None else None,
     }
@@ -1895,7 +2537,10 @@ def main() -> int:
     with fitz.open(pdf_path) as doc:
         for page_index, page in enumerate(doc):
             pdf_page_number = page_index + 1
-            raw_text, sorted_text, words, blocks = extract_page_text(page)
+            text_repairs, repair_summary = page_text_repair_plan(page)
+            raw_text, sorted_text, words, blocks = extract_page_text(
+                page, text_repairs, repair_summary
+            )
             page_label = clean_page_label(page, raw_text, sorted_text)
             two_column_detected = two_column_layout_detected(page)
             normalized_source, normalized_text_strategy = choose_normalized_text(
@@ -1904,9 +2549,48 @@ def main() -> int:
                 blocks,
                 float(page.rect.width),
                 two_column_detected,
+                repair_summary,
             )
             normalized_text = normalize_page_text(normalized_source)
-            positioned_lines = positioned_text_lines(page)
+            positioned_lines = positioned_text_lines(page, text_repairs)
+            positioned_repair_count = int(
+                repair_summary["positioned_font_glyph_repair_count"]
+            )
+            selected_positioned_repairs = int(
+                repair_summary[
+                    (
+                        "raw_positioned_glyph_repair_applied_count"
+                        if normalized_text_strategy.startswith("native_content_order")
+                        else "sorted_positioned_glyph_repair_applied_count"
+                    )
+                ]
+            )
+            unresolved_known_count = max(
+                0, positioned_repair_count - selected_positioned_repairs
+            )
+            unresolved_math_glyph_count = (
+                int(repair_summary["unresolved_math_glyph_count"])
+                + unresolved_known_count
+            )
+            unresolved_math_glyph_codes = set(
+                repair_summary["unresolved_math_glyph_codes"]
+            )
+            if unresolved_known_count:
+                unresolved_math_glyph_codes.update(
+                    (
+                        f"{repair.get('font_family', 'CMEX')}:"
+                        f"{repair.get('code', 'unknown')}"
+                    )
+                    for repair in repair_summary["_coordinate_glyph_repairs"]
+                )
+            residual_control_character_codes = sorted(
+                set(disallowed_control_character_codes(raw_text))
+                | set(disallowed_control_character_codes(normalized_source))
+            )
+            residual_control_character_count = max(
+                disallowed_control_character_count(raw_text),
+                disallowed_control_character_count(normalized_source),
+            )
 
             raw_text_path = raw_pages_dir / f"page_{pdf_page_number:03d}.txt"
             normalized_text_path = pages_dir / f"page_{pdf_page_number:03d}.md"
@@ -1961,6 +2645,20 @@ def main() -> int:
                 normalized_text_strategy=normalized_text_strategy,
                 landscape=landscape,
                 raw_sorted_similarity=raw_sorted_similarity,
+                known_font_glyph_repair_count=int(
+                    repair_summary["known_font_glyph_repair_count"]
+                ),
+                positioned_accent_composition_count=int(
+                    repair_summary["positioned_accent_composition_count"]
+                ),
+                uncomposed_spacing_accent_count=int(
+                    repair_summary["uncomposed_spacing_accent_count"]
+                ),
+                positioned_font_glyph_repair_count=positioned_repair_count,
+                unresolved_math_glyph_count=unresolved_math_glyph_count,
+                unresolved_math_glyph_codes=sorted(unresolved_math_glyph_codes),
+                residual_control_character_count=residual_control_character_count,
+                residual_control_character_codes=residual_control_character_codes,
             )
 
             page_records.append(

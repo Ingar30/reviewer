@@ -335,8 +335,10 @@ def parser_quality_gate_findings(data: dict) -> tuple[list[dict], list[dict]]:
 
 def finding_label(finding: dict) -> str:
     finding_id = finding.get("id", "unknown-id")
-    claim = " ".join(str(finding.get("claim_text", "")).split())
-    return f"{finding_id}: {claim}" if claim else str(finding_id)
+    summary = " ".join(str(finding.get("finding_summary", "")).split())
+    if not summary:
+        summary = " ".join(str(finding.get("claim_text", "")).split())
+    return f"{finding_id}: {summary}" if summary else str(finding_id)
 
 
 def enforce_preflight_gate(reviewer: ReviewerConfig, output_path: Path) -> None:
@@ -642,6 +644,10 @@ def validate_reviewer_batch(
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description="Run the full paper-review pipeline for one PDF.")
     parser.add_argument("--pdf", required=True, help="Path to source PDF, usually under inputs/")
     parser.add_argument("--paper-id", default=None, help="Optional paper id; defaults to the PDF filename stem")

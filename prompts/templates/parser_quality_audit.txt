@@ -17,6 +17,9 @@ Focus on parser defects that could poison downstream reviewers:
 - missing page artifacts or likely scanned pages
 - scrambled reading order in normalized page text
 - suspicious OCR or text-extraction artifacts
+- unresolved control glyphs listed in manifest.summary.page_quality.residual_control_character_pages
+- unresolved math-font glyphs listed in manifest.summary.page_quality.unresolved_math_glyph_pages
+- reading-order risk on manifest.summary.page_quality.font_fidelity_order_fallback_pages, where source-faithful native text was preferred because coordinate-sorted text could not retain every verified glyph repair
 - broken table extraction
 - missing or detached table/figure captions
 - figure/table extraction failures
@@ -39,5 +42,7 @@ For every finding:
 - Include source_objects for manifest, page text, raw text, word/block files, inventories, page images, table crops, figure crops, or embedded-image inventory entries used as evidence.
 - Use cannot_verify only when the parsed artifacts do not allow a check, and then include cannot_verify_reason.
 - Do not flag terminal display mojibake as an encoding defect. Only report encoding/OCR corruption when the file contents themselves contain replacement characters, repeated question-mark substitutions, or verified corrupted text. Normal Unicode such as en dashes, curly quotes, ligatures, accented names, or copyright symbols is not a parser defect by itself.
+- Known font-glyph repairs and positioned accent compositions are deterministic source-derived repairs. Spot-check repaired pages against their page images; report a defect only if the repaired character is wrong or an unresolved source glyph remains. Never infer a replacement for a code listed as unresolved.
+- Treat a preserved hyphen at a visual line break as ambiguous unless the page image resolves whether it is lexical or discretionary. Never recommend deleting an observed hyphen based only on a word guess.
 - Do not judge manuscript correctness, numerical correctness, reference correctness, or literature positioning.
 - Do not include process notes about skill availability, tooling, or session state.

@@ -29,15 +29,24 @@ from build_editor_input import (  # noqa: E402
 )
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
 from preprocess_pdf import (  # noqa: E402
+    align_positioned_glyph_repairs,
+    apply_text_repairs,
     attach_captions_to_auto_tables,
     caption_table_quality,
     choose_normalized_text,
+    disallowed_control_character_codes,
+    extract_crossrefs,
     extract_reference_list,
+    extract_sections,
     is_heading,
+    join_text_chunks_preserving_hyphens,
     native_blocks_are_column_major,
     page_quality_summary,
     parse_captioned_table_rows,
     portable_path,
+    positioned_numbered_headings,
+    positioned_text_repair_plan,
+    repaired_word_records,
     rect_overlap_ratio,
     should_append_raw_caption_continuation,
     split_trailing_table_cells,
@@ -48,6 +57,7 @@ from refresh_editor import require_paths  # noqa: E402
 from review_paper import (  # noqa: E402
     codex_exec_command,
     extract_editor_report_from_transcript,
+    finding_label,
     parser_quality_gate_findings,
     plausible_editor_report,
     recover_editor_report_if_needed,
@@ -1390,6 +1400,180 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "1.23 4.56 7.89"))
         self.assertFalse(should_append_raw_caption_continuation("Table 2: Model performances.", "in that it pushes"))
 
+    def test_positioned_text_repairs_are_font_and_coordinate_grounded(self) -> None:
+        raw_dict = {
+            "blocks": [
+                {
+                    "lines": [
+                        {
+                            "spans": [
+                                {
+                                    "font": "CMEX10",
+                                    "size": 11.0,
+                                    "chars": [
+                                        {"c": "\x00", "bbox": [10, 10, 15, 21], "origin": [10, 19]},
+                                        {"c": "\x01", "bbox": [20, 10, 25, 21], "origin": [20, 19]},
+                                        {"c": "h", "bbox": [30, 10, 35, 21], "origin": [30, 19]},
+                                        {"c": "i", "bbox": [40, 10, 45, 21], "origin": [40, 19]},
+                                        {"c": "(", "bbox": [50, 10, 55, 21], "origin": [50, 19]},
+                                    ],
+                                }
+                            ]
+                        },
+                        {
+                            "spans": [
+                                {
+                                    "font": "NimbusRomNo9L-Regu",
+                                    "size": 10.0,
+                                    "chars": [
+                                        {"c": "R", "bbox": [25, 30, 30, 40], "origin": [25, 38]},
+                                        {"c": "\u00b4", "bbox": [31, 30, 34, 40], "origin": [31, 38]},
+                                        {"c": "e", "bbox": [30.5, 30, 35, 40], "origin": [30.5, 38]},
+                                    ],
+                                }
+                            ]
+                        },
+                        {
+                            "spans": [
+                                {
+                                    "font": "PiCUP10",
+                                    "size": 10.0,
+                                    "chars": [
+                                        {"c": "\x02", "bbox": [40, 30, 45, 40], "origin": [40, 38]}
+                                    ],
+                                }
+                            ]
+                        },
+                        {
+                            "spans": [
+                                {
+                                    "font": "NimbusRomNo9L-Regu",
+                                    "size": 10.0,
+                                    "chars": [
+                                        {"c": "h", "bbox": [60, 50, 65, 60], "origin": [60, 58]}
+                                    ],
+                                }
+                            ]
+                        },
+                        {
+                            "spans": [
+                                {
+                                    "font": "CMEX10",
+                                    "size": 10.0,
+                                    "chars": [
+                                        {"c": "X", "bbox": [70, 70, 75, 80], "origin": [70, 78]},
+                                        {"c": " ", "bbox": [76, 70, 80, 80], "origin": [76, 78]},
+                                        {"c": "", "bbox": [81, 70, 81, 80], "origin": [81, 78]},
+                                    ],
+                                }
+                            ]
+                        },
+                    ]
+                }
+            ]
+        }
+
+        repairs, summary = positioned_text_repair_plan(raw_dict)
+        positioned, positioned_count = align_positioned_glyph_repairs(
+            summary["_native_positioned_text"],
+            summary["_native_positioned_text"],
+            summary["_native_positioned_repairs"],
+        )
+        repaired = apply_text_repairs(positioned, repairs)
+        words, word_count = repaired_word_records(
+            [
+                [30, 10, 35, 21, "h", 0, 0, 0],
+                [60, 50, 65, 60, "h", 0, 3, 0],
+            ],
+            repairs,
+            summary["_coordinate_glyph_repairs"],
+        )
+
+        self.assertEqual(repaired, "()[]{\nR\u00e9\n\x02\nh\nX \n")
+        self.assertEqual(positioned_count, 5)
+        self.assertEqual([word[4] for word in words], ["[", "h"])
+        self.assertEqual(word_count, 1)
+        self.assertEqual(summary["known_font_glyph_repair_count"], 5)
+        self.assertEqual(summary["positioned_font_glyph_repair_count"], 5)
+        self.assertEqual(summary["positioned_accent_composition_count"], 1)
+        self.assertEqual(summary["unresolved_math_glyph_count"], 2)
+        self.assertEqual(
+            summary["unresolved_math_glyph_codes"],
+            ["CMEX10:U+0020", "CMEX10:U+0058"],
+        )
+        self.assertEqual(disallowed_control_character_codes(repaired), ["U+0002"])
+
+    def test_structured_line_join_preserves_observed_hyphens(self) -> None:
+        self.assertEqual(
+            join_text_chunks_preserving_hyphens(["Sentence-", "BERT embeddings"]),
+            "Sentence-BERT embeddings",
+        )
+        self.assertEqual(
+            join_text_chunks_preserving_hyphens(["example sum-", "maries"]),
+            "example sum-maries",
+        )
+
+    def test_section_inventory_pairs_position_verified_number_and_title(self) -> None:
+        positioned_lines = [
+            {"text": "2", "bbox": [307, 253, 313, 266], "is_bold": True},
+            {"text": "Background", "bbox": [325, 253, 390, 266], "is_bold": True},
+            {"text": "2.1", "bbox": [307, 275, 321, 286], "is_bold": True},
+            {"text": "Manual Evaluation", "bbox": [332, 275, 430, 286], "is_bold": True},
+            {"text": "3.4.1", "bbox": [307, 350, 329, 361], "is_bold": True},
+            {"text": "LSA and Doc2vec", "bbox": [340, 350, 423, 361], "is_bold": True},
+            {"text": "5", "bbox": [90, 107, 95, 117], "is_bold": False},
+        ]
+        page = {
+            "pdf_page_number": 2,
+            "normalized_text": (
+                "2\nBackground\nBody text.\n2.1\nManual Evaluation\nMore text.\n"
+                "3.4.1\nLSA and Doc2vec\nDetails.\n"
+            ),
+            "positioned_lines": positioned_lines,
+        }
+
+        candidates = positioned_numbered_headings(positioned_lines)
+        sections = extract_sections([page])
+
+        expected = ["2 Background", "2.1 Manual Evaluation", "3.4.1 LSA and Doc2vec"]
+        self.assertEqual([item["heading"] for item in candidates], expected)
+        self.assertEqual([item["heading"] for item in sections], expected)
+
+    def test_crossref_inventory_handles_series_and_cross_page_word_break(self) -> None:
+        pages = [
+            {
+                "pdf_page_number": 7,
+                "page_label": "7",
+                "normalized_text": "See Sections 3.1 and 3.2. Examples appear in Ap-\n",
+                "raw_text": "",
+            },
+            {
+                "pdf_page_number": 8,
+                "page_label": "8",
+                "normalized_text": "Figure 4: Results\npendix A. Their scores follow.\n",
+                "raw_text": "",
+            },
+        ]
+
+        crossrefs = extract_crossrefs(pages)
+        indexed = {(item["page"], item["kind"].lower(), item["label"]): item for item in crossrefs}
+
+        self.assertIn((7, "sections", "3.1"), indexed)
+        self.assertIn((7, "sections", "3.2"), indexed)
+        self.assertEqual(indexed[(7, "appendix", "A")]["source"], "cross_page_hyphenated_reference")
+
+    def test_parser_warning_label_uses_finding_summary(self) -> None:
+        self.assertEqual(
+            finding_label(
+                {
+                    "id": "PARSER-001",
+                    "finding_summary": "Equation delimiters are unresolved.",
+                    "claim_text": "Equation delimiters are preserved.",
+                }
+            ),
+            "PARSER-001: Equation delimiters are unresolved.",
+        )
+
     def test_refresh_editor_require_paths_reports_missing_prerequisites(self) -> None:
         missing = self.config_path("missing_editor_prereq.json")
 
@@ -1461,6 +1645,7 @@ class ReviewerConfigTests(unittest.TestCase):
                     "two_column_detected": True,
                     "landscape": False,
                     "raw_sorted_similarity": 0.5,
+                    "unresolved_math_glyph_count": 1,
                 }
             ]
         )
@@ -1468,6 +1653,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(summary["ocr_recommended_pages"], [7])
         self.assertEqual(summary["two_column_pages"], [7])
         self.assertEqual(summary["reading_order_review_pages"], [7])
+        self.assertEqual(summary["unresolved_math_glyph_pages"], [7])
 
     def test_two_column_normalization_uses_verified_native_column_order(self) -> None:
         blocks = [
@@ -1497,6 +1683,38 @@ class ReviewerConfigTests(unittest.TestCase):
         text, strategy = choose_normalized_text("native", "sorted", blocks, 595, True)
         self.assertEqual(text, "sorted")
         self.assertEqual(strategy, "coordinate_sorted")
+
+    def test_normalization_prefers_repaired_native_text_when_sorted_alignment_fails(self) -> None:
+        text, strategy = choose_normalized_text(
+            "native with []",
+            "sorted with hi",
+            [],
+            595,
+            False,
+            {
+                "positioned_font_glyph_repair_count": 2,
+                "raw_positioned_glyph_repair_applied_count": 2,
+                "sorted_positioned_glyph_repair_applied_count": 0,
+            },
+        )
+
+        self.assertEqual(text, "native with []")
+        self.assertEqual(strategy, "native_content_order_font_fidelity")
+
+        quality = page_quality_summary(
+            [
+                {
+                    "pdf_page_number": 9,
+                    "raw_text": "native with []",
+                    "normalized_text": "native with []",
+                    "likely_scanned": False,
+                    "normalized_text_strategy": strategy,
+                    "raw_sorted_similarity": 0.6,
+                }
+            ]
+        )
+        self.assertEqual(quality["font_fidelity_order_fallback_pages"], [9])
+        self.assertEqual(quality["reading_order_review_pages"], [9])
 
     def test_heading_filter_rejects_chart_and_body_fragments(self) -> None:
         self.assertFalse(is_heading("0.87 Prefer more tangible assets Tax on consumers 0.39"))

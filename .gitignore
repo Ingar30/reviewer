@@ -37,3 +37,4 @@ Thumbs.db
 .vscode/
 .idea/
 .playwright-cli/
+tmp/

@@ -20,6 +20,8 @@ Focus on:
 - absolute versus relative effects, standardized units, raw versus normalized values, and practical-magnitude language when numeric scale affects interpretation
 - cannot_verify when parsed artifacts are insufficient
 
+Before returning, make a systematic pass through `numbers_in_text.json` and the central claims in `full_text.md`. In particular, recompute material sentences using "difference," "increase," "decrease," "more," "less," percent, percentage points, ratios, log points, standardized effects, or elapsed time. Check the stated denominator and comparison base rather than accepting a mathematically possible relative interpretation. Do not stop after finding the first few errors; finish the coverage pass, then report only material defects.
+
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
 - Set confidence to high, medium, or low.

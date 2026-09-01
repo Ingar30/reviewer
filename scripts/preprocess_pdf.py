@@ -28,15 +28,15 @@ APPENDIX_HEADING_RE = re.compile(
 )
 
 TABLE_CAPTION_RE = re.compile(
-    r"^\s*Table\s+(?P<label>(?:[A-Z]\.)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
+    r"^\s*Table\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
     re.IGNORECASE,
 )
 FIGURE_CAPTION_RE = re.compile(
-    r"^\s*(?:Figure|Fig\.)\s+(?P<label>(?:[A-Z]\.)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
+    r"^\s*(?:Figure|Fig\.)\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
     re.IGNORECASE,
 )
 ANY_CAPTION_RE = re.compile(
-    r"^\s*(?:Table|Figure|Fig\.)\s+(?:[A-Z]\.)?\d+(?:\.\d+)?[A-Za-z]?\s*:",
+    r"^\s*(?:Table|Figure|Fig\.)\s+(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?\s*:",
     re.IGNORECASE,
 )
 
@@ -66,7 +66,7 @@ NUMBER_PATTERN = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-CROSSREF_LABEL_RE = r"(?:[A-Z]\.)?\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*|\d+[A-Za-z]?"
+CROSSREF_LABEL_RE = r"(?:[A-Z]\.?)?\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*"
 CROSSREF_KIND_RE = (
     r"Tables?|Figures?|Figs?\.|Sections?|Appendices|Appendixes|Appendix|"
     r"Eqs?\.|Equations?"
@@ -84,11 +84,15 @@ CROSSREF_SERIES_PATTERN = re.compile(
 )
 CROSSREF_EXPLICIT_LABEL_RE = re.compile(rf"\(?({CROSSREF_LABEL_RE})\)?")
 FIGURE_TABLE_XREF_LABEL_RE = re.compile(
-    r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.\d+(?:\.\d+)*[A-Za-z]?)$"
+    r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.?\d+(?:\.\d+)*[A-Za-z]?)$"
 )
-SECTION_XREF_LABEL_RE = re.compile(r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z](?:\.\d+)*)$")
-APPENDIX_XREF_LABEL_RE = re.compile(r"^[A-Z](?:\.\d+)*$")
-EQUATION_XREF_LABEL_RE = re.compile(r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.\d+(?:\.\d+)*)$")
+SECTION_XREF_LABEL_RE = re.compile(
+    r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.?\d+(?:\.\d+)*[A-Za-z]?|[A-Z])$"
+)
+APPENDIX_XREF_LABEL_RE = re.compile(r"^[A-Z](?:\.?\d+(?:\.\d+)*)?$")
+EQUATION_XREF_LABEL_RE = re.compile(
+    r"^(?:\d+(?:\.\d+)*[A-Za-z]?|[A-Z]\.?\d+(?:\.\d+)*)$"
+)
 
 REF_START_RE = re.compile(r"^\s*(references|bibliography)\s*$", re.IGNORECASE)
 REF_ENTRY_START_RE = re.compile(
@@ -671,6 +675,7 @@ def choose_normalized_text(
     page_width: float,
     two_column_detected: bool,
     repair_summary: dict[str, Any] | None = None,
+    landscape: bool = False,
 ) -> tuple[str, str]:
     if two_column_detected and native_blocks_are_column_major(blocks, page_width):
         return raw_text, "native_content_order_two_column"
@@ -684,6 +689,8 @@ def choose_normalized_text(
         )
         if planned and sorted_applied < planned and raw_applied == planned:
             return raw_text, "native_content_order_font_fidelity"
+    if landscape and raw_text and text_order_similarity(raw_text, sorted_text) < 0.9:
+        return raw_text, "native_content_order_landscape"
     return sorted_text, "coordinate_sorted"
 
 
@@ -767,6 +774,13 @@ def clean_inline_text(text: str) -> str:
 
 def normalize_page_label(label: str | None) -> str | None:
     cleaned = clean_inline_text(label or "")
+    if re.fullmatch(r"<(?:FEFF|FFFE)[0-9A-Fa-f]{4,}>", cleaned):
+        try:
+            decoded = clean_inline_text(bytes.fromhex(cleaned[1:-1]).decode("utf-16"))
+        except (UnicodeDecodeError, ValueError):
+            decoded = ""
+        if decoded and not any(unicodedata.category(char).startswith("C") for char in decoded):
+            return decoded
     return cleaned or None
 
 
@@ -969,6 +983,54 @@ def table_region_above_caption(
 
     content_bbox = union_bboxes([row["bbox"] for row in selected])
     crop_bbox = union_bboxes([content_bbox, caption_bbox])
+    crop_bbox = [
+        max(float(page.rect.x0), crop_bbox[0] - 12),
+        max(float(page.rect.y0), crop_bbox[1] - 8),
+        min(float(page.rect.x1), crop_bbox[2] + 12),
+        min(float(page.rect.y1), crop_bbox[3] + 8),
+    ]
+    return {"raw_lines": raw_lines, "crop_bbox": crop_bbox, "content_bbox": content_bbox}
+
+
+def table_region_below_caption(
+    page: fitz.Page,
+    lines: list[dict[str, Any]],
+    caption_bbox: list[float],
+) -> dict[str, Any] | None:
+    column_x0, column_x1 = caption_column_bounds(page, caption_bbox)
+    eligible = []
+    for line in lines:
+        bbox = line["bbox"]
+        center_x = (bbox[0] + bbox[2]) / 2
+        if (
+            not line.get("is_page_footer")
+            and column_x0 <= center_x <= column_x1
+            and bbox[1] >= caption_bbox[3] - 1
+        ):
+            eligible.append(line)
+
+    rows = group_positioned_rows(eligible)
+    selected: list[dict[str, Any]] = []
+    boundary = caption_bbox[3]
+    for row in rows:
+        gap = row["bbox"][1] - boundary
+        if gap < -8:
+            continue
+        if gap > (60 if not selected else 30):
+            break
+        text = row["text"]
+        if ANY_CAPTION_RE.match(text) or re.match(r"^\s*Note\s*:", text, re.IGNORECASE):
+            break
+        selected.append(row)
+        boundary = row["bbox"][3]
+
+    raw_lines = [row["text"] for row in selected]
+    numeric_rows = sum(bool(split_trailing_table_cells(text)[1]) for text in raw_lines)
+    if numeric_rows < 2:
+        return None
+
+    content_bbox = union_bboxes([row["bbox"] for row in selected])
+    crop_bbox = union_bboxes([caption_bbox, content_bbox])
     crop_bbox = [
         max(float(page.rect.x0), crop_bbox[0] - 12),
         max(float(page.rect.y0), crop_bbox[1] - 8),
@@ -1623,9 +1685,19 @@ def should_append_caption_continuation(title_so_far: str, next_text: str, y_gap:
         return False
     if not text or ANY_CAPTION_RE.match(text):
         return False
-    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|[-−]?\d|N\b|Controls\b|Control mean\b)", text):
+    continuation_expected = bool(
+        title_so_far.rstrip().endswith(":")
+        or re.search(
+            r"\b(?:a|across|an|and|between|by|for|from|in|of|on|or|the|to|versus|vs\.?|when|with|without)$",
+            title_so_far,
+            re.IGNORECASE,
+        )
+    )
+    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)", text):
         return False
-    return title_so_far.rstrip().endswith(":") or text[:1].islower()
+    if re.match(r"^[-−]?\d", text) and not continuation_expected:
+        return False
+    return continuation_expected or text[:1].islower()
 
 
 def fallback_caption_crop_bbox(page: fitz.Page) -> list[float]:
@@ -1641,17 +1713,25 @@ def should_append_raw_caption_continuation(title_so_far: str, next_text: str) ->
     text = clean_inline_text(next_text)
     if not text or ANY_CAPTION_RE.match(text):
         return False
-    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|[-−]?\d|N\b|Controls\b|Control mean\b)", text):
+    continuation_expected = bool(
+        title_so_far.rstrip().endswith(":")
+        or re.search(
+            r"\b(?:a|across|an|and|between|by|for|from|in|of|on|or|the|to|versus|vs\.?|when|with|without)$",
+            title_so_far,
+            re.IGNORECASE,
+        )
+    )
+    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)", text):
+        return False
+    if re.match(r"^[-−]?\d", text) and not continuation_expected:
         return False
     if len(text) > 180:
         return False
-    if title_so_far.rstrip().endswith(":"):
+    if continuation_expected:
         return True
     if title_so_far.rstrip().endswith((".", "?", "!", ")")):
         return False
     if text[:1].islower():
-        return True
-    if re.search(r"\b(?:and|or|of|for|from|to|when|with|without|by|in|on|the|a|an)$", title_so_far, re.IGNORECASE):
         return True
     return False
 
@@ -1787,12 +1867,19 @@ def extract_captioned_items(
             caption_source = "positioned_lines"
 
             if kind == "table":
-                table_region = table_region_above_caption(page, lines, caption_bbox)
+                table_region = table_region_below_caption(
+                    page, lines[body_start:body_end], caption_bbox
+                )
+                if table_region is not None:
+                    caption_source = "positioned_lines_below_caption"
+                else:
+                    table_region = table_region_above_caption(page, lines, caption_bbox)
+                    if table_region is not None:
+                        caption_source = "positioned_lines_above_caption"
                 if table_region is not None:
                     crop_bbox = table_region["crop_bbox"]
                     raw_lines = table_region["raw_lines"]
                     body_lines = table_region["raw_lines"]
-                    caption_source = "positioned_lines_above_caption"
             else:
                 figure_crop = figure_crop_above_caption(page, caption_bbox)
                 if figure_crop is not None:
@@ -2544,6 +2631,7 @@ def main() -> int:
             )
             page_label = clean_page_label(page, raw_text, sorted_text)
             two_column_detected = two_column_layout_detected(page)
+            landscape = float(page.rect.width) > float(page.rect.height)
             normalized_source, normalized_text_strategy = choose_normalized_text(
                 raw_text,
                 sorted_text,
@@ -2551,6 +2639,7 @@ def main() -> int:
                 float(page.rect.width),
                 two_column_detected,
                 repair_summary,
+                landscape=landscape,
             )
             normalized_text = normalize_page_text(normalized_source)
             positioned_lines = positioned_text_lines(page, text_repairs)
@@ -2623,7 +2712,6 @@ def main() -> int:
             ocr_recommended = ocr_reason is not None
             if ocr_recommended:
                 ocr_recommended_pages.append(pdf_page_number)
-            landscape = float(page.rect.width) > float(page.rect.height)
             raw_sorted_similarity = text_order_similarity(raw_text, sorted_text)
 
             page_meta = PageMeta(

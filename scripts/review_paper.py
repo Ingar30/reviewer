@@ -29,8 +29,8 @@ PILOT_REVIEWER_NAMES = {
     "design_randomization_auditor",
     "economic_magnitude_auditor",
 }
-MAX_SELECTED_OPTIONAL_REVIEWERS = 9
-MAX_SELECTED_PILOT_REVIEWERS = 2
+MAX_SELECTED_OPTIONAL_REVIEWERS = 13
+MAX_SELECTED_PILOT_REVIEWERS = 4
 EDITOR_REPORT_REQUIRED_HEADINGS = [
     "## Executive Summary",
     "## Review Configuration",

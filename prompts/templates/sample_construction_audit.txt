@@ -20,6 +20,8 @@ Focus on:
 - whether claims use person-level, observation-level, account-level, scenario-level, or time-weighted quantities consistently
 - whether table and figure denominators or conditioning samples are clear enough for the claims they support
 
+For every empirical study or wave, trace the available flow from screened or invited observations through eligibility, assignment, download/login/onboarding, nonzero activity, follow-up, and final outcome-specific analysis. Compare figure and table N labels with stated exclusions, especially zero-consumption or active-user restrictions, and report material assigned-versus-observed denominator gaps even when the manuscript does not provide a formal flow diagram.
+
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
 - Set category to sample_restriction_mismatch, attrition_unclear, denominator_mismatch, variable_construction_unclear, data_flow_inconsistency, or cannot_verify.

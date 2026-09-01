@@ -179,8 +179,8 @@ def selector_metrics(selection_dir: Path, editor_dir: Path) -> dict[str, Any]:
             zero_finding_selected.append(name)
     optional_count = len(selected_optional)
     score = score_from_penalties(
-        max(0, optional_count - 9) * 4.0,
-        len(pilot_selected) * 2.0,
+        max(0, optional_count - 13) * 4.0,
+        max(0, len(pilot_selected) - 4) * 2.0,
         len(zero_finding_selected) * 8.0,
     )
     return {

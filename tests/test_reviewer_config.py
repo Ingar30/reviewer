@@ -6,6 +6,8 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+import fitz
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 TEMP_ROOT = REPO_ROOT / "work" / "test-tmp"
@@ -29,6 +31,8 @@ from build_editor_input import (  # noqa: E402
 )
 from normalize_review_outputs import issue_class, normalize, should_merge  # noqa: E402
 from preprocess_pdf import (  # noqa: E402
+    FIGURE_CAPTION_RE,
+    TABLE_CAPTION_RE,
     align_positioned_glyph_repairs,
     apply_text_repairs,
     attach_captions_to_auto_tables,
@@ -41,6 +45,7 @@ from preprocess_pdf import (  # noqa: E402
     is_heading,
     join_text_chunks_preserving_hyphens,
     native_blocks_are_column_major,
+    normalize_page_label,
     page_quality_summary,
     parse_captioned_table_rows,
     portable_path,
@@ -48,9 +53,12 @@ from preprocess_pdf import (  # noqa: E402
     positioned_text_repair_plan,
     repaired_word_records,
     rect_overlap_ratio,
+    should_append_caption_continuation,
     should_append_raw_caption_continuation,
     split_trailing_table_cells,
     structure_captioned_table_rows,
+    table_region_below_caption,
+    valid_crossref_label,
 )
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
@@ -642,7 +650,7 @@ class ReviewerConfigTests(unittest.TestCase):
     def test_validate_selection_output_enforces_roster_and_pilot_caps(self) -> None:
         optional = [
             reviewer_config(f"optional_{index}", f"OPT{index}", selection_policy="optional")
-            for index in range(10)
+            for index in range(14)
         ]
         selection = {
             "paper_id": "paper-x",
@@ -658,12 +666,14 @@ class ReviewerConfigTests(unittest.TestCase):
 
         errors = validate_selection_output(selection, "paper-x", [], optional)
 
-        self.assertTrue(any("count exceeds 9" in error for error in errors))
+        self.assertTrue(any("count exceeds 13" in error for error in errors))
 
         pilot_names = [
             "data_availability_replication_auditor",
             "institutional_context_auditor",
             "power_multiple_testing_auditor",
+            "design_randomization_auditor",
+            "economic_magnitude_auditor",
         ]
         pilots = [
             reviewer_config(name, f"PILOT{index}", selection_policy="optional")
@@ -673,7 +683,7 @@ class ReviewerConfigTests(unittest.TestCase):
             {"name": reviewer.name, "reason": "Distinct material cue."} for reviewer in pilots
         ]
         errors = validate_selection_output(selection, "paper-x", [], pilots)
-        self.assertTrue(any("pilot reviewer count exceeds 2" in error for error in errors))
+        self.assertTrue(any("pilot reviewer count exceeds 4" in error for error in errors))
 
     def test_selected_reviewers_from_selection_combines_mandatory_and_optional(self) -> None:
         mandatory = [reviewer_config("crossref_auditor", "CROSSREF")]
@@ -1391,14 +1401,39 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(metrics["selected_optional_count"], 10)
         self.assertEqual(metrics["pilot_selected"], ["data_availability_replication_auditor"])
         self.assertEqual(metrics["zero_finding_selected_optional"], ["data_availability_replication_auditor"])
-        self.assertEqual(metrics["score"], 86.0)
+        self.assertEqual(metrics["score"], 92.0)
 
     def test_raw_caption_continuation_accepts_split_caption_but_not_notes(self) -> None:
         self.assertTrue(should_append_raw_caption_continuation("Table 1: Analysis when", "labels disagree"))
         self.assertTrue(should_append_raw_caption_continuation("Figure 2: Distribution of", "quality scores"))
+        self.assertTrue(
+            should_append_raw_caption_continuation(
+                "Figure B.1: Validation across", "12,192 decisions and 32 codes"
+            )
+        )
+        self.assertTrue(
+            should_append_caption_continuation(
+                "Figure B.1: Validation across", "12,192 decisions and 32 codes", 11.5
+            )
+        )
         self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "Note: Standard errors"))
         self.assertFalse(should_append_raw_caption_continuation("Table 1: Results", "1.23 4.56 7.89"))
         self.assertFalse(should_append_raw_caption_continuation("Table 2: Model performances.", "in that it pushes"))
+
+    def test_caption_labels_accept_appendix_forms_with_or_without_periods(self) -> None:
+        for text in ("Table A1: Overview", "Table A.1: Overview"):
+            self.assertEqual(TABLE_CAPTION_RE.match(text).group("label"), text.split()[1][:-1])
+        for text in ("Figure A31: Results", "Figure B.5: Results"):
+            self.assertIsNotNone(FIGURE_CAPTION_RE.match(text))
+
+        for kind in ("Table", "Figure", "Section", "Appendix", "Equation"):
+            self.assertTrue(valid_crossref_label(kind, "A1"))
+            self.assertTrue(valid_crossref_label(kind, "A.1"))
+
+    def test_page_label_decodes_explicit_utf16_pdf_token(self) -> None:
+        self.assertEqual(normalize_page_label("<FEFF0030>"), "0")
+        self.assertEqual(normalize_page_label("<FEFF0041002E0031>"), "A.1")
+        self.assertEqual(normalize_page_label("<NOTHEX>"), "<NOTHEX>")
 
     def test_positioned_text_repairs_are_font_and_coordinate_grounded(self) -> None:
         raw_dict = {
@@ -1604,8 +1639,11 @@ class ReviewerConfigTests(unittest.TestCase):
     def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
 
-        self.assertIn("5 to 9 optional reviewers", prompt)
-        self.assertIn("up to 2 pilot reviewers", prompt)
+        self.assertIn("7 to 13 optional reviewers", prompt)
+        self.assertIn("up to 4 pilot reviewers", prompt)
+        self.assertIn("treat this audit as distinct", prompt)
+        self.assertIn("Numerical and robustness review are not substitutes", prompt)
+        self.assertIn("whenever a manuscript reports and interprets a substantive experiment", prompt)
         self.assertIn("not redundant", prompt)
         self.assertIn("Use skipped_optional_reviewers", prompt)
 
@@ -1697,6 +1735,22 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(text, "sorted")
         self.assertEqual(strategy, "coordinate_sorted")
 
+    def test_landscape_normalization_prefers_native_order_when_sorting_is_unstable(self) -> None:
+        raw = "Figure B.5\nPanel A\nSupport tariffs\nPanel B\nOppose tariffs"
+        sorted_text = "Support Panel Oppose B.5 tariffs Figure Panel tariffs A B"
+
+        text, strategy = choose_normalized_text(
+            raw,
+            sorted_text,
+            [],
+            792,
+            False,
+            landscape=True,
+        )
+
+        self.assertEqual(text, raw)
+        self.assertEqual(strategy, "native_content_order_landscape")
+
     def test_normalization_prefers_repaired_native_text_when_sorted_alignment_fails(self) -> None:
         text, strategy = choose_normalized_text(
             "native with []",
@@ -1755,6 +1809,31 @@ class ReviewerConfigTests(unittest.TestCase):
         missing_label, missing_cells = split_trailing_table_cells("LSA - 0.726 0.755")
         self.assertEqual(missing_label, "LSA")
         self.assertEqual(missing_cells, ["-", "0.726", "0.755"])
+
+    def test_table_region_prefers_numeric_rows_below_caption_and_stops_at_note(self) -> None:
+        page = mock.Mock()
+        page.rect = fitz.Rect(0, 0, 600, 800)
+        lines = [
+            {"text": "(1) (2)", "bbox": [220, 105, 380, 115], "is_page_footer": False},
+            {
+                "text": "Treatment -0.547*** 0.219**",
+                "bbox": [70, 125, 530, 137],
+                "is_page_footer": False,
+            },
+            {
+                "text": "Constant 0.319*** 0.044***",
+                "bbox": [70, 145, 530, 157],
+                "is_page_footer": False,
+            },
+            {"text": "Note: Robust standard errors.", "bbox": [70, 170, 530, 182], "is_page_footer": False},
+        ]
+
+        region = table_region_below_caption(page, lines, [60, 70, 540, 88])
+
+        self.assertIsNotNone(region)
+        self.assertIn("Treatment -0.547*** 0.219**", region["raw_lines"])
+        self.assertNotIn("Note: Robust standard errors.", region["raw_lines"])
+        self.assertLess(region["crop_bbox"][3], 170)
 
     def test_reference_inventory_uses_hanging_indents_and_stops_at_appendix(self) -> None:
         page = {

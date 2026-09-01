@@ -22,6 +22,16 @@
       "selection_policy": "mandatory"
     },
     {
+      "name": "source_consistency_auditor",
+      "prompt": "source_consistency_audit.txt",
+      "output": "source_consistency_auditor.json",
+      "id_prefix": "SOURCE",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "mandatory"
+    },
+    {
       "name": "numerical_auditor",
       "prompt": "numerical_audit.txt",
       "output": "numerical_auditor.json",

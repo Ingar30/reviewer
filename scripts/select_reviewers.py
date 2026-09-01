@@ -74,7 +74,13 @@ def main() -> int:
         args.reasoning_effort,
         args.timeout_minutes * 60,
     )
-    errors = validate_selection_output(selection, args.paper_id, mandatory_reviewers, optional_reviewers)
+    errors = validate_selection_output(
+        selection,
+        args.paper_id,
+        mandatory_reviewers,
+        optional_reviewers,
+        expected_selection_mode="dynamic",
+    )
     if errors:
         raise RuntimeError("Reviewer selection failed: " + "; ".join(errors))
 

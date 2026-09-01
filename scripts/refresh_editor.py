@@ -87,7 +87,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--reasoning-effort",
-        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        choices=["none", "low", "medium", "high", "xhigh", "max"],
         default=None,
         help=(
             "Override Codex model_reasoning_effort when --run-editor is used. "

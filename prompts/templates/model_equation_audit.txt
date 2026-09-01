@@ -20,6 +20,8 @@ Focus on:
 - notation or definition drift between model text, calibration tables, table notes, and appendix formulas
 - model claims that do not follow from the displayed setup
 
+For every displayed regression or model table supporting a central claim, cross-check the dependent variable, sample, treatment or instrument, reference group, fixed effects, estimator, and displayed equation against the prose and table note. Use cannot_verify when a glyph or layout artifact makes an exact check unsafe.
+
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
 - Set category to notation_inconsistency, equation_text_mismatch, assumption_mismatch, sign_or_definition_error, model_interpretation_overreach, or cannot_verify.

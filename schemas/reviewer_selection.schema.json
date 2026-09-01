@@ -21,6 +21,10 @@
       "type": "string",
       "enum": ["high", "medium", "low"]
     },
+    "selection_mode": {
+      "type": "string",
+      "enum": ["dynamic", "static"]
+    },
     "selected_optional_reviewers": {
       "type": "array",
       "items": {

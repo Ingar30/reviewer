@@ -22,6 +22,8 @@ Focus on:
 
 Ground critiques in concrete studies. A finding that says a novelty claim is overstated, that prior literature already covers an issue, or that the manuscript mischaracterizes a literature must cite specific studies or external sources in source_objects. If a broad novelty claim cannot be verified or contradicted with concrete studies, use cannot_verify rather than asserting lack of novelty.
 
+Check every central named prior-study characterization used to establish novelty, contrast mechanisms, describe an estimate, or motivate the design. Verify the manuscript's specific characterization rather than merely confirming that the cited paper exists.
+
 For every finding:
 - Set issue_type to manuscript_issue or cannot_verify.
 - Set confidence to high, medium, or low.

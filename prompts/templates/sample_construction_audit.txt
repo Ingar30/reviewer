@@ -19,6 +19,8 @@ Focus on:
 - consistency between data section, tables, figures, appendices, and result interpretation
 - whether claims use person-level, observation-level, account-level, scenario-level, or time-weighted quantities consistently
 - whether table and figure denominators or conditioning samples are clear enough for the claims they support
+- repeated-record timing and aggregation rules, including first/last/average/person weighting and the unit used when people contribute multiple observations
+- cross-source definition and coding reconciliation, especially human-coded versus AI- or LLM-coded measures, thresholds, missingness, and repeated versions of the same construct
 
 For every empirical study or wave, trace the available flow from screened or invited observations through eligibility, assignment, download/login/onboarding, nonzero activity, follow-up, and final outcome-specific analysis. Compare figure and table N labels with stated exclusions, especially zero-consumption or active-user restrictions, and report material assigned-versus-observed denominator gaps even when the manuscript does not provide a formal flow diagram.
 

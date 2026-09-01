@@ -22,6 +22,7 @@ SEVERITY_POINTS = {"high": 60, "medium": 35, "low": 10}
 CONFIDENCE_POINTS = {"high": 15, "medium": 8, "low": 0}
 TOP_SYNTHESIS_SCORE = 55
 MAX_SYNTHESIS_FINDINGS = 8
+MAX_EDITOR_INPUT_BYTES = 1_000_000
 
 
 def read(path: Path) -> str:
@@ -40,7 +41,7 @@ def require_file(path: Path, label: str) -> None:
 
 
 def compact(value: Any) -> str:
-    return " ".join(str(value or "").split())
+    return " ".join(("" if value is None else str(value)).split())
 
 
 def source_id_text(finding: dict[str, Any]) -> str:
@@ -138,6 +139,7 @@ def finding_area(finding: dict[str, Any]) -> str:
         reviewers = reviewer_names(finding)
         area_by_reviewer = [
             ("crossref_auditor", "Cross-reference"),
+            ("source_consistency_auditor", "Source consistency"),
             ("numerical_auditor", "Numerical"),
             ("claim_evidence_auditor", "Claim/evidence"),
             ("identification_auditor", "Identification"),
@@ -207,6 +209,17 @@ def cap_synthesis_routes(
     return capped
 
 
+def requires_body_coverage(finding: dict[str, Any]) -> bool:
+    if finding.get("severity") not in {"high", "medium"}:
+        return False
+    return finding.get("issue_class") in {
+        "manuscript_issue",
+        "cannot_verify",
+        "reference_integrity",
+        "parser_artifact",
+    }
+
+
 def selector_path_for_bundle(bundle_path: Path) -> Path:
     return bundle_path.parent.parent / "selection" / "reviewer_selection.json"
 
@@ -226,7 +239,7 @@ def active_reviewer_rows(
     bundle_json: dict[str, Any],
     review_json_by_name: dict[str, Any],
     selection_json: dict[str, Any] | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     output_by_name = {
         item.get("reviewer"): item
         for item in bundle_json.get("source_reviewer_outputs", [])
@@ -248,27 +261,37 @@ def active_reviewer_rows(
                 "role": reviewer.normalization_role,
                 "selection_policy": reviewer.selection_policy,
                 "selection_reason": reason,
+                "summary": str(output.get("summary") or review_json.get("summary") or ""),
+                "notes": output.get("notes") or review_json.get("notes") or [],
             }
         )
     return rows
 
 
-def optional_reviewer_rows(selection_json: dict[str, Any] | None) -> list[list[str]]:
-    if not selection_json:
-        return []
-    return [
+def optional_reviewer_rows(
+    selection_json: dict[str, Any] | None, reviewers: list[Any]
+) -> list[list[str]]:
+    selected = [
         [str(item.get("name") or ""), str(item.get("reason") or "selected by reviewer selector")]
-        for item in selection_json.get("selected_optional_reviewers", [])
+        for item in (selection_json or {}).get("selected_optional_reviewers", [])
         if isinstance(item, dict) and item.get("name")
+    ]
+    if selected:
+        return selected
+    return [
+        [reviewer.name, "Active configured optional reviewer; selector provenance unavailable."]
+        for reviewer in reviewers
+        if reviewer.selection_policy == "optional"
     ]
 
 
-def reviewer_status_caveats(rows: list[dict[str, str]]) -> list[list[str]]:
+def reviewer_status_caveats(rows: list[dict[str, Any]]) -> list[list[str]]:
     caveats = []
     for row in rows:
         status = row.get("status", "unknown")
         if status != "ok":
-            caveats.append([row["reviewer"], status, row["selection_reason"]])
+            detail = row.get("summary") or "; ".join(row.get("notes") or [])
+            caveats.append([row["reviewer"], status, detail or row["selection_reason"]])
     return caveats
 
 
@@ -308,7 +331,7 @@ def editor_brief_markdown(
 
     active_rows = active_reviewer_rows(reviewers, bundle_json, review_json_by_name, selection_json)
     baseline_reviewers = ", ".join(row["reviewer"] for row in active_rows if row["selection_policy"] == "mandatory")
-    optional_rows = optional_reviewer_rows(selection_json)
+    optional_rows = optional_reviewer_rows(selection_json, reviewers)
 
     chunks = ["# Deterministic Editor Brief\n\n"]
     chunks.append("Use this brief as the organizing map for the report. The normalized bundle remains authoritative for details and traceability. This brief is internal guidance; do not reproduce run summaries, scoring tables, routing tables, reviewer-count tables, or this wording in the final report.\n\n")
@@ -320,15 +343,24 @@ def editor_brief_markdown(
     chunks.append(f"- confidences: `{json.dumps(dict(confidence_counts), sort_keys=True)}`\n\n")
     chunks.append("## Review Configuration Guidance\n\n")
     chunks.append(f"- Mandatory baseline reviewers: {baseline_reviewers or 'none recorded'}.\n")
-    if selection_json:
+    selection_mode = (selection_json or {}).get("selection_mode")
+    if selection_mode == "static":
+        chunks.append(
+            "- Static quality-first mode ran every enabled optional reviewer; no model-based selector filtering was used.\n"
+        )
+    elif selection_json:
         chunks.append(f"- Reviewer selector classified the paper as `{selection_json.get('paper_type', 'unknown')}` with `{selection_json.get('selection_confidence', 'unknown')}` confidence.\n")
+    else:
+        chunks.append(
+            "- Selection provenance is unavailable; the active configured optional reviewers listed below were run.\n"
+        )
     chunks.append("- In the final report, summarize reviewer selection in prose only; do not print reviewer-count or active-reviewer tables.\n\n")
     chunks.append("Optional reviewers used and why:\n")
     chunks.append(markdown_table(["Reviewer", "Selection reason"], optional_rows))
     status_caveats = reviewer_status_caveats(active_rows)
     if status_caveats:
         chunks.append("\nReviewer status caveats to mention only if they materially limit confidence:\n")
-        chunks.append(markdown_table(["Reviewer", "Status", "Selection reason"], status_caveats))
+        chunks.append(markdown_table(["Reviewer", "Status", "Coverage summary"], status_caveats))
 
     chunks.append("\n## Findings Recommended For Cross-Agent Synthesis\n\n")
     chunks.append(
@@ -368,6 +400,30 @@ def editor_brief_markdown(
         )
     )
 
+    required_coverage = [
+        finding for finding in findings if requires_body_coverage(finding)
+    ]
+    chunks.append("\n## Required Body Coverage Audit\n\n")
+    chunks.append(
+        "Before finalizing, silently confirm that every row below is addressed in a substantive body section. "
+        "A traceability row alone does not count; one body discussion may cover several genuinely related rows.\n\n"
+    )
+    chunks.append(
+        markdown_table(
+            ["Canonical ID", "Class", "Severity", "Location", "Issue"],
+            [
+                [
+                    canonical_id_text(finding),
+                    finding.get("issue_class"),
+                    finding.get("severity"),
+                    primary_location_text(finding),
+                    short_text(finding_problem_text(finding)),
+                ]
+                for finding in required_coverage
+            ],
+        )
+    )
+
     chunks.append("\n## Section Routing Guidance\n\n")
     chunks.append(
         markdown_table(
@@ -401,6 +457,89 @@ def editor_brief_markdown(
     )
 
     return "".join(chunks).rstrip() + "\n"
+
+
+def reviewer_provenance_markdown(
+    reviewers: list[Any],
+    review_paths: list[Path],
+    review_json_by_name: dict[str, Any],
+) -> str:
+    rows = []
+    for reviewer, path in zip(reviewers, review_paths, strict=True):
+        review_json = review_json_by_name.get(reviewer.name, {})
+        rows.append(
+            [
+                review_json.get("reviewer") or reviewer.name,
+                path.as_posix(),
+                review_json.get("run_status") or "unknown",
+                len(review_json.get("findings", [])),
+            ]
+        )
+    return markdown_table(["Reviewer", "Validated JSON path", "Status", "Findings"], rows)
+
+
+def editor_input_document(
+    *,
+    paper_id: str,
+    editor_prompt_text: str,
+    bundle_path: Path,
+    bundle_json: dict[str, Any],
+    reviews_dir: Path,
+    reviewers: list[Any],
+    review_paths: list[Path],
+    review_json_by_name: dict[str, Any],
+    selection_json: dict[str, Any] | None,
+    compact_bundle: bool,
+) -> str:
+    bundle_text = json.dumps(
+        bundle_json,
+        ensure_ascii=False,
+        indent=None if compact_bundle else 2,
+        separators=(",", ":") if compact_bundle else None,
+    )
+    chunks = [editor_prompt_text]
+    chunks.append("\n\n# Editor Input Metadata\n\n")
+    chunks.append(f"- paper_id: `{paper_id}`\n")
+    chunks.append(f"- normalized_bundle: `{bundle_path.as_posix()}`\n")
+    chunks.append(f"- reviews_dir: `{reviews_dir.as_posix()}`\n")
+    chunks.append("\n\n")
+    chunks.append(
+        editor_brief_markdown(
+            paper_id, bundle_json, reviewers, review_json_by_name, selection_json
+        )
+    )
+    chunks.append("\n\n# Normalized Editor Bundle\n\n```json\n")
+    chunks.append(bundle_text)
+    chunks.append("\n```\n")
+    chunks.append("\n\n# Validated Reviewer Output Provenance\n\n")
+    chunks.append(
+        "The files below were identity-, schema-, semantic-, and provenance-validated before "
+        "normalization. Their substantive finding details are preserved in the normalized bundle; "
+        "the paths are retained for auditability only.\n\n"
+    )
+    chunks.append(
+        reviewer_provenance_markdown(reviewers, review_paths, review_json_by_name)
+    )
+    return "".join(chunks)
+
+
+def bounded_editor_input(
+    document_args: dict[str, Any], max_bytes: int = MAX_EDITOR_INPUT_BYTES
+) -> tuple[str, str, int]:
+    editor_input = editor_input_document(**document_args, compact_bundle=False)
+    serialization = "pretty"
+    byte_count = len(editor_input.encode("utf-8"))
+    if byte_count > max_bytes:
+        editor_input = editor_input_document(**document_args, compact_bundle=True)
+        serialization = "minified"
+        byte_count = len(editor_input.encode("utf-8"))
+    if byte_count > max_bytes:
+        raise ValueError(
+            f"Editor input is {byte_count:,} UTF-8 bytes after lossless minification, "
+            f"exceeding the {max_bytes:,}-byte safety budget. "
+            "The builder will not truncate evidence."
+        )
+    return editor_input, serialization, byte_count
 
 
 def main() -> int:
@@ -441,27 +580,22 @@ def main() -> int:
         review_paths.append(path)
         review_json_by_name[reviewer.name] = review_json
 
-    chunks = []
-    chunks.append(read(editor_prompt))
-    chunks.append("\n\n# Editor Input Metadata\n\n")
-    chunks.append(f"- paper_id: `{args.paper_id}`\n")
-    chunks.append(f"- normalized_bundle: `{bundle.as_posix()}`\n")
-    chunks.append(f"- reviews_dir: `{reviews_dir.as_posix()}`\n")
-    chunks.append("\n\n")
-    chunks.append(editor_brief_markdown(args.paper_id, bundle_json, reviewers, review_json_by_name, selection_json))
-    chunks.append("\n\n# Normalized Editor Bundle\n\n```json\n")
-    chunks.append(read(bundle))
-    chunks.append("\n```\n")
-
-    chunks.append("\n\n# Original Configured Reviewer Outputs\n")
-    for path in review_paths:
-        chunks.append(f"\n\n## {path.name}\n\n```json\n")
-        chunks.append(read(path))
-        chunks.append("\n```\n")
+    document_args = {
+        "paper_id": args.paper_id,
+        "editor_prompt_text": read(editor_prompt),
+        "bundle_path": bundle,
+        "bundle_json": bundle_json,
+        "reviews_dir": reviews_dir,
+        "reviewers": reviewers,
+        "review_paths": review_paths,
+        "review_json_by_name": review_json_by_name,
+        "selection_json": selection_json,
+    }
+    editor_input, serialization, byte_count = bounded_editor_input(document_args)
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("".join(chunks), encoding="utf-8")
-    print(f"Wrote editor input: {output}")
+    output.write_text(editor_input, encoding="utf-8")
+    print(f"Wrote editor input: {output} ({byte_count:,} bytes, {serialization} bundle)")
     return 0
 
 

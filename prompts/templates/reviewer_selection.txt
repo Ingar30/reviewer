@@ -8,6 +8,8 @@ Classify paper_id "{paper_id}" using parsed artifacts under:
 Return one JSON object that strictly conforms to:
 `{selection_schema_path}`
 
+Set `selection_mode` to `dynamic`.
+
 Select optional reviewers only from this catalog:
 
 ```json

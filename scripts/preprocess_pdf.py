@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -28,15 +29,17 @@ APPENDIX_HEADING_RE = re.compile(
 )
 
 TABLE_CAPTION_RE = re.compile(
-    r"^\s*Table\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
+    r"^\s*Table\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)"
+    r"(?:\s*:\s*(?P<title>.+?))?\s*$",
     re.IGNORECASE,
 )
 FIGURE_CAPTION_RE = re.compile(
-    r"^\s*(?:Figure|Fig\.)\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)\s*:\s*(?P<title>.+?)\s*$",
+    r"^\s*(?:Figure|Fig\.)\s+(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)"
+    r"(?:\s*:\s*(?P<title>.+?))?\s*$",
     re.IGNORECASE,
 )
 ANY_CAPTION_RE = re.compile(
-    r"^\s*(?:Table|Figure|Fig\.)\s+(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?\s*:",
+    r"^\s*(?:Table|Figure|Fig\.)\s+(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?(?:\s*:|\s*$)",
     re.IGNORECASE,
 )
 
@@ -111,7 +114,12 @@ APPENDIX_START_RE = re.compile(
     re.IGNORECASE,
 )
 REF_SECTION_END_RE = re.compile(
-    r"^\s*(?:for online publication only:?|(?:[A-Z]\s+)?(?:(?:main|additional)\s+)?(?:figures and tables|tables and figures))\s*$",
+    r"^\s*(?:for online publication only:?|(?:[A-Z]\s+)?(?:(?:main|additional)\s+)?"
+    r"(?:figures(?:\s+and\s+tables)?|tables(?:\s+and\s+figures)?))\s*$",
+    re.IGNORECASE,
+)
+REF_FOOTNOTE_RE = re.compile(
+    r"^\s*\d{1,3}\s+(?:See(?:\s+e\.?g\.?)?|For\b|This\b|We\b)",
     re.IGNORECASE,
 )
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}[a-z]?\b", re.IGNORECASE)
@@ -876,7 +884,7 @@ def positioned_text_lines(
         replacements, _repair_summary = page_text_repair_plan(page)
     lines: list[dict[str, Any]] = []
     text_dict = page.get_text("dict", sort=False) or {}
-    for block in text_dict.get("blocks", []):
+    for block_index, block in enumerate(text_dict.get("blocks", [])):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
@@ -895,6 +903,11 @@ def positioned_text_lines(
                 {
                     "text": text,
                     "bbox": bbox,
+                    "block_index": block_index,
+                    "font_size": max(
+                        (float(span.get("size", 0.0)) for span in spans),
+                        default=0.0,
+                    ),
                     "is_bold": any(int(span.get("flags", 0)) & 16 for span in spans),
                     "is_page_footer": bool(re.fullmatch(r"\d+", text))
                     and bbox[1] > float(page.rect.height) * 0.82,
@@ -929,6 +942,8 @@ def group_positioned_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def caption_column_bounds(page: fitz.Page, caption_bbox: list[float]) -> tuple[float, float]:
     page_width = float(page.rect.width)
+    if float(page.rect.width) > float(page.rect.height):
+        return float(page.rect.x0) + 24, float(page.rect.x1) - 24
     midpoint = float(page.rect.x0) + page_width / 2
     caption_width = caption_bbox[2] - caption_bbox[0]
     if caption_bbox[0] < midpoint < caption_bbox[2] or caption_width >= page_width * 0.55:
@@ -1012,6 +1027,7 @@ def table_region_below_caption(
     rows = group_positioned_rows(eligible)
     selected: list[dict[str, Any]] = []
     boundary = caption_bbox[3]
+    numeric_rows_seen = 0
     for row in rows:
         gap = row["bbox"][1] - boundary
         if gap < -8:
@@ -1019,14 +1035,23 @@ def table_region_below_caption(
         if gap > (60 if not selected else 30):
             break
         text = row["text"]
-        if ANY_CAPTION_RE.match(text) or re.match(r"^\s*Note\s*:", text, re.IGNORECASE):
+        row_cells = split_trailing_table_cells(text)[1]
+        if ANY_CAPTION_RE.match(text) or re.match(r"^\s*Notes?\s*:", text, re.IGNORECASE):
+            break
+        if (
+            selected
+            and numeric_rows_seen >= 2
+            and len(row_cells) < 2
+            and (gap > 18 or is_heading(text))
+        ):
             break
         selected.append(row)
+        if row_cells:
+            numeric_rows_seen += 1
         boundary = row["bbox"][3]
 
     raw_lines = [row["text"] for row in selected]
-    numeric_rows = sum(bool(split_trailing_table_cells(text)[1]) for text in raw_lines)
-    if numeric_rows < 2:
+    if numeric_rows_seen < 2:
         return None
 
     content_bbox = union_bboxes([row["bbox"] for row in selected])
@@ -1473,12 +1498,17 @@ def extract_crossrefs(page_records: list[dict[str, Any]]) -> list[dict[str, Any]
                 }
             )
         raw_text = page.get("raw_text", "")
+        raw_lines = raw_text.splitlines()
+        cleaned_raw_lines = [clean_inline_text(raw_line) for raw_line in raw_lines]
         offset = 0
-        for line_number, raw_line in enumerate(raw_text.splitlines(), start=1):
-            line = clean_inline_text(raw_line)
+        for line_index, raw_line in enumerate(raw_lines):
+            line_number = line_index + 1
+            line = cleaned_raw_lines[line_index]
             for kind, pattern in (("Table", TABLE_CAPTION_RE), ("Figure", FIGURE_CAPTION_RE)):
                 match = pattern.match(line)
-                if not match:
+                if not match or not supported_caption_match(
+                    kind.lower(), match, cleaned_raw_lines, line_index
+                ):
                     continue
                 label = match.group("label")
                 key = (page["pdf_page_number"], normalized_crossref_kind(kind), label)
@@ -1517,19 +1547,48 @@ def merge_reference_line_fragments(
     for line in lines:
         if line.get("is_page_footer"):
             continue
-        item = {"text": line["text"], "bbox": list(line["bbox"])}
+        item = {
+            "text": line["text"],
+            "bbox": list(line["bbox"]),
+            "block_index": line.get("block_index"),
+        }
         column = reference_column(item["bbox"], page_width)
         if merged:
             previous = merged[-1]
             previous_column = reference_column(previous["bbox"], page_width)
             same_baseline = abs(item["bbox"][1] - previous["bbox"][1]) <= 1.5
-            if column == previous_column and same_baseline:
-                fragments = sorted([previous, item], key=lambda part: part["bbox"][0])
+            fragments = sorted([previous, item], key=lambda part: part["bbox"][0])
+            horizontal_gap = max(
+                0.0, fragments[1]["bbox"][0] - fragments[0]["bbox"][2]
+            )
+            same_block_fragment = (
+                item.get("block_index") is not None
+                and item.get("block_index") == previous.get("block_index")
+                and horizontal_gap <= 32
+            )
+            if same_baseline and (column == previous_column or same_block_fragment):
                 previous["text"] = clean_inline_text(" ".join(part["text"] for part in fragments))
                 previous["bbox"] = union_bboxes([part["bbox"] for part in fragments])
                 continue
         merged.append(item)
     return merged
+
+
+def repeated_reference_headers(prepared_pages: list[dict[str, Any]]) -> set[str]:
+    counts: Counter[str] = Counter()
+    for page in prepared_pages:
+        page_height = float(page.get("page_height", 0.0))
+        if page_height <= 0:
+            continue
+        page_headers = {
+            clean_inline_text(line["text"]).casefold()
+            for line in page.get("reference_lines", [])
+            if line["bbox"][1] <= page_height * 0.12
+            and 3 <= len(clean_inline_text(line["text"])) <= 200
+            and not REF_START_RE.match(line["text"])
+        }
+        counts.update(page_headers)
+    return {text for text, count in counts.items() if count >= 2}
 
 
 def extract_reference_list_positioned(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1538,6 +1597,18 @@ def extract_reference_list_positioned(page_records: list[dict[str, Any]]) -> lis
         page_width = float(page.get("page_width", 0.0))
         lines = merge_reference_line_fragments(page.get("positioned_lines", []), page_width)
         prepared_pages.append({**page, "reference_lines": lines})
+    repeated_headers = repeated_reference_headers(prepared_pages)
+    for page in prepared_pages:
+        page_height = float(page.get("page_height", 0.0))
+        page["reference_lines"] = [
+            line
+            for line in page["reference_lines"]
+            if not (
+                page_height > 0
+                and line["bbox"][1] <= page_height * 0.12
+                and clean_inline_text(line["text"]).casefold() in repeated_headers
+            )
+        ]
 
     started = False
     entries: list[dict[str, Any]] = []
@@ -1569,8 +1640,20 @@ def extract_reference_list_positioned(page_records: list[dict[str, Any]]) -> lis
             split_appendix_heading = bool(
                 re.fullmatch(r"[A-Z]", text) and REF_SECTION_END_RE.match(next_text)
             )
-            if APPENDIX_START_RE.match(text) or REF_SECTION_END_RE.match(text) or split_appendix_heading:
+            if (
+                APPENDIX_START_RE.match(text)
+                or REF_SECTION_END_RE.match(text)
+                or ANY_CAPTION_RE.match(text)
+                or split_appendix_heading
+            ):
                 started = False
+                break
+            if REF_FOOTNOTE_RE.match(text):
+                if current is not None:
+                    current["text"] = join_reference_chunks(current["chunks"])
+                    del current["chunks"]
+                    entries.append(current)
+                    current = None
                 break
             if not text or re.fullmatch(r"\d+", text):
                 continue
@@ -1679,7 +1762,13 @@ def extract_reference_list(page_records: list[dict[str, Any]]) -> list[dict[str,
     return extract_reference_list_text(page_records)
 
 
-def should_append_caption_continuation(title_so_far: str, next_text: str, y_gap: float) -> bool:
+def should_append_caption_continuation(
+    title_so_far: str,
+    next_text: str,
+    y_gap: float,
+    *,
+    same_block_wrap: bool = False,
+) -> bool:
     text = clean_inline_text(next_text)
     if y_gap < -0.5 or y_gap > 18:
         return False
@@ -1693,10 +1782,23 @@ def should_append_caption_continuation(title_so_far: str, next_text: str, y_gap:
             re.IGNORECASE,
         )
     )
-    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)", text):
+    if re.match(
+        r"^(?:Notes?\s*:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)",
+        text,
+        re.IGNORECASE,
+    ):
         return False
     if re.match(r"^[-−]?\d", text) and not continuation_expected:
         return False
+    if title_so_far.count("(") > title_so_far.count(")"):
+        return True
+    if (
+        same_block_wrap
+        and len(title_so_far) >= 24
+        and len(text) <= 120
+        and not title_so_far.rstrip().endswith((".", "?", "!", ":", ";"))
+    ):
+        return True
     return continuation_expected or text[:1].islower()
 
 
@@ -1721,12 +1823,18 @@ def should_append_raw_caption_continuation(title_so_far: str, next_text: str) ->
             re.IGNORECASE,
         )
     )
-    if re.match(r"^(?:Note:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)", text):
+    if re.match(
+        r"^(?:Notes?\s*:|Panel\b|\([a-z0-9]+\)|N\b|Controls\b|Control mean\b)",
+        text,
+        re.IGNORECASE,
+    ):
         return False
     if re.match(r"^[-−]?\d", text) and not continuation_expected:
         return False
     if len(text) > 180:
         return False
+    if title_so_far.count("(") > title_so_far.count(")"):
+        return True
     if continuation_expected:
         return True
     if title_so_far.rstrip().endswith((".", "?", "!", ")")):
@@ -1734,6 +1842,73 @@ def should_append_raw_caption_continuation(title_so_far: str, next_text: str) ->
     if text[:1].islower():
         return True
     return False
+
+
+def caption_line_text(line: str | dict[str, Any]) -> str:
+    if isinstance(line, dict):
+        return clean_inline_text(str(line.get("text", "")))
+    return clean_inline_text(line)
+
+
+def label_only_figure_has_note(
+    lines: list[str] | list[dict[str, Any]], caption_index: int
+) -> bool:
+    for line in lines[caption_index + 1 :]:
+        text = caption_line_text(line)
+        if ANY_CAPTION_RE.match(text):
+            break
+        if re.match(r"^Notes?\s*:", text, re.IGNORECASE):
+            return True
+    return False
+
+
+def label_only_table_title(
+    lines: list[str] | list[dict[str, Any]], caption_index: int
+) -> str:
+    if caption_index + 1 >= len(lines):
+        return ""
+    label_line = lines[caption_index]
+    title_line = lines[caption_index + 1]
+    if not isinstance(label_line, dict) or not isinstance(title_line, dict):
+        return ""
+
+    label_bbox = label_line.get("bbox")
+    title_bbox = title_line.get("bbox")
+    title = caption_line_text(title_line)
+    if (
+        not label_line.get("is_bold")
+        or not title
+        or not isinstance(label_bbox, (list, tuple))
+        or len(label_bbox) != 4
+        or not isinstance(title_bbox, (list, tuple))
+        or len(title_bbox) != 4
+        or label_line.get("block_index") is None
+        or label_line.get("block_index") != title_line.get("block_index")
+        or abs(float(label_line.get("font_size", 0.0)) - float(title_line.get("font_size", 0.0))) > 0.5
+        or abs(float(label_bbox[0]) - float(title_bbox[0])) > 4
+        or not -1 <= float(title_bbox[1]) - float(label_bbox[3]) <= 12
+        or len(title) > 220
+        or not re.search(r"[A-Za-z]", title)
+        or ANY_CAPTION_RE.match(title)
+        or re.match(r"^(?:Notes?\s*:|Panel\b)", title, re.IGNORECASE)
+        or looks_like_table_or_axis_line(title)
+    ):
+        return ""
+    return title
+
+
+def supported_caption_match(
+    kind: str,
+    match: re.Match[str],
+    lines: list[str] | list[dict[str, Any]],
+    caption_index: int,
+) -> bool:
+    title = match.groupdict().get("title")
+    if isinstance(title, str) and title.strip():
+        return True
+    if kind == "table":
+        return bool(label_only_table_title(lines, caption_index))
+    return kind == "figure" and label_only_figure_has_note(lines, caption_index)
 
 
 def extract_raw_captioned_items_for_page(
@@ -1758,14 +1933,15 @@ def extract_raw_captioned_items_for_page(
     i = 0
     while i < len(lines):
         match = pattern.match(lines[i])
-        if not match:
+        if not match or not supported_caption_match(kind, match, lines, i):
             i += 1
             continue
 
         label = match.group("label")
-        title_parts = [clean_inline_text(match.group("title"))]
+        initial_title = clean_inline_text(match.groupdict().get("title") or "")
+        title_parts = [initial_title] if initial_title else []
         caption_end = i
-        while caption_end + 1 < len(lines):
+        while title_parts and caption_end + 1 < len(lines):
             if should_append_raw_caption_continuation(" ".join(title_parts), lines[caption_end + 1]):
                 title_parts.append(lines[caption_end + 1].strip())
                 caption_end += 1
@@ -1791,7 +1967,7 @@ def extract_raw_captioned_items_for_page(
             {
                 "kind": kind,
                 "label": label,
-                "caption": f"{display_kind} {label}: {title}",
+                "caption": f"{display_kind} {label}: {title}" if title else f"{display_kind} {label}",
                 "title": title,
                 "page": page_number,
                 "page_label": page_label,
@@ -1827,16 +2003,64 @@ def extract_captioned_items(
         i = 0
         while i < len(lines):
             match = pattern.match(lines[i]["text"])
-            if not match:
+            if not match or not supported_caption_match(kind, match, lines, i):
                 i += 1
                 continue
 
             label = match.group("label")
-            title_parts = [match.group("title").strip()]
-            caption_end = i
-            while caption_end + 1 < len(lines):
+            initial_title = clean_inline_text(match.groupdict().get("title") or "")
+            label_only_title = label_only_table_title(lines, i) if kind == "table" else ""
+            if not initial_title:
+                initial_title = label_only_title
+            title_parts = [initial_title] if initial_title else []
+            caption_end = i + 1 if label_only_title else i
+            while label_only_title and caption_end + 1 < len(lines):
+                current_line = lines[caption_end]
+                next_line = lines[caption_end + 1]
+                y_gap = float(next_line["bbox"][1]) - float(current_line["bbox"][3])
+                same_caption_block = (
+                    current_line.get("block_index") is not None
+                    and current_line.get("block_index") == next_line.get("block_index")
+                    and abs(
+                        float(current_line.get("font_size", 0.0))
+                        - float(next_line.get("font_size", 0.0))
+                    )
+                    <= 0.5
+                    and abs(
+                        float(current_line["bbox"][0]) - float(next_line["bbox"][0])
+                    )
+                    <= 4
+                    and -1 <= y_gap <= 12
+                    and not ANY_CAPTION_RE.match(next_line["text"])
+                )
+                if not same_caption_block:
+                    break
+                title_parts.append(next_line["text"].strip())
+                caption_end += 1
+
+            while not label_only_title and title_parts and caption_end + 1 < len(lines):
                 y_gap = lines[caption_end + 1]["bbox"][1] - lines[caption_end]["bbox"][1]
-                if should_append_caption_continuation(" ".join(title_parts), lines[caption_end + 1]["text"], y_gap):
+                current_line = lines[caption_end]
+                next_line = lines[caption_end + 1]
+                same_block_wrap = (
+                    current_line.get("block_index") is not None
+                    and current_line.get("block_index") == next_line.get("block_index")
+                    and abs(
+                        float(current_line.get("font_size", 0.0))
+                        - float(next_line.get("font_size", 0.0))
+                    )
+                    <= 0.5
+                    and abs(
+                        float(current_line["bbox"][0]) - float(next_line["bbox"][0])
+                    )
+                    <= 4
+                )
+                if should_append_caption_continuation(
+                    " ".join(title_parts),
+                    next_line["text"],
+                    y_gap,
+                    same_block_wrap=same_block_wrap,
+                ):
                     title_parts.append(lines[caption_end + 1]["text"].strip())
                     caption_end += 1
                 else:
@@ -1893,7 +2117,7 @@ def extract_captioned_items(
                 {
                     "kind": kind,
                     "label": label,
-                    "caption": f"{display_kind} {label}: {title}",
+                    "caption": f"{display_kind} {label}: {title}" if title else f"{display_kind} {label}",
                     "title": title,
                     "page": page_number,
                     "page_label": page_label,
@@ -1967,6 +2191,18 @@ def rect_overlap_ratio(candidate: list[float], region: list[float]) -> float:
     if candidate_area == 0:
         return 0.0
     return ((right - left) * (bottom - top)) / candidate_area
+
+
+def table_candidate_is_excluded(
+    bbox: Any, excluded_regions: list[list[float]]
+) -> bool:
+    if not excluded_regions:
+        return False
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return True
+    return any(
+        rect_overlap_ratio(list(bbox), region) >= 0.5 for region in excluded_regions
+    )
 
 
 def associated_embedded_images(
@@ -2298,11 +2534,7 @@ def save_auto_tables(
         for t in page_tables:
             bbox = t.get("bbox")
             excluded_regions = (excluded_regions_by_page or {}).get(page_number, [])
-            if (
-                isinstance(bbox, (list, tuple))
-                and len(bbox) == 4
-                and any(rect_overlap_ratio(list(bbox), region) >= 0.5 for region in excluded_regions)
-            ):
+            if table_candidate_is_excluded(bbox, excluded_regions):
                 continue
             rows = t.get("rows") or []
             csv_path = tables_dir / f"table_{table_counter}.csv"
@@ -2422,7 +2654,8 @@ def save_tables(
     for figure in extract_captioned_items(doc, "figure", page_labels):
         crop_bbox = figure.get("crop_bbox")
         if (
-            figure.get("caption_source") == "positioned_lines_visual_anchor"
+            figure.get("caption_source")
+            in {"positioned_lines", "positioned_lines_visual_anchor"}
             and isinstance(crop_bbox, list)
             and len(crop_bbox) == 4
         ):

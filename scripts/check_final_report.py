@@ -17,7 +17,7 @@ GRAMMAR_APPENDIX_HEADING = "## Appendix: Grammar and Copyediting Issues"
 TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
 EXTERNAL_SOURCES_APPENDIX_RE = re.compile(r"^## Appendix: External Sources", re.MULTILINE)
 HEADING_RE = re.compile(r"^## ", re.MULTILINE)
-URL_RE = re.compile(r"https?://[^\s<>\]\)]+")
+URL_RE = re.compile(r"https?://[^\s<>\]]+")
 CANONICAL_ID_RE = re.compile(r"\bCANON-\d{3}\b")
 SOURCE_ID_RE = re.compile(
     r"\b[a-z][a-z0-9_]*:(?:[A-Z][A-Z0-9_-]*-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b"
@@ -51,7 +51,14 @@ def external_source_urls(bundle: dict) -> set[str]:
 
 
 def urls_in_text(text: str) -> set[str]:
-    return {match.group(0).rstrip(".,;:") for match in URL_RE.finditer(text)}
+    urls = set()
+    for match in URL_RE.finditer(text):
+        url = match.group(0).rstrip(".,;:")
+        while url.endswith(")") and url.count(")") > url.count("("):
+            url = url[:-1]
+        if url:
+            urls.add(url)
+    return urls
 
 
 def external_sources_appendix_text(text: str) -> str:

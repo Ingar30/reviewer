@@ -9,13 +9,13 @@ The normal workflow is:
 3. Render run-specific prompts under `work/<paper_id>/prompts/`.
 4. Run parser-quality preflight before substantive review.
 5. Route substantive reviewers around parser-quality warnings using deterministic artifacts.
-6. Use dynamic reviewer selection by default to choose optional reviewers while mandatory reviewers always run.
-7. Store the selector decision under `work/<paper_id>/selection/` and use the selected reviewer roster for downstream stages.
+6. Use static exhaustive reviewer selection by default: run all 4 mandatory review-stage reviewers and all 14 optional reviewers. Dynamic selection is an explicit opt-in.
+7. Store selection provenance and the active reviewer roster under `work/<paper_id>/selection/`. Static mode records the exhaustive roster without making a selector model call; dynamic mode also records the selector decision.
 8. Rerender prompts for the selected reviewer roster with parser-quality guidance.
 9. Run the selected reviewer agents on the parsed artifacts.
 10. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
-11. Normalize and deduplicate reviewer outputs into an editor bundle.
-12. Build editor input from the normalized bundle and original reviewer JSON files.
+11. Conservatively normalize reviewer outputs into a precision-first, lossless editor bundle that preserves every source finding's details and avoids merging distinct concerns.
+12. Build editor input from a deterministic brief, the lossless normalized bundle, and a compact provenance index for the validated reviewer JSON files. Do not duplicate raw reviewer JSON or truncate evidence.
 13. Run the editor to write the final markdown report under `outputs/<paper_id>/report.md`.
 14. Smoke-check the final report.
 
@@ -35,19 +35,20 @@ The normal workflow is:
 - Never run reviewer agents directly on a raw PDF if parsed artifacts do not exist.
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
-- Dynamic reviewer selection is the default for fresh wrapper runs; static mode is available when all enabled reviewers should run.
+- Static reviewer selection is the default for fresh wrapper runs and runs all 18 enabled review-stage reviewers: 4 mandatory and 14 optional. Dynamic mode is available only as an explicit opt-in and selects 7 to 13 optional reviewers, for 11 to 17 substantive reviewers in total.
+- The quality-first model default is `gpt-5.6-sol`. Substantive reviewers and the editor use `xhigh` reasoning by default, parser-quality preflight uses `high`, and the optional dynamic selector uses `medium`.
 - Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.
 - If preprocessing artifacts are missing or clearly poor, fail clearly instead of guessing.
-- Editor-only refresh is allowed when parsed artifacts, all selected reviewer JSON files, and the selected reviewer config already exist. Revalidate the reviews, rebuild the normalized bundle and editor input, rerun only the editor, and then smoke-check the final report.
+- Editor-only refresh is allowed when parsed artifacts, all selected reviewer JSON files, and the selected reviewer config already exist. Revalidate the reviews, rebuild the precision-first lossless bundle and provenance-only editor input, rerun only the editor, and then smoke-check the final report.
 
 ## Preprocessing rules
 - Preserve original page numbering.
 - Normalize whitespace carefully.
 - Never silently remove minus signs, decimal points, percent symbols, parentheses, or appendix labels.
 - Save page-level outputs and inventories so downstream reviewers can cite locations precisely.
-- Use OCR only when text extraction clearly fails or the PDF is scanned/image-only.
+- The default workflow does not install or invoke OCR, an external document service, or an LLM-generated repair layer. When native extraction clearly fails or a page is scanned/image-only, retain the page image and mark OCR as recommended rather than inferring replacement content.
 
 ## Reviewer rules
 - Literature and reference verification require web search when enabled.

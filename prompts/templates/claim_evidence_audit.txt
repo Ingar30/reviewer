@@ -22,6 +22,8 @@ Focus on:
 - exact textual claims that cite figures or tables which do not display the needed comparison, denominator, label, or value
 - cannot_verify when artifacts do not allow a check
 
+Before returning, make a final coverage pass through the abstract, introduction, results, and conclusion. Reconcile every central sentence that names a table, figure, panel, appendix result, population, denominator, or outcome with the exact cited display and note.
+
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
 - Set confidence to high, medium, or low.

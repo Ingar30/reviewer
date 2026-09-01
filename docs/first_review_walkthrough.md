@@ -42,13 +42,21 @@ Preprocessing stays local, but the review prompts send parsed manuscript text to
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
 ```
 
+This ordinary command uses the quality-first static default: one parser-quality preflight, all 4 mandatory and 14 optional review-stage agents, and one editor. The 18 substantive reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor.
+
+Dynamic selection is an explicit cost and latency tradeoff. It uses a selector to choose 7 to 13 optional reviewers, for 11 to 17 substantive reviewers after the 4 mandatory agents:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection dynamic
+```
+
 Use an explicit ID if the filename is long or sensitive:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
 ```
 
-Substantive reviewers read the parser-quality output and route around deterministic artifacts marked unsafe. The workflow does not generate repaired parser content. If page text, coordinates, crops, and page images are insufficient for a reliable check, the reviewer returns `cannot_verify`.
+Substantive reviewers read the parser-quality output and route around deterministic artifacts marked unsafe. The workflow does not use an external parsing service or generate repaired parser content. If page text, coordinates, crops, and page images are insufficient for a reliable check, the reviewer returns `cannot_verify`.
 
 ## 5. Read The Report
 

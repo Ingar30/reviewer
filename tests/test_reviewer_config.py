@@ -1436,6 +1436,19 @@ class ReviewerConfigTests(unittest.TestCase):
                         {
                             "spans": [
                                 {
+                                    "font": "NimbusRomNo9L-Regu",
+                                    "size": 10.0,
+                                    "chars": [
+                                        {"c": "I", "bbox": [35, 45, 39, 55], "origin": [35, 53]},
+                                        {"c": "\u02dc", "bbox": [39.5, 45, 43, 55], "origin": [39.5, 53]},
+                                        {"c": "n", "bbox": [39, 45, 44, 55], "origin": [39, 53]},
+                                    ],
+                                }
+                            ]
+                        },
+                        {
+                            "spans": [
+                                {
                                     "font": "PiCUP10",
                                     "size": 10.0,
                                     "chars": [
@@ -1489,13 +1502,13 @@ class ReviewerConfigTests(unittest.TestCase):
             summary["_coordinate_glyph_repairs"],
         )
 
-        self.assertEqual(repaired, "()[]{\nR\u00e9\n\x02\nh\nX \n")
+        self.assertEqual(repaired, "()[]{\nR\u00e9\nI\u00f1\n\x02\nh\nX \n")
         self.assertEqual(positioned_count, 5)
         self.assertEqual([word[4] for word in words], ["[", "h"])
         self.assertEqual(word_count, 1)
         self.assertEqual(summary["known_font_glyph_repair_count"], 5)
         self.assertEqual(summary["positioned_font_glyph_repair_count"], 5)
-        self.assertEqual(summary["positioned_accent_composition_count"], 1)
+        self.assertEqual(summary["positioned_accent_composition_count"], 2)
         self.assertEqual(summary["unresolved_math_glyph_count"], 2)
         self.assertEqual(
             summary["unresolved_math_glyph_codes"],

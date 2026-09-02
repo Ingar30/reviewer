@@ -7,6 +7,7 @@ from pathlib import Path
 from reviewer_config import load_reviewers_config
 
 EDITOR_TEMPLATE = "editor_report.txt"
+REVIEWER_CONTRACT_TEMPLATE = "reviewer_contract.txt"
 
 PLACEHOLDER_RE = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 
@@ -19,19 +20,6 @@ def render_template(template: str, values: dict[str, str]) -> str:
     return rendered
 
 
-def append_parser_repair_note(rendered: str, parser_repair_notes: str | None) -> str:
-    if not parser_repair_notes:
-        return rendered
-    return (
-        rendered.rstrip()
-        + "\n\nParser repair overlay:\n"
-        + f"`{parser_repair_notes}`\n\n"
-        + "Before treating a parsed table, figure, page-text passage, or inventory entry as primary evidence, "
-        + "check the parser repair overlay for known parser-quality limitations, repaired overlay artifacts, "
-        + "preferred fallback artifacts, and artifacts that should not be relied on as primary evidence.\n"
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render reusable Codex prompt templates for one paper run.")
     parser.add_argument("--paper-id", required=True)
@@ -42,7 +30,6 @@ def main() -> int:
     parser.add_argument("--templates-dir", default="prompts/templates")
     parser.add_argument("--editor-bundle-path", default=None)
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
-    parser.add_argument("--parser-repair-notes", default=None)
     args = parser.parse_args()
 
     templates_dir = Path(args.templates_dir)
@@ -62,17 +49,21 @@ def main() -> int:
     missing = [name for name in template_files if not (templates_dir / name).exists()]
     if not (templates_dir / EDITOR_TEMPLATE).exists():
         missing.append(EDITOR_TEMPLATE)
+    if not (templates_dir / REVIEWER_CONTRACT_TEMPLATE).exists():
+        missing.append(REVIEWER_CONTRACT_TEMPLATE)
     if missing:
         raise FileNotFoundError(f"Missing prompt templates in {templates_dir}: {', '.join(missing)}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    reviewer_contract = render_template(
+        (templates_dir / REVIEWER_CONTRACT_TEMPLATE).read_text(encoding="utf-8"), values
+    )
     written = []
     for template_name, reviewer in template_files.items():
         template_path = templates_dir / template_name
         output_path = output_dir / reviewer.prompt
         rendered = render_template(template_path.read_text(encoding="utf-8"), values)
-        if reviewer.stage == "review":
-            rendered = append_parser_repair_note(rendered, args.parser_repair_notes)
+        rendered = rendered.rstrip() + "\n\n" + reviewer_contract.strip() + "\n"
         output_path.write_text(rendered, encoding="utf-8")
         written.append(str(output_path))
 

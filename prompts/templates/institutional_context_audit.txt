@@ -17,8 +17,10 @@ Focus on:
 - institutional facts that materially affect the design, measurement, interpretation, or policy implication
 - legal, regulatory, voting-rule, platform-rule, market-structure, implementation-process, or event-timing claims
 - cases where a manuscript's institutional description is incomplete, stale, overgeneralized, or inconsistent with authoritative sources
+- administrative-data provenance, official field semantics, coverage dates, coding changes, and linkage variables when those details affect measurement or interpretation
 
 Use targeted web checks only when a material institutional/context claim needs external verification. Prefer authoritative primary sources such as laws, regulator pages, official platform documentation, official institutional statements, or stable public records. Do not perform broad background research, add trivia, or report institutional details that do not affect interpretation.
+For administrative records, prefer the responsible agency's data dictionary, technical documentation, or archival record over secondary descriptions.
 
 Report only material, high-confidence issues. If no material institutional-context issue is found, return run_status ok with an empty findings array.
 

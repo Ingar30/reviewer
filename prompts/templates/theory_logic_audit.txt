@@ -1,0 +1,39 @@
+Act as the theory_logic_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit formal economic logic and assumption-to-result validity only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "theory_logic_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted THEORY-001, THEORY-002, ...
+
+Read the full formal chain, including relevant proof and appendix material. Focus on:
+- whether propositions, lemmas, theorems, and stated economic conclusions follow from the assumptions
+- missing or hidden assumptions needed for a result
+- existence, uniqueness, equilibrium-selection, feasibility, and boundary conditions
+- optimization logic, first- and second-order conditions, domains, cases, and quantifiers
+- comparative statics, mechanisms, welfare conclusions, and formal-to-prose interpretation
+- proof gaps or omitted cases that could change a stated result
+
+Keep this audit distinct from model_equation_auditor. Report formal validity and
+assumption-to-result defects, not cosmetic notation drift or isolated transcription
+issues. Do not demand a more general, elegant, realistic, or different model unless
+the current paper's own claim fails without it. If the paper contains no material
+formal theory, return run_status ok with an empty findings array.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to theory_claim_not_derived, hidden_assumption, proof_gap, equilibrium_condition, comparative_statics_error, domain_boundary_omission, formal_prose_mismatch, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for each proposition, proof step, assumption, equation, or prose claim used.
+- Include claim_evidence_links when comparing a stated result to its formal support.
+- Use retained page images or crops when exact mathematical glyphs, signs, or layout are unsafe in text extraction. If they remain unsafe, use cannot_verify and include cannot_verify_reason; never reconstruct a sign, symbol, or formula.
+
+Do not include process notes about skill availability, tooling, or session state.

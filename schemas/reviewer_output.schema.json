@@ -76,6 +76,10 @@
         "properties": {
           "id": { "type": "string" },
           "category": { "type": "string" },
+          "finding_summary": {
+            "type": "string",
+            "minLength": 1
+          },
           "issue_type": {
             "type": "string",
             "enum": [
@@ -136,6 +140,7 @@
         "required": [
           "id",
           "category",
+          "finding_summary",
           "issue_type",
           "severity",
           "confidence",

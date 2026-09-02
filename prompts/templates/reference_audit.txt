@@ -21,6 +21,8 @@ Prioritize citation/reference integrity issues:
 
 Treat publication-status updates as secondary maintenance items unless they change the cited work's identity or materially affect the in-text year.
 
+Build a complete in-text author-year and bibliography identity set before reporting. Include named datasets, administrative-data documentation, reports, software, preregistrations, and other data-source keys when the manuscript cites them as sources. Do not stop after finding the first mismatches, and do not turn suspected parser contamination into a manuscript defect.
+
 For every finding:
 - Set issue_type to reference_integrity, bibliography_maintenance, parser_artifact, or cannot_verify.
 - Set confidence to high, medium, or low.

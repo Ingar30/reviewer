@@ -20,6 +20,8 @@ Focus on:
 - subgroup, heterogeneity, moderator, interaction, or split-sample claims when the paper interprets differences across groups
 - whether "larger for group X," "equally pronounced," or "persists across groups" claims are supported by direct subgroup estimates, interaction tests, or appropriate descriptive caveats
 
+Systematically inventory every material use of "robust," "persists," "unchanged," "heterogeneity," and equivalent language, plus every robustness or subgroup check promised in the main text or preregistration. Reconcile each one with the exact reported specification or appendix result.
+
 Do not make generic requests for more subgroup analysis. Report heterogeneity issues only when the manuscript makes a substantive subgroup claim or a pre-analysis plan commits to a subgroup analysis that is not clearly reported.
 
 For every finding:

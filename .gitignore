@@ -19,6 +19,7 @@ work/*
 !work/README.md
 outputs/*
 !outputs/README.md
+output/
 data/raw/
 data/*/raw/
 
@@ -36,3 +37,9 @@ Slides/
 Thumbs.db
 .vscode/
 .idea/
+.playwright-cli/
+tmp/
+
+# Local Codex/OpenAI CLI runtime state; keep only project config tracked
+.codex/*
+!.codex/config.toml

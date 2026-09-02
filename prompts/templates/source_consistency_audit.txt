@@ -1,0 +1,42 @@
+Act as the source_consistency_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "source_consistency_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted SOURCE-001, SOURCE-002, ...
+
+Independently reconcile the paper's central prose claims with its own tables, figures, equations, notes, definitions, sample descriptions, and appendices. This is a narrow source-fidelity audit, not a general methodological review.
+
+Build a complete internal ledger before reporting findings. For every central claim about the paper's own analysis, check the exact:
+- table, figure, panel, column, row, outcome, treatment arm, and reference group
+- population, sample restriction, observation unit, timing, denominator, unit, transformation, sign, threshold, and coding rule
+- displayed analysis N versus recruited or randomized arm counts, including item nonresponse, zero-use, complete-case, and other analysis exclusions
+- variable or construct definition, including human-coded versus AI- or LLM-coded versions and repeated measures across waves or sources
+- every repeated code or acronym across displays: label, coding source, sample or wave, threshold, and frequency; explicitly compare repeated values and disclose coding-source switches
+- prose-to-display and display-to-appendix crosswalk, including claims that results persist, are robust, apply broadly, or use a named specification
+
+After the claim-ledger pass, make one terminal display-by-display pass over every main or supplementary table and figure that supports a central claim. Check its title, caption, axes, legend, panel/row/column treatment labels, sample, denominator, plotted quantity, and prose references. Use the retained page image or crop when normalized text cannot establish a visual label or direction; if the visual source is still unsafe, use cannot_verify rather than inference.
+
+Report only clear contradictions, materially ambiguous source mappings, or important items that cannot be verified from trustworthy deterministic artifacts. Do not report confirmed matches, generic advice, literature positioning, causal-identification concerns, or optional extensions. Do not infer missing labels, signs, values, formulas, coding rules, or denominators.
+
+Do not treat an umbrella prose category as a formal code label without an explicit manuscript crosswalk. Do not flag a numerical claim merely because it appears only in prose unless the manuscript promises a supporting display or reproducibility artifact, or another retained artifact conflicts with it.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to source_mismatch, source_mapping_ambiguous, definition_mismatch, denominator_mismatch, coding_crosswalk_mismatch, scope_mismatch, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include the prose claim and every compared manuscript artifact as separate source_objects with exact locations.
+- Include claim_evidence_links that state whether each artifact supports, contradicts, partially supports, or cannot verify the claim.
+- Include numeric_check whenever the finding compares numbers, signs, units, percentages, transformations, thresholds, or denominators.
+- Before using cannot_verify, search the retained page text, captions, notes, and appendix artifacts. Use it only when a material claim still cannot be checked reliably, and include cannot_verify_reason.
+
+Keep distinct problems separate even when they concern the same sentence or display. Do not include process notes about skill availability, tooling, or session state.

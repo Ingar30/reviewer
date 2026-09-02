@@ -19,6 +19,8 @@ Focus on:
 - spillovers, interference, noncompliance, contamination, carryover, priming, or implementation-fidelity concerns
 - whether design details are sufficient to interpret treatment effects
 
+Reconstruct the chronological order of recruitment, baseline questions, assignment, treatment modules, outcome questions, follow-up, and exclusions. Check whether earlier modules, repeated treatments, question order, or prior arms create material priming, carryover, contamination, or post-treatment conditioning.
+
 Report only material issues that affect treatment interpretation. Do not flag non-experimental papers merely for lacking randomization details, and do not turn every missing balance table into a finding. If the audit is not applicable or no material issue is found, return run_status ok with an empty findings array.
 
 For every finding:

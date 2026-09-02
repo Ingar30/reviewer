@@ -19,9 +19,9 @@ source .venv/bin/activate
 ## 2. Confirm The Local Checks Pass
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest
-.\.venv\Scripts\python.exe scripts\check_environment.py
-.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
+python -m unittest
+python scripts/check_environment.py
+python scripts/check_shareable_repo.py --include-untracked
 ```
 
 ## 3. Add A Private Paper PDF
@@ -34,31 +34,25 @@ inputs/my-paper.pdf
 
 Do not commit this file. The directory is ignored by Git except for `inputs/README.md`.
 
+Preprocessing stays local, but the review prompts send parsed manuscript text to OpenAI through Codex. Search-enabled reviewers may also issue manuscript-derived web queries. Confirm that the manuscript's confidentiality terms permit this before continuing.
+
 ## 4. Run The Reviewer
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
 ```
+
+This ordinary command is the single quality-first workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
+
+There is no separate static or dynamic mode. A high-confidence classification may skip a conditional reviewer only when that reviewer's entire remit is clearly absent. For example, a purely theoretical paper without material quantitative content can skip empirical-design and numerical specialists while retaining the dedicated theory-logic auditor.
 
 Use an explicit ID if the filename is long or sensitive:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "paper-a"
 ```
 
-If parser-quality preflight reports parser artifacts and you want better parsing support before substantive review, enable the opt-in repair planner:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair plan
-```
-
-To let the experimental repair agent attempt narrow repaired overlay artifacts as well as caveats, use:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
-```
-
-Parser repair can improve auditability by routing reviewers away from unsafe parsed tables, figures, or captions and toward safer fallback artifacts. It adds runtime and token usage, so it is experimental and off by default. When no high- or medium-severity parser artifact is reported, the repair planner is skipped.
+Substantive reviewers read the parser-quality output and route around deterministic artifacts marked unsafe. The workflow does not use an external parsing service or generate repaired parser content. If page text, coordinates, crops, and page images are insufficient for a reliable check, the reviewer returns `cannot_verify`.
 
 ## 5. Read The Report
 
@@ -74,15 +68,15 @@ Intermediate artifacts are under:
 work/my-paper/
 ```
 
-Repair overlays, if enabled, appear under `work/my-paper/repair/`. In `overlay` mode, LLM-generated repaired files are written under `work/my-paper/repair/repaired_artifacts/`; the original `work/my-paper/parsed/` artifacts are not overwritten. The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, repair notes, and logs.
+The `work/` and `outputs/` directories are ignored by Git because they can contain paper text, quotes, reviewer findings, and logs.
 
 ## 6. Before Sharing Changes
 
 Run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest
-.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
+python -m unittest
+python scripts/check_shareable_repo.py --include-untracked
 git status --short
 ```
 

@@ -10,6 +10,8 @@ This repository is designed to keep private paper inputs and generated artifacts
 - logs that contain paper text or reviewer outputs
 - API keys, tokens, passwords, credentials, or authenticated CLI files
 
+The `.gitignore` rules protect against accidental Git publication; they do not make a review fully local. PDF preprocessing runs locally, but the Codex reviewer and editor prompts send parsed manuscript content to OpenAI. Reviewers with web search enabled may also send manuscript-derived queries to the search service. Confirm that the manuscript's confidentiality and data-use terms permit these transmissions before running a review.
+
 ## Reporting
 
 For private security or data-exposure concerns, use GitHub private vulnerability reporting when it is enabled, or contact the repository owner directly instead of opening a public issue.

@@ -34,28 +34,27 @@ The pipeline stages are:
 4. Render run-specific prompts into `work/<paper_id>/prompts/`.
 5. Launch preflight reviewers from `config/reviewers.json`.
 6. Validate preflight JSON and stop on blocking parser-quality failures.
-7. If `--parser-repair plan` is enabled and parser-quality preflight reports high- or medium-severity parser artifacts, run `scripts/run_parser_repair_agent.py` and write `work/<paper_id>/repair/parser_repair_notes.md`.
-8. In dynamic mode, run the reviewer selector and write `work/<paper_id>/selection/reviewer_selection.json`.
-9. Write the active run roster to `work/<paper_id>/selection/selected_reviewers.json`.
-10. Rerender prompts using the selected reviewer roster and parser repair notes when present.
-11. Launch mandatory review-stage reviewers and selected optional reviewers.
+7. Route substantive reviewers around parser-quality warnings using the deterministic artifacts and parser-quality JSON.
+8. Run the conservative applicability router and record its complete decision in `work/<paper_id>/selection/reviewer_selection.json`. Mixed, unknown, or lower-confidence classifications automatically expand to every conditional specialist.
+9. Write the active run roster and selection provenance to `work/<paper_id>/selection/selected_reviewers.json`.
+10. Rerender prompts using the selected reviewer roster and parser-quality guidance.
+11. Launch the 8 universal review-stage reviewers and every applicable conditional specialist. The full roster contains 19 substantive reviewers.
 12. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
-13. Normalize and deduplicate reviewer outputs into `work/<paper_id>/editor/normalized_bundle.json`.
-14. Build editor input at `work/<paper_id>/editor/editor_input.md`.
+13. Conservatively normalize reviewer outputs into a precision-first, lossless `work/<paper_id>/editor/normalized_bundle.json`. Preserve every source finding's details and do not merge findings merely because they share a quote or path.
+14. Build `work/<paper_id>/editor/editor_input.md` from the deterministic editor brief, the lossless bundle, and a compact provenance index. Validate the source reviewer JSON files, but do not duplicate them in the editor input or truncate evidence.
 15. Run the editor to write `outputs/<paper_id>/report.md`.
 16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
-Use `--reviewer-selection static` only when all enabled review-stage reviewers should run.
-Use `--parser-repair plan` only when parser-quality issues should be converted into a reviewer-facing repair overlay before substantive reviewers run.
+The supported quality defaults are `gpt-5.6-sol`, `xhigh` reasoning for substantive reviewers and the editor, and `high` for parser-quality preflight and applicability routing. Model and reasoning overrides are for controlled development tests, not alternate public review modes. There is one public workflow rather than separate static and dynamic modes.
 
 ## Editor-only refresh
-If parsed artifacts, reviewer JSON files, `work/<paper_id>/selection/selected_reviewers.json`, and `work/<paper_id>/editor/normalized_bundle.json` already exist, rerun only the editor when the change is limited to editor prompt/report presentation:
-1. Rerender prompts with `scripts/render_prompts.py`, passing `--reviewers-config work/<paper_id>/selection/selected_reviewers.json`.
-2. Rebuild editor input with `scripts/build_editor_input.py`, passing the same selected reviewer config.
-3. Run the editor with `codex exec --output-last-message outputs/<paper_id>/report.md -`.
-4. Smoke-check with `scripts/check_final_report.py --input outputs/<paper_id>/report.md --bundle work/<paper_id>/editor/normalized_bundle.json`.
+If parsed artifacts, all selected reviewer JSON files, and `work/<paper_id>/selection/selected_reviewers.json` already exist, use `scripts/refresh_editor.py --paper-id <paper_id>` to resume synthesis without rerunning reviewers. The helper:
+1. Validates every selected reviewer JSON against the schema, semantic rules, and provenance constraints.
+2. Rebuilds the precision-first lossless `work/<paper_id>/editor/normalized_bundle.json` from the validated reviews.
+3. Rerenders prompts and rebuilds the deterministic brief, lossless bundle, and provenance-only editor input using the active reviewer config.
+4. With `--run-editor`, reruns the editor and smoke-checks the final report.
 
-Do not use editor-only refresh when reviewer evidence, parser artifacts, reviewer selection, or normalized findings need to change.
+Do not use editor-only refresh when reviewer evidence, parser artifacts, or reviewer selection needs to change. Correct or rerun invalid reviewer output first; the helper will refuse to synthesize it.
 
 Use editor-only refresh to test narrowly scoped editor prompt changes against the same evidence bundle before changing the full workflow. This is especially useful for checking whether report emphasis improved without changing reviewer evidence, such as when adjusting how parser/preprocessing caveats are surfaced in prose.
 
@@ -67,20 +66,20 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 - Preserve exact source locations whenever possible.
 - If parsed artifacts are poor, fix preprocessing before trusting reviewer outputs.
 - Treat parser-quality preflight warnings as reportable caveats; treat high-confidence blocking parser findings as a reason to stop before substantive review.
-- Treat parser repair notes as routing guidance to existing safer artifacts, not as evidence that OCR, tables, figures, or page ordering were actually regenerated.
+- Never generate or infer repaired parser content. Do not invoke an external parsing service or an LLM-generated repair layer. If deterministic artifacts do not support a reliable check, use `cannot_verify`.
 - Keep final-report traceability in the traceability appendix. Do not reintroduce repeated traceability footers in the body.
 - Literature and novelty critiques must be grounded in concrete studies or marked `cannot_verify`; do not assert lack of novelty from vague prior-work impressions.
 - If the final report cites external studies, registry records, web pages, or other external evidence, include the external-sources appendix using only source details already present in reviewer evidence.
-- Do not bury parser/preprocessing issues when they materially distort auditability of a central formula, table, figure, citation target, or quantitative claim. Keep them in the parser-caveats section, but mention them explicitly in prose and treat them as revision-priority material when the auditability risk is substantial.
+- Put parser/preprocessing issues in the technical appendix and describe them as limitations of the review artifacts. Mention one in the main report only when it materially reduces confidence in a substantive conclusion or prevents verification of an important claim.
 - Treat `scripts/check_final_report.py` as a structure and traceability smoke check, not as independent verification that external sources are real or current.
-- Treat institutional context, power/multiple testing, design/randomization, and economic magnitude reviewers as narrow optional pilots. They should run only when the selected paper has strong cues for those risks.
+- Treat every conditional specialist as a full-quality reviewer. Skip one only when a high-confidence classification shows that its entire remit is materially absent. The theory-logic specialist checks formal validity and assumption-to-result logic; the universal model/equation auditor separately checks notation, definitions, and text-equation consistency.
+- If a reviewer's assigned scope is absent, return `run_status: ok` with an empty findings array. Do not turn the absence of an empirical design, formal model, dataset, experiment, or other method into a criticism.
 - If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`
-- Parser repair overlays: `work/<paper_id>/repair/`
 - Reviewer selection: `work/<paper_id>/selection/`
 - Reviewer outputs: `work/<paper_id>/reviews/`
 - Final report: `outputs/<paper_id>/report.md`
 
-The expected final report shape is synthesis-first: executive summary, prose review configuration, roughly 3 to 8 high-confidence highest-priority findings when supported by the evidence, suggested revision priorities, additional findings, domain-specific sections, grammar appendix when needed, external-sources appendix when external evidence is cited, parser-caveat prose that keeps central auditability failures visible, and traceability map appendix.
+The expected final report shape is synthesis-first and consequence-ranked: a compact executive summary; 3 to 6 confirmed corrections when supported; a concise revision sequence; separate material qualifications and exploratory development advice; domain sections; and late appendices for bibliography maintenance, copyediting, external sources, parser limitations, review scope, and traceability. Use one short plain-language review-scope paragraph near the end rather than listing agents or routing metadata.

@@ -100,7 +100,13 @@ def caption_metrics(parsed_dir: Path) -> dict[str, Any]:
     precise_caption_count = sum(1 for item in tables if item.get("source") == "caption_text_fallback")
     precise_caption_count += sum(1 for item in figures if item.get("source") == "caption")
     total_captioned = len(tables) + len(figures)
-    table_parse_ok = sum(1 for item in tables if item.get("row_count", 0) > 0 and item.get("col_count", 0) > 0)
+    table_parse_ok = sum(
+        1
+        for item in tables
+        if item.get("status") == "ok"
+        and item.get("row_count", 0) > 0
+        and item.get("col_count", 0) > 0
+    )
     parsed_table_ratio = table_parse_ok / len(tables) if tables else 1.0
     raw_ratio = raw_caption_count / total_captioned if total_captioned else 0.0
     score = score_from_penalties(35.0 * raw_ratio, 25.0 * (1.0 - parsed_table_ratio))
@@ -173,8 +179,8 @@ def selector_metrics(selection_dir: Path, editor_dir: Path) -> dict[str, Any]:
             zero_finding_selected.append(name)
     optional_count = len(selected_optional)
     score = score_from_penalties(
-        max(0, optional_count - 9) * 4.0,
-        len(pilot_selected) * 2.0,
+        max(0, optional_count - 13) * 4.0,
+        max(0, len(pilot_selected) - 4) * 2.0,
         len(zero_finding_selected) * 8.0,
     )
     return {

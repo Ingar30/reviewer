@@ -21,6 +21,10 @@
       "type": "string",
       "enum": ["high", "medium", "low"]
     },
+    "selection_mode": {
+      "type": "string",
+      "enum": ["applicability"]
+    },
     "selected_optional_reviewers": {
       "type": "array",
       "items": {
@@ -54,6 +58,7 @@
     "paper_id",
     "paper_type",
     "selection_confidence",
+    "selection_mode",
     "selected_optional_reviewers",
     "skipped_optional_reviewers",
     "notes"

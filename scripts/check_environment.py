@@ -11,9 +11,6 @@ REQUIRED_MODULES = [
     "pdfplumber",
     "pandas",
     "jsonschema",
-    "pydantic",
-    "dateutil",
-    "rapidfuzz",
     "tabulate",
 ]
 
@@ -21,13 +18,10 @@ REQUIRED_PATHS = [
     "config/reviewers.json",
     "schemas/reviewer_output.schema.json",
     "schemas/reviewer_selection.schema.json",
-    "schemas/parser_repair_plan.schema.json",
     "prompts/templates/editor_report.txt",
-    "prompts/templates/parser_repair_plan.txt",
+    "prompts/templates/reviewer_contract.txt",
     "scripts/pipeline_paths.py",
     "scripts/review_paper.py",
-    "scripts/run_parser_repair_agent.py",
-    "scripts/evaluate_parser_repair.py",
 ]
 
 

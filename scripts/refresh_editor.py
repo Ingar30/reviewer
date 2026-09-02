@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
+from review_paper import enforce_preflight_gate
+from reviewer_config import load_reviewers_config
 
 
 def repo_root() -> Path:
@@ -31,19 +35,64 @@ def run_command(command: list[str], cwd: Path, *, input_text: str | None = None)
         raise RuntimeError(f"Command failed with exit code {completed.returncode}: {' '.join(command)}")
 
 
-def codex_command() -> str:
-    from review_paper import codex_command as resolve_codex_command
+def codex_exec_command(
+    model: str | None = None, reasoning_effort: str | None = None
+) -> list[str]:
+    from review_paper import codex_exec_command as resolve_codex_exec_command
 
-    return resolve_codex_command()
+    return resolve_codex_exec_command(model=model, reasoning_effort=reasoning_effort)
+
+
+def mark_run_manifest_complete(
+    manifest_path: Path, report: Path, repo: Path, reviewer_names: list[str]
+) -> None:
+    if not manifest_path.exists():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    manifest.update(
+        {
+            "status": "complete",
+            "completed_at_utc": now,
+            "synthesis_refreshed_at_utc": now,
+            "selected_reviewers": reviewer_names,
+            "report": str(report.relative_to(repo)),
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Refresh editor input/report from existing parsed and reviewer artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Validate existing reviews, rebuild the normalized bundle, and refresh editor output."
+    )
     parser.add_argument("--paper-id", required=True)
     parser.add_argument(
         "--run-editor",
         action="store_true",
         help="Run Codex editor and final report check. By default only rerenders prompts and rebuilds editor input.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Advanced testing override for the editor model when --run-editor is used. "
+            "The supported quality default comes from .codex/config.toml."
+        ),
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["none", "low", "medium", "high", "xhigh", "max"],
+        default=None,
+        help=(
+            "Advanced testing override for editor reasoning when --run-editor is used. "
+            "The supported quality default comes from .codex/config.toml."
+        ),
     )
     args = parser.parse_args()
 
@@ -65,12 +114,52 @@ def main() -> int:
             "parsed artifacts": parsed_dir,
             "reviews directory": reviews_dir,
             "selected reviewers": selected_reviewers,
-            "normalized bundle": bundle,
         }
     )
     prompts_dir.mkdir(parents=True, exist_ok=True)
     editor_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    selected_config_relative = str(selected_reviewers.relative_to(repo))
+    selected = load_reviewers_config(selected_reviewers)
+    review_stage = [reviewer for reviewer in selected if reviewer.stage == "review"]
+    require_paths(
+        {
+            reviewer.name: reviews_dir / reviewer.output
+            for reviewer in selected
+        }
+    )
+    for reviewer in selected:
+        run_command(
+            [
+                sys.executable,
+                "scripts/validate_review_json.py",
+                "--schema",
+                "schemas/reviewer_output.schema.json",
+                "--input",
+                str((reviews_dir / reviewer.output).relative_to(repo)),
+                "--reviewers-config",
+                selected_config_relative,
+            ],
+            repo,
+        )
+        if reviewer.stage == "preflight":
+            enforce_preflight_gate(reviewer, reviews_dir / reviewer.output)
+    run_command(
+        [
+            sys.executable,
+            "scripts/normalize_review_outputs.py",
+            "--paper-id",
+            args.paper_id,
+            "--reviews-dir",
+            str(reviews_dir.relative_to(repo)),
+            "--output",
+            str(bundle.relative_to(repo)),
+            "--reviewers-config",
+            selected_config_relative,
+        ],
+        repo,
+    )
 
     run_command(
         [
@@ -89,7 +178,7 @@ def main() -> int:
             "--editor-bundle-path",
             str(bundle.relative_to(repo)),
             "--reviewers-config",
-            str(selected_reviewers.relative_to(repo)),
+            selected_config_relative,
         ],
         repo,
     )
@@ -108,7 +197,7 @@ def main() -> int:
             "--output",
             str(editor_input.relative_to(repo)),
             "--reviewers-config",
-            str(selected_reviewers.relative_to(repo)),
+            selected_config_relative,
         ],
         repo,
     )
@@ -117,8 +206,7 @@ def main() -> int:
         editor_text = editor_input.read_text(encoding="utf-8")
         run_command(
             [
-                codex_command(),
-                "exec",
+                *codex_exec_command(args.model, args.reasoning_effort),
                 "--output-last-message",
                 str(report.relative_to(repo)),
                 "-",
@@ -136,6 +224,12 @@ def main() -> int:
                 str(bundle.relative_to(repo)),
             ],
             repo,
+        )
+        mark_run_manifest_complete(
+            paths.run_manifest_path,
+            report,
+            repo,
+            [reviewer.name for reviewer in review_stage],
         )
 
     print(f"editor input refreshed: {editor_input.relative_to(repo)}")

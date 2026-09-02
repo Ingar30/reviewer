@@ -1,42 +1,33 @@
 # Reviewer
 
-A reproducible multi-agent reviewer for academic economics papers. The repository contains the workflow machinery: preprocessing scripts, reviewer prompts, schemas, validation, normalization, editor assembly, tests, and Codex project instructions. It does not include papers or generated review outputs.
+A reproducible multi-agent reviewer for academic economics papers. The repository contains the preprocessing, reviewer prompts, validation, normalization, editor assembly, tests, and Codex project instructions. Papers and generated reports remain local and are not included.
 
-The main entry point is:
+## What It Does
 
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\<paper_id>.pdf"
-```
+For each paper, the wrapper:
 
-On macOS/Linux, use `./.venv/bin/python` instead of `.\.venv\Scripts\python.exe`.
+1. preprocesses the PDF locally into source-faithful text, coordinates, page images, tables, figures, citations, and cross-references
+2. runs a parser-quality preflight before substantive review
+3. selects every reviewer whose remit is plausibly relevant, with a full-roster fallback when applicability is uncertain
+4. runs the reviewer panel and validates every structured JSON result
+5. conservatively normalizes clear duplicates without discarding source evidence
+6. asks the editor to lead with concrete correctness and auditability problems, followed by broader positioning and development suggestions
+7. writes and smoke-checks the final report at `outputs/<paper_id>/report.md`
 
-## What This Does
+The PDF parser is deterministic and local. It does not use an external document service, hosted OCR, or an LLM repair layer, and it never invents missing signs, values, labels, cells, or formulas. Unsafe artifacts are flagged so reviewers can use page images or return `cannot_verify`.
 
-For a fresh paper, the wrapper:
-
-1. preprocesses the PDF into structured artifacts under `work/<paper_id>/parsed/`
-2. renders run-specific prompts under `work/<paper_id>/prompts/`
-3. runs parser-quality preflight before substantive review
-4. optionally runs an experimental parser repair LLM agent when parser-quality preflight reports high- or medium-severity parser artifacts
-5. dynamically selects optional reviewers while always running mandatory reviewers
-6. validates every reviewer JSON output against schema and semantic checks
-7. normalizes and deduplicates reviewer findings into an editor bundle
-8. builds editor input from the normalized bundle and original reviewer JSON files
-9. runs the editor to write `outputs/<paper_id>/report.md`
-10. smoke-checks final report structure and traceability
-
-Only the project machinery is meant to be shared on GitHub. Source PDFs, parsed artifacts, reviewer logs, and final reports are local/private by default.
+The review itself is not fully local: parsed manuscript text is sent to OpenAI through the authenticated Codex CLI. Search-enabled reviewers may also send manuscript-derived queries to web search. Do not review a confidential paper unless its disclosure terms permit those transmissions.
 
 ## Quick Start
 
-### 1. Get The Repository
+### 1. Get the Repository
 
 ```powershell
 git clone https://github.com/Ingar30/reviewer.git
 cd reviewer
 ```
 
-Git is convenient for cloning and contributing, but it is not required to run the reviewer. You can also download the repository as a ZIP from GitHub and open a shell in the extracted folder.
+Git is convenient but not required. You can also download the repository as a ZIP and open a shell in the extracted folder.
 
 ### 2. Install Prerequisites
 
@@ -44,7 +35,7 @@ You need:
 
 - Python 3.12 or newer
 - Codex CLI installed and authenticated
-- access to the model/search features needed by your reviewer configuration
+- access to GPT-5.6 Sol and Codex web search
 
 ### 3. Set Up Python
 
@@ -62,145 +53,144 @@ bash setup.sh
 source .venv/bin/activate
 ```
 
-Manual setup is also fine:
+### 4. Check the Install
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-### 4. Check The Install
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest
 .\.venv\Scripts\python.exe scripts\check_environment.py
 ```
 
-### 5. Add A Paper Locally
+macOS/Linux:
 
-Put a source PDF in `inputs/`. Files in `inputs/` are ignored by Git.
+```bash
+./.venv/bin/python -m unittest
+./.venv/bin/python scripts/check_environment.py
+```
+
+### 5. Add a Paper Locally
+
+Put the source PDF in `inputs/`. The directory is ignored by Git.
 
 ```text
 inputs/my-paper.pdf
 ```
 
-### 6. Run A Review
+### 6. Run the Review
+
+Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
 ```
 
-The final report will be written to:
+macOS/Linux:
+
+```bash
+./.venv/bin/python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
+```
+
+The final report is written to:
 
 ```text
 outputs/my-paper/report.md
 ```
 
-The intermediate parsed artifacts, prompts, logs, reviewer outputs, selection output, and editor bundle will be written to:
+Intermediate parsed artifacts, prompts, logs, reviewer outputs, routing decisions, and the editor bundle are written to:
 
 ```text
 work/my-paper/
 ```
 
+Use an explicit paper ID when needed:
+
+```powershell
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom-id"
+```
+
+## Quality Defaults
+
+The supported quality configuration uses `gpt-5.6-sol`, which [OpenAI identifies as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). Substantive reviewers and the editor use `xhigh` reasoning. Parser-quality preflight and reviewer-applicability routing use `high`.
+
+This is the only recommended configuration. The current setup also improves deterministic parsing, conservative reviewer selection, and editorial style. Quality-first acceptance runs took roughly 45 to 95 minutes and reported about 1.7 to 4.2 million aggregate tokens. Runtime and usage vary with paper length, reviewer applicability, web search, caching, and service load.
+
+The wrapper runs up to four reviewer agents concurrently and records the PDF hash, effective model, reasoning settings, active roster, Git state, and elapsed time in `work/<paper_id>/run_manifest.json`.
+
+## Resume a Run
+
+If a run stops after a valid parser-quality preflight, resume without rerunning that stage:
+
+```powershell
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper" --resume-after-preflight
+```
+
+If all selected reviewer JSON files already exist, rebuild the editor inputs and rerun only the editor:
+
+```powershell
+python scripts/refresh_editor.py --paper-id "my-paper" --run-editor
+```
+
+Both helpers validate the saved PDF hash and existing artifacts before reuse.
+
+## Reviewer Coverage
+
+Parser-quality preflight runs first. Eight universal reviewers then cover:
+
+- cross-references
+- source consistency
+- claim-evidence alignment
+- literature and positioning
+- reference integrity
+- grammar and copyediting
+- abstract/conclusion consistency
+- models, equations, notation, and estimands
+
+Eleven conditional specialists cover numerical checks, identification, robustness, sample construction, limitations and external validity, theory logic, data availability and replication, institutional context, power and multiple testing, design and randomization, and economic magnitude.
+
+A specialist is skipped only when a high-confidence classification shows that its entire remit is absent. Mixed, unknown, or lower-confidence papers use the full 19-reviewer substantive roster. Literature and reference verification use web search and return `cannot_verify` when evidence is unavailable.
+
+Reviewers are configured in `config/reviewers.json`.
+
 ## Repository Map
 
 Tracked project machinery:
 
-- `AGENTS.md`: Codex-facing workflow and safety instructions.
-- `.codex/config.toml`: project-level Codex defaults.
-- `.agents/skills/paper-reviewer/SKILL.md`: reusable workflow playbook.
-- `config/reviewers.json`: enabled reviewer roster and reviewer metadata.
-- `prompts/templates/*.txt`: reusable prompt templates.
-- `schemas/*.json`: structured output contracts.
-- `scripts/*.py`: deterministic preprocessing, validation, orchestration, normalization, and report checks.
-- `scripts/pipeline_paths.py`: shared runtime path conventions for wrappers and forked workflows.
-- `tests/`: focused unit tests for reviewer config, validation, normalization, editor brief behavior, and report checks.
-- `.github/`: CI, issue templates, and pull request template.
-- `.github/dependabot.yml`: weekly dependency checks for GitHub Actions and Python requirements.
-- `setup.ps1` and `setup.sh`: local bootstrap helpers.
-- `scripts/check_environment.py`: fast local readiness check for dependencies, project files, and Codex CLI.
-- `scripts/check_tracked_sensitive_names.py`: pre-push scanner for unexpected sensitive variable names in shareable files.
-- `docs/first_review_walkthrough.md`: step-by-step path for a new user running a first private review.
-- `docs/extension_guide.md`: reviewer and wrapper extension points for forks.
-- `docs/repository_settings.md`: recommended GitHub settings for public or private repository use.
+- `.codex/config.toml`: project model and reasoning defaults
+- `.agents/skills/paper-reviewer/SKILL.md`: reusable workflow playbook
+- `config/reviewers.json`: reviewer roster and metadata
+- `prompts/templates/`: reviewer, routing, and editor prompts
+- `schemas/`: structured output contracts
+- `scripts/`: preprocessing, orchestration, validation, normalization, and report checks
+- `tests/`: focused regression tests
+- `docs/first_review_walkthrough.md`: step-by-step first-run guide
+- `docs/extension_guide.md`: extension points for forks
 
 Local/private runtime locations:
 
-- `inputs/`: source PDFs.
-- `work/<paper_id>/parsed/`: parsed page text, page images, inventories, tables, figures, citations, crossrefs, and manifest files.
-- `work/<paper_id>/prompts/`: rendered run-specific prompts.
-- `work/<paper_id>/repair/`: optional parser repair plan, reviewer-facing repair notes, repair manifest, and repaired overlay artifacts.
-- `work/<paper_id>/selection/`: reviewer selector output and selected reviewer roster.
-- `work/<paper_id>/reviews/`: reviewer JSON outputs.
-- `work/<paper_id>/editor/`: normalized bundle and editor input.
-- `outputs/<paper_id>/report.md`: final human-readable report.
+- `inputs/`: source PDFs
+- `work/<paper_id>/parsed/`: deterministic parsed artifacts
+- `work/<paper_id>/selection/`: applicability decision and active roster
+- `work/<paper_id>/reviews/`: reviewer JSON
+- `work/<paper_id>/editor/`: normalized bundle and editor input
+- `outputs/<paper_id>/report.md`: final report
 
-Private papers and generated review artifacts are local by default. Do not commit source PDFs, `work/` artifacts, `outputs/` reports, logs, rendered prompts, reviewer JSON, or credentials. See `SECURITY.md` and `docs/public_release_checklist.md` for the full release checklist.
+Do not commit PDFs, generated prompts, reviewer JSON, logs, editor bundles, reports, credentials, or local Codex runtime state. See `SECURITY.md` and `docs/public_release_checklist.md`.
 
-## Open Development
+## Development
 
-This project is intended to support reproducible AI-assisted paper-review workflows without publishing the papers being reviewed. Issues, pull requests, examples, and tests should use synthetic fixtures, public-domain examples, or short non-sensitive snippets rather than private manuscripts or generated review outputs.
+Useful contributions include deterministic preprocessing improvements, reviewer prompts and validators, conservative normalization, tests, and cross-platform documentation. Use synthetic fixtures, public-domain examples, or short non-sensitive snippets in issues and pull requests.
 
-Useful contributions include:
-
-- better deterministic preprocessing and artifact inventories
-- reviewer prompts, schemas, validators, and normalization rules that improve traceability
-- tests that capture parser, reviewer-selection, editor, or privacy-hygiene failures
-- documentation for running the workflow on new platforms or adapting it to related review settings
-
-Forks can usually extend the workflow by adding reviewer entries in `config/reviewers.json`, prompt templates in `prompts/templates/`, and matching validation or normalization tests when the output contract changes. Shared runtime paths live in `scripts/pipeline_paths.py` so wrappers can reuse the same `inputs/`, `work/`, and `outputs/` layout.
-
-See `docs/extension_guide.md` for the main reviewer, schema, prompt, normalization, and wrapper extension points.
-
-See `CONTRIBUTING.md` for pull request expectations and local checks.
-
-## Reviewer Roster
-
-Reviewers are configured in `config/reviewers.json`. Each entry declares:
-
-- reviewer name
-- prompt template
-- output filename
-- finding ID prefix
-- whether search is required
-- normalization role
-- stage: `preflight` or `review`
-- selection policy: `mandatory` or `optional`
-
-Mandatory reviewers always run:
-
-- `parser_quality_auditor`: preflight check for parser artifacts that could poison downstream review
-- `crossref_auditor`: internal reference, numbering, and appendix-label checks
-- `reference_auditor`: bibliography and cited-reference verification
-- `grammar_auditor`: copyediting and grammar issues
-
-After `parser_quality_auditor`, an optional parser-repair step can be enabled. It adds repair guidance and narrow overlay artifacts that help reviewers avoid unsafe parsed tables, figures, or captions, but it adds runtime and token usage and is off by default. To run the review with the parser repair overlay enabled, use the following command:
+Before sharing changes, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --parser-repair overlay
+python -m unittest
+python scripts/check_shareable_repo.py --include-untracked
+python scripts/check_tracked_sensitive_names.py
+git diff --check
 ```
 
-Optional reviewers are selected dynamically by default:
-
-- core substantive reviewers: `numerical_auditor`, `claim_evidence_auditor`, `literature_auditor`, `identification_auditor`, `robustness_auditor`, `sample_construction_auditor`, `abstract_conclusion_consistency_auditor`, `limitations_external_validity_auditor`, `model_equation_auditor`, and `data_availability_replication_auditor`
-- narrower pilot reviewers: `institutional_context_auditor`, `power_multiple_testing_auditor`, `design_randomization_auditor`, and `economic_magnitude_auditor`
-
-Use dynamic selection for normal runs. Use static mode only when all enabled review-stage reviewers should run.
-
-Search-enabled reviewers require Codex search mode. Literature and reference verification should not be guessed; use `cannot_verify` when evidence is missing.
-
-Run all enabled review-stage reviewers without selector filtering:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection static
-```
-
-Use an explicit paper id when needed:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "my-custom-id"
-```
+See `CONTRIBUTING.md` and `docs/extension_guide.md`.
 
 ## License
 

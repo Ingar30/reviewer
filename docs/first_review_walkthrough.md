@@ -19,9 +19,9 @@ source .venv/bin/activate
 ## 2. Confirm The Local Checks Pass
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest
-.\.venv\Scripts\python.exe scripts\check_environment.py
-.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
+python -m unittest
+python scripts/check_environment.py
+python scripts/check_shareable_repo.py --include-untracked
 ```
 
 ## 3. Add A Private Paper PDF
@@ -39,21 +39,17 @@ Preprocessing stays local, but the review prompts send parsed manuscript text to
 ## 4. Run The Reviewer
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
 ```
 
-This ordinary command uses the quality-first static default: one parser-quality preflight, all 4 mandatory and 14 optional review-stage agents, and one editor. The 18 substantive reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor.
+This ordinary command is the single quality-first workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
 
-Dynamic selection is an explicit cost and latency tradeoff. It uses a selector to choose 7 to 13 optional reviewers, for 11 to 17 substantive reviewers after the 4 mandatory agents:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --reviewer-selection dynamic
-```
+There is no separate static or dynamic mode. A high-confidence classification may skip a conditional reviewer only when that reviewer's entire remit is clearly absent. For example, a purely theoretical paper without material quantitative content can skip empirical-design and numerical specialists while retaining the dedicated theory-logic auditor.
 
 Use an explicit ID if the filename is long or sensitive:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf" --paper-id "paper-a"
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "paper-a"
 ```
 
 Substantive reviewers read the parser-quality output and route around deterministic artifacts marked unsafe. The workflow does not use an external parsing service or generate repaired parser content. If page text, coordinates, crops, and page images are insufficient for a reliable check, the reviewer returns `cannot_verify`.
@@ -79,8 +75,8 @@ The `work/` and `outputs/` directories are ignored by Git because they can conta
 Run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest
-.\.venv\Scripts\python.exe scripts\check_shareable_repo.py --include-untracked
+python -m unittest
+python scripts/check_shareable_repo.py --include-untracked
 git status --short
 ```
 

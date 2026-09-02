@@ -27,6 +27,7 @@ from check_tracked_sensitive_names import suspicious_files  # noqa: E402
 from evaluate_prior_runs import aggregate, selector_metrics  # noqa: E402
 from build_editor_input import (  # noqa: E402
     ADDITIONAL_FINDINGS_SECTION,
+    BIBLIOGRAPHY_APPENDIX_SECTION,
     GRAMMAR_APPENDIX_SECTION,
     HIGHEST_PRIORITY_SECTION,
     MAX_EDITOR_INPUT_BYTES,
@@ -78,9 +79,10 @@ from preprocess_pdf import (  # noqa: E402
 from pipeline_paths import paper_run_paths  # noqa: E402
 from refresh_editor import require_paths  # noqa: E402
 from review_paper import (  # noqa: E402
-    DEFAULT_REVIEWER_SELECTION,
     REASONING_EFFORT_CHOICES,
+    REVIEWER_SELECTION_MODE,
     codex_exec_command,
+    enforce_conservative_applicability,
     extract_editor_report_from_transcript,
     finding_label,
     parser_quality_gate_findings,
@@ -88,7 +90,6 @@ from review_paper import (  # noqa: E402
     recover_editor_report_if_needed,
     render_selector_prompt,
     selected_reviewers_from_selection,
-    static_reviewer_selection,
     validate_selection_output,
 )
 from reviewer_config import ReviewerConfig, load_reviewers_config  # noqa: E402
@@ -268,6 +269,7 @@ class ReviewerConfigTests(unittest.TestCase):
                 "abstract_conclusion_consistency_auditor",
                 "limitations_external_validity_auditor",
                 "model_equation_auditor",
+                "theory_logic_auditor",
                 "data_availability_replication_auditor",
                 "institutional_context_auditor",
                 "power_multiple_testing_auditor",
@@ -288,9 +290,43 @@ class ReviewerConfigTests(unittest.TestCase):
             next(item for item in reviewers if item.name == "source_consistency_auditor").selection_policy,
             "mandatory",
         )
+        self.assertEqual(
+            next(item for item in reviewers if item.name == "claim_evidence_auditor").selection_policy,
+            "mandatory",
+        )
+        self.assertEqual(
+            next(item for item in reviewers if item.name == "literature_auditor").selection_policy,
+            "mandatory",
+        )
+        self.assertEqual(
+            next(
+                item
+                for item in reviewers
+                if item.name == "abstract_conclusion_consistency_auditor"
+            ).selection_policy,
+            "mandatory",
+        )
+        self.assertEqual(
+            next(item for item in reviewers if item.name == "model_equation_auditor").selection_policy,
+            "mandatory",
+        )
         self.assertEqual(next(item for item in reviewers if item.name == "numerical_auditor").selection_policy, "optional")
-        self.assertEqual(DEFAULT_REVIEWER_SELECTION, "static")
+        self.assertEqual(
+            next(item for item in reviewers if item.name == "theory_logic_auditor").selection_policy,
+            "optional",
+        )
+        self.assertEqual(REVIEWER_SELECTION_MODE, "applicability")
         self.assertNotIn("minimal", REASONING_EFFORT_CHOICES)
+        selection_schema = json.loads(
+            (REPO_ROOT / "schemas" / "reviewer_selection.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            selection_schema["properties"]["selection_mode"]["enum"],
+            ["applicability"],
+        )
+        self.assertIn("selection_mode", selection_schema["required"])
 
     def test_environment_check_requires_only_runtime_dependencies(self) -> None:
         self.assertEqual(
@@ -637,6 +673,7 @@ class ReviewerConfigTests(unittest.TestCase):
             "paper_id": "paper-x",
             "paper_type": "empirical_causal",
             "selection_confidence": "high",
+            "selection_mode": "applicability",
             "selected_optional_reviewers": [
                 {"name": "identification_auditor", "reason": "Causal paper."},
                 {"name": "identification_auditor", "reason": "Duplicate."},
@@ -663,6 +700,7 @@ class ReviewerConfigTests(unittest.TestCase):
             "paper_id": "paper-x",
             "paper_type": "empirical_causal",
             "selection_confidence": "high",
+            "selection_mode": "applicability",
             "selected_optional_reviewers": [],
             "skipped_optional_reviewers": [],
             "notes": [],
@@ -672,7 +710,7 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(any("neither selected nor skipped" in error for error in errors))
 
-    def test_validate_selection_output_enforces_roster_and_pilot_caps(self) -> None:
+    def test_validate_selection_output_allows_full_conditional_roster(self) -> None:
         optional = [
             reviewer_config(f"optional_{index}", f"OPT{index}", selection_policy="optional")
             for index in range(14)
@@ -681,6 +719,7 @@ class ReviewerConfigTests(unittest.TestCase):
             "paper_id": "paper-x",
             "paper_type": "mixed",
             "selection_confidence": "high",
+            "selection_mode": "applicability",
             "selected_optional_reviewers": [
                 {"name": reviewer.name, "reason": "Distinct material cue."}
                 for reviewer in optional
@@ -689,73 +728,82 @@ class ReviewerConfigTests(unittest.TestCase):
             "notes": [],
         }
 
-        errors = validate_selection_output(selection, "paper-x", [], optional)
-
-        self.assertTrue(any("count exceeds 13" in error for error in errors))
-
-        pilot_names = [
-            "data_availability_replication_auditor",
-            "institutional_context_auditor",
-            "power_multiple_testing_auditor",
-            "design_randomization_auditor",
-            "economic_magnitude_auditor",
-        ]
-        pilots = [
-            reviewer_config(name, f"PILOT{index}", selection_policy="optional")
-            for index, name in enumerate(pilot_names)
-        ]
-        selection["selected_optional_reviewers"] = [
-            {"name": reviewer.name, "reason": "Distinct material cue."} for reviewer in pilots
-        ]
-        errors = validate_selection_output(selection, "paper-x", [], pilots)
-        self.assertTrue(any("pilot reviewer count exceeds 4" in error for error in errors))
-
-    def test_static_selection_records_all_optional_reviewers_without_dynamic_caps(self) -> None:
-        optional = [
-            reviewer_config(f"optional_{index}", f"OPT{index}", selection_policy="optional")
-            for index in range(14)
-        ]
-
-        selection = static_reviewer_selection("paper-x", optional)
         errors = validate_selection_output(selection, "paper-x", [], optional)
 
         self.assertEqual(errors, [])
-        self.assertEqual(selection["selection_mode"], "static")
-        self.assertEqual(len(selection["selected_optional_reviewers"]), 14)
-        self.assertEqual(selection["skipped_optional_reviewers"], [])
 
-        selection["selected_optional_reviewers"] = selection["selected_optional_reviewers"][:-1]
-        errors = validate_selection_output(selection, "paper-x", [], optional)
-        self.assertTrue(any("static selection must include every" in error for error in errors))
-
-    def test_dynamic_selection_cannot_claim_static_mode_to_evade_caps(self) -> None:
+    def test_conservative_applicability_expands_uncertain_selection(self) -> None:
         optional = [
-            reviewer_config(f"optional_{index}", f"OPT{index}", selection_policy="optional")
-            for index in range(14)
+            reviewer_config("numerical_auditor", "NUM", selection_policy="optional"),
+            reviewer_config("theory_logic_auditor", "THEORY", selection_policy="optional"),
         ]
         selection = {
             "paper_id": "paper-x",
-            "paper_type": "mixed",
+            "paper_type": "empirical_causal",
+            "selection_confidence": "medium",
+            "selection_mode": "applicability",
+            "selected_optional_reviewers": [
+                {"name": "numerical_auditor", "reason": "The paper reports estimates."}
+            ],
+            "skipped_optional_reviewers": [
+                {"name": "theory_logic_auditor", "reason": "No formal model was found."}
+            ],
+            "notes": [],
+        }
+
+        guarded = enforce_conservative_applicability(selection, optional)
+
+        self.assertEqual(
+            [item["name"] for item in guarded["selected_optional_reviewers"]],
+            ["numerical_auditor", "theory_logic_auditor"],
+        )
+        self.assertEqual(guarded["skipped_optional_reviewers"], [])
+        self.assertIn("expanded an uncertain classification", guarded["notes"][-1])
+        self.assertEqual(len(selection["selected_optional_reviewers"]), 1)
+
+    def test_conservative_applicability_requires_theory_specialist(self) -> None:
+        optional = [
+            reviewer_config("numerical_auditor", "NUM", selection_policy="optional"),
+            reviewer_config("theory_logic_auditor", "THEORY", selection_policy="optional"),
+        ]
+        selection = {
+            "paper_id": "paper-x",
+            "paper_type": "theory",
+            "selection_confidence": "high",
+            "selection_mode": "applicability",
+            "selected_optional_reviewers": [],
+            "skipped_optional_reviewers": [
+                {"name": "numerical_auditor", "reason": "No material quantitative claims."},
+                {"name": "theory_logic_auditor", "reason": "Incorrectly skipped."},
+            ],
+            "notes": [],
+        }
+
+        guarded = enforce_conservative_applicability(selection, optional)
+
+        self.assertEqual(
+            [item["name"] for item in guarded["selected_optional_reviewers"]],
+            ["theory_logic_auditor"],
+        )
+        self.assertEqual(
+            [item["name"] for item in guarded["skipped_optional_reviewers"]],
+            ["numerical_auditor"],
+        )
+
+    def test_validate_selection_output_rejects_legacy_modes(self) -> None:
+        selection = {
+            "paper_id": "paper-x",
+            "paper_type": "theory",
             "selection_confidence": "high",
             "selection_mode": "static",
-            "selected_optional_reviewers": [
-                {"name": reviewer.name, "reason": "Distinct material cue."}
-                for reviewer in optional
-            ],
+            "selected_optional_reviewers": [],
             "skipped_optional_reviewers": [],
             "notes": [],
         }
 
-        errors = validate_selection_output(
-            selection,
-            "paper-x",
-            [],
-            optional,
-            expected_selection_mode="dynamic",
-        )
+        errors = validate_selection_output(selection, "paper-x", [], [])
 
-        self.assertTrue(any("does not match" in error for error in errors))
-        self.assertTrue(any("count exceeds 13" in error for error in errors))
+        self.assertTrue(any("must be 'applicability'" in error for error in errors))
 
     def test_selected_reviewers_from_selection_combines_mandatory_and_optional(self) -> None:
         mandatory = [reviewer_config("crossref_auditor", "CROSSREF")]
@@ -797,13 +845,13 @@ class ReviewerConfigTests(unittest.TestCase):
         with mock.patch("review_paper.codex_command", return_value="codex"):
             self.assertEqual(
                 codex_exec_command(
-                    model="gpt-5.6-terra", reasoning_effort="max", search=True
+                    model="test-model", reasoning_effort="max", search=True
                 ),
                 [
                     "codex",
                     "--search",
                     "--model",
-                    "gpt-5.6-terra",
+                    "test-model",
                     "-c",
                     'model_reasoning_effort="max"',
                     "exec",
@@ -1427,6 +1475,13 @@ class ReviewerConfigTests(unittest.TestCase):
             "source_reviewers": ["reference_auditor"],
             "source_findings": [{"reviewer": "reference_auditor", "id": "REF-001"}],
         }
+        bibliography = {
+            **high_manuscript,
+            "canonical_id": "CANON-006",
+            "issue_class": "bibliography_maintenance",
+            "source_reviewers": ["reference_auditor"],
+            "source_findings": [{"reviewer": "reference_auditor", "id": "REF-002"}],
+        }
         low_manuscript = {
             **high_manuscript,
             "canonical_id": "CANON-005",
@@ -1441,7 +1496,9 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(route_finding(copyedit)[0], GRAMMAR_APPENDIX_SECTION)
         self.assertEqual(route_finding(parser)[0], PARSER_SECTION)
         self.assertEqual(route_finding(reference)[0], REFERENCE_SECTION)
+        self.assertEqual(route_finding(bibliography)[0], BIBLIOGRAPHY_APPENDIX_SECTION)
         self.assertEqual(route_finding(low_manuscript)[0], ADDITIONAL_FINDINGS_SECTION)
+        self.assertFalse(requires_body_coverage(parser))
 
     def test_editor_brief_guides_concise_configuration_and_traceability(self) -> None:
         reviewer = reviewer_config("claim_evidence_auditor", "CEA")
@@ -1512,6 +1569,7 @@ class ReviewerConfigTests(unittest.TestCase):
             {
                 "paper_type": "empirical_causal",
                 "selection_confidence": "high",
+                "selection_mode": "applicability",
                 "selected_optional_reviewers": [
                     {"name": "claim_evidence_auditor", "reason": "Important displayed-evidence claims."}
                 ],
@@ -1524,7 +1582,10 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIn("Important displayed-evidence claims.", brief)
         self.assertIn("Appendix coverage was incomplete.", brief)
         self.assertIn("claim_evidence_auditor", brief)
-        self.assertIn("Findings Recommended For Cross-Agent Synthesis", brief)
+        self.assertIn("Machine-Ranked Candidate Findings (Advisory Only)", brief)
+        self.assertIn("retrieval aids, not a final priority list", brief)
+        self.assertNotIn("| Canonical ID | Score |", brief)
+        self.assertNotIn("| Canonical ID | Severity | Confidence | Agents |", brief)
         self.assertIn("Additional Findings Candidates", brief)
         self.assertIn("Traceability Map Rows", brief)
         self.assertIn("CROSSREF-001", brief)
@@ -1532,7 +1593,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertNotIn("Agent-by-Agent Finding Index", brief)
         self.assertIn("CANON-001", brief)
 
-    def test_editor_brief_records_static_roster_and_required_body_coverage(self) -> None:
+    def test_editor_brief_records_applicability_roster_and_required_body_coverage(self) -> None:
         optional = reviewer_config(
             "claim_evidence_auditor", "CEA", selection_policy="optional"
         )
@@ -1561,13 +1622,13 @@ class ReviewerConfigTests(unittest.TestCase):
             "canonical_findings": [finding_item],
         }
         selection = {
-            "selection_mode": "static",
-            "paper_type": "unknown",
+            "selection_mode": "applicability",
+            "paper_type": "empirical_causal",
             "selection_confidence": "high",
             "selected_optional_reviewers": [
                 {
                     "name": optional.name,
-                    "reason": "Included because static quality-first mode runs every enabled optional reviewer.",
+                    "reason": "The paper reports central treatment-effect claims.",
                 }
             ],
         }
@@ -1580,11 +1641,51 @@ class ReviewerConfigTests(unittest.TestCase):
             selection,
         )
 
-        self.assertIn("Static quality-first mode ran every enabled optional reviewer", brief)
+        self.assertIn("Applicability routing classified the paper", brief)
+        self.assertIn("skipped only when their entire remit is clearly absent", brief)
         self.assertIn("Required Body Coverage Audit", brief)
         self.assertIn("CANON-001", brief)
         self.assertTrue(requires_body_coverage(finding_item))
         self.assertFalse(requires_body_coverage({**finding_item, "severity": "low"}))
+
+    def test_editor_brief_preserves_legacy_selection_provenance(self) -> None:
+        optional = reviewer_config(
+            "numerical_auditor", "NUM", selection_policy="optional"
+        )
+        bundle = {
+            "summary": {"issue_class_counts": {}, "severity_counts": {}},
+            "source_reviewer_outputs": [
+                {"reviewer": optional.name, "run_status": "ok", "finding_count": 0}
+            ],
+            "canonical_findings": [],
+        }
+        selection = {
+            "selection_mode": "static",
+            "paper_type": "unknown",
+            "selection_confidence": "high",
+            "selected_optional_reviewers": [
+                {"name": optional.name, "reason": "Legacy exhaustive run."}
+            ],
+        }
+
+        static_brief = editor_brief_markdown(
+            "paper-x",
+            bundle,
+            [optional],
+            {optional.name: review_output([], optional.name)},
+            selection,
+        )
+        dynamic_brief = editor_brief_markdown(
+            "paper-x",
+            bundle,
+            [optional],
+            {optional.name: review_output([], optional.name)},
+            {**selection, "selection_mode": "dynamic", "paper_type": "theory"},
+        )
+
+        self.assertIn("legacy exhaustive run", static_brief)
+        self.assertIn("legacy dynamically routed run", dynamic_brief)
+        self.assertIn("`theory`", dynamic_brief)
 
     def test_editor_input_uses_bundle_and_provenance_without_raw_json_duplication(self) -> None:
         optional = reviewer_config(
@@ -1681,7 +1782,7 @@ class ReviewerConfigTests(unittest.TestCase):
             {"claim_evidence_auditor": review_output([], "claim_evidence_auditor")},
         )
 
-        synthesis = brief.split("## Findings Recommended For Cross-Agent Synthesis", 1)[1].split(
+        synthesis = brief.split("## Machine-Ranked Candidate Findings (Advisory Only)", 1)[1].split(
             "## Additional Findings Candidates", 1
         )[0]
         additional = brief.split("## Additional Findings Candidates", 1)[1].split("## Section Routing Guidance", 1)[0]
@@ -1734,7 +1835,7 @@ class ReviewerConfigTests(unittest.TestCase):
             {"claim_evidence_auditor": review_output([], "claim_evidence_auditor")},
         )
 
-        synthesis = brief.split("## Findings Recommended For Cross-Agent Synthesis", 1)[1].split(
+        synthesis = brief.split("## Machine-Ranked Candidate Findings (Advisory Only)", 1)[1].split(
             "## Additional Findings Candidates", 1
         )[0]
         additional = brief.split("## Additional Findings Candidates", 1)[1].split("## Section Routing Guidance", 1)[0]
@@ -1749,14 +1850,14 @@ class ReviewerConfigTests(unittest.TestCase):
                 "# Multi-Agent Paper Review Report",
                 "## Executive Summary",
                 "summary",
-                "## Review Configuration",
-                "config",
                 "## Highest-Priority Cross-Agent Findings",
                 "findings",
                 "## Suggested Revision Priorities",
                 "priorities",
                 "## Additional Findings",
                 "additional",
+                "## Appendix: Review Scope and Limitations",
+                "scope",
                 "body " + ("x" * 2100),
             ]
         )
@@ -1777,6 +1878,64 @@ class ReviewerConfigTests(unittest.TestCase):
 
         self.assertTrue(plausible_editor_report(report))
         self.assertEqual(extract_editor_report_from_transcript(transcript), report + "\n")
+
+    def test_report_checker_accepts_new_and_legacy_review_scope_headings(self) -> None:
+        report = "\n".join(
+            [
+                "# Multi-Agent Paper Review Report",
+                "## Executive Summary",
+                "Summary for CANON-001.",
+                "## Highest-Priority Cross-Agent Findings",
+                "Finding.",
+                "## Suggested Revision Priorities",
+                "Priority.",
+                "## Additional Findings",
+                "Additional.",
+                "## Appendix: Review Scope and Limitations",
+                "Scope.",
+            ]
+        )
+
+        self.assertEqual(report_failures(report, min_chars=0), [])
+        self.assertEqual(
+            report_failures(
+                report.replace(
+                    "## Appendix: Review Scope and Limitations",
+                    "## Review Configuration",
+                ),
+                min_chars=0,
+            ),
+            [],
+        )
+        failures = report_failures(
+            report.replace("## Appendix: Review Scope and Limitations\nScope.", ""),
+            min_chars=0,
+        )
+        self.assertTrue(any("missing review-scope heading" in failure for failure in failures))
+
+    def test_editor_prompt_encodes_general_cplus_priority_rules(self) -> None:
+        prompt = (REPO_ROOT / "prompts" / "templates" / "editor_report.txt").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("confirmed correction", prompt)
+        self.assertIn("material qualification", prompt)
+        self.assertIn("exploratory suggestion", prompt)
+        self.assertIn("Minimum adequate correction", prompt)
+        self.assertIn("Appendix: Review Scope and Limitations", prompt)
+        self.assertIn("Appendix: Parser and Preprocessing Limitations", prompt)
+        self.assertIn("limitation of evidence available to this review", prompt)
+        self.assertNotIn("shares not summing", prompt.lower())
+        self.assertNotIn("shift in beliefs", prompt.lower())
+
+    def test_numerical_prompt_requires_source_faithful_adding_up_checks(self) -> None:
+        prompt = (REPO_ROOT / "prompts" / "templates" / "numerical_audit.txt").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("accounting and adding-up identities", prompt)
+        self.assertIn("same sample, denominator, timing, and specification", prompt)
+        self.assertIn("never infer a balancing component, value, or sign", prompt)
 
     def test_recover_editor_report_replaces_tiny_acknowledgement(self) -> None:
         report_path = self.config_path("tiny_editor_report.md")
@@ -2495,16 +2654,31 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(paths.report_path, REPO_ROOT / "outputs" / "paper-x" / "report.md")
         self.assertEqual(paths.run_manifest_path, REPO_ROOT / "work" / "paper-x" / "run_manifest.json")
 
-    def test_selector_prompt_contains_budget_and_pilot_gates(self) -> None:
+    def test_selector_prompt_contains_conservative_applicability_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")
 
-        self.assertIn("7 to 13 optional reviewers", prompt)
-        self.assertIn("up to 4 pilot reviewers", prompt)
-        self.assertIn("treat this audit as distinct", prompt)
-        self.assertIn("Numerical and robustness review are not substitutes", prompt)
-        self.assertIn("whenever a manuscript reports and interprets a substantive experiment", prompt)
-        self.assertIn("not redundant", prompt)
-        self.assertIn("Use skipped_optional_reviewers", prompt)
+        self.assertIn("Set `selection_mode` to `applicability`", prompt)
+        self.assertIn("There is no reviewer-count target or cap", prompt)
+        self.assertIn("positive, high-confidence evidence", prompt)
+        self.assertIn("select every conditional specialist", prompt)
+        self.assertIn("wrapper enforces this rule deterministically", prompt)
+        self.assertIn("theory_logic_auditor", prompt)
+        self.assertIn("mandatory model_equation_auditor separately checks", prompt)
+        self.assertIn("List every catalog reviewer exactly once", prompt)
+        theory_prompt = (
+            REPO_ROOT / "prompts" / "templates" / "theory_logic_audit.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("assumption-to-result validity", theory_prompt)
+        self.assertIn("distinct from model_equation_auditor", theory_prompt)
+        self.assertIn("never reconstruct a sign, symbol, or formula", theory_prompt)
+        contract = (
+            REPO_ROOT / "prompts" / "templates" / "reviewer_contract.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("empty findings array", contract)
+        self.assertIn("do not stretch the remit", contract)
+        self.assertIn("Audit independently", contract)
+        self.assertIn("Do not inspect, quote, or rely on another substantive reviewer", contract)
+        self.assertIn("downstream normalization and editing", contract)
 
     def test_preprocess_page_quality_summary_flags_low_text_and_order_instability(self) -> None:
         summary = page_quality_summary(

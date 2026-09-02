@@ -1,6 +1,6 @@
 # Limitation Branch Recommendations
 
-> **Historical record, superseded.** This document preserves results from an earlier branch-evaluation phase. Its dynamic selector-breadth targets and source-overlap normalization recommendations do not describe the current quality-first workflow. The current wrapper defaults to an exhaustive static roster, and its normalizer is precision-first and preserves lossless per-source-finding detail. Use `README.md` and the current release-readiness record for active behavior.
+> **Historical record, superseded.** This document preserves results from an earlier branch-evaluation phase. Its dynamic selector-breadth targets and source-overlap normalization recommendations do not describe the current quality-first workflow. The current wrapper uses one conservative applicability router with deterministic full-roster fallback for uncertain classifications, and its normalizer is precision-first and preserves lossless per-source-finding detail. Use `README.md` and the current release-readiness record for active behavior.
 
 This report records the limitation branches tested against the nine prior actual paper runs (`paper1` through `paper9`) before incorporation into `main`.
 

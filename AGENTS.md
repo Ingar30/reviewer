@@ -9,8 +9,8 @@ The normal workflow is:
 3. Render run-specific prompts under `work/<paper_id>/prompts/`.
 4. Run parser-quality preflight before substantive review.
 5. Route substantive reviewers around parser-quality warnings using deterministic artifacts.
-6. Use static exhaustive reviewer selection by default: run all 4 mandatory review-stage reviewers and all 14 optional reviewers. Dynamic selection is an explicit opt-in.
-7. Store selection provenance and the active reviewer roster under `work/<paper_id>/selection/`. Static mode records the exhaustive roster without making a selector model call; dynamic mode also records the selector decision.
+6. Run the single conservative applicability router. The 8 universal review-stage auditors always run; conditional specialists are skipped only when their entire remit is clearly absent. Mixed, unknown, or lower-confidence classifications expand to every conditional specialist.
+7. Store applicability provenance and the active reviewer roster under `work/<paper_id>/selection/`.
 8. Rerender prompts for the selected reviewer roster with parser-quality guidance.
 9. Run the selected reviewer agents on the parsed artifacts.
 10. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
@@ -35,8 +35,8 @@ The normal workflow is:
 - Never run reviewer agents directly on a raw PDF if parsed artifacts do not exist.
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
-- Static reviewer selection is the default for fresh wrapper runs and runs all 18 enabled review-stage reviewers: 4 mandatory and 14 optional. Dynamic mode is available only as an explicit opt-in and selects 7 to 13 optional reviewers, for 11 to 17 substantive reviewers in total.
-- The quality-first model default is `gpt-5.6-sol`. Substantive reviewers and the editor use `xhigh` reasoning by default, parser-quality preflight uses `high`, and the optional dynamic selector uses `medium`.
+- Fresh wrapper runs use one conservative applicability workflow. Eight universal review-stage auditors always run. Eleven conditional specialists, including the theory-logic auditor, run whenever their remit is plausibly material; only high-confidence single-type classifications may skip clearly inapplicable roles. Mixed, unknown, medium-confidence, and low-confidence classifications run all 19 substantive reviewers.
+- The quality-first model default is `gpt-5.6-sol`. Substantive reviewers and the editor use `xhigh` reasoning by default; parser-quality preflight and applicability routing use `high`.
 - Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.
@@ -54,6 +54,7 @@ The normal workflow is:
 - Literature and reference verification require web search when enabled.
 - Never guess missing evidence; use `cannot_verify` or equivalent failure labels.
 - Preserve exact source locations whenever possible.
+- A reviewer whose remit is genuinely absent should return `run_status: ok` with no findings. Absence of an empirical design, formal model, dataset, experiment, or other scope element is not itself a defect.
 - Keep reviewer outputs modular so failed reviewers can be rerun independently.
 - Final reports should keep canonical/source finding identifiers in the traceability appendix rather than repeated body footers.
 

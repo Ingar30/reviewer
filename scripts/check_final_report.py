@@ -8,11 +8,14 @@ from pathlib import Path
 
 DEFAULT_REQUIRED_HEADINGS = [
     "## Executive Summary",
-    "## Review Configuration",
     "## Highest-Priority Cross-Agent Findings",
     "## Suggested Revision Priorities",
     "## Additional Findings",
 ]
+REVIEW_SCOPE_HEADINGS = (
+    "## Appendix: Review Scope and Limitations",
+    "## Review Configuration",
+)
 GRAMMAR_APPENDIX_HEADING = "## Appendix: Grammar and Copyediting Issues"
 TRACEABILITY_APPENDIX_HEADING = "## Appendix: Traceability Map"
 EXTERNAL_SOURCES_APPENDIX_RE = re.compile(r"^## Appendix: External Sources", re.MULTILINE)
@@ -140,6 +143,11 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
     for heading in DEFAULT_REQUIRED_HEADINGS:
         if heading not in text:
             failures.append(f"missing required heading: {heading}")
+    if not any(heading in text for heading in REVIEW_SCOPE_HEADINGS):
+        failures.append(
+            "missing review-scope heading: expected Appendix: Review Scope and Limitations "
+            "or legacy Review Configuration"
+        )
     if not re.search(r"\b(?:CANON-\d{3}|[A-Z]+-[A-Z]+-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b", text):
         failures.append("report does not mention canonical or source finding identifiers")
 

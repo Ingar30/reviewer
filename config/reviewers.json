@@ -49,7 +49,7 @@
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript",
-      "selection_policy": "optional"
+      "selection_policy": "mandatory"
     },
     {
       "name": "literature_auditor",
@@ -59,7 +59,7 @@
       "search": true,
       "enabled": true,
       "normalization_role": "manuscript",
-      "selection_policy": "optional"
+      "selection_policy": "mandatory"
     },
     {
       "name": "reference_auditor",
@@ -119,7 +119,7 @@
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript",
-      "selection_policy": "optional"
+      "selection_policy": "mandatory"
     },
     {
       "name": "limitations_external_validity_auditor",
@@ -136,6 +136,16 @@
       "prompt": "model_equation_audit.txt",
       "output": "model_equation_auditor.json",
       "id_prefix": "MODEL",
+      "search": false,
+      "enabled": true,
+      "normalization_role": "manuscript",
+      "selection_policy": "mandatory"
+    },
+    {
+      "name": "theory_logic_auditor",
+      "prompt": "theory_logic_audit.txt",
+      "output": "theory_logic_auditor.json",
+      "id_prefix": "THEORY",
       "search": false,
       "enabled": true,
       "normalization_role": "manuscript",

@@ -12,9 +12,10 @@ HIGHEST_PRIORITY_SECTION = "Highest-Priority Cross-Agent Findings"
 ADDITIONAL_FINDINGS_SECTION = "Additional Findings"
 AGENT_SECTION = ADDITIONAL_FINDINGS_SECTION
 LITERATURE_SECTION = "Literature Positioning and Novelty"
-REFERENCE_SECTION = "Reference Integrity and Bibliography Maintenance"
-PARSER_SECTION = "Parser and Preprocessing Caveats"
+REFERENCE_SECTION = "Reference Integrity"
+PARSER_SECTION = "Appendix: Parser and Preprocessing Limitations"
 CANNOT_VERIFY_SECTION = "Items Marked Cannot Verify"
+BIBLIOGRAPHY_APPENDIX_SECTION = "Appendix: Bibliography Maintenance"
 GRAMMAR_APPENDIX_SECTION = "Appendix: Grammar and Copyediting Issues"
 TRACEABILITY_APPENDIX_SECTION = "Appendix: Traceability Map"
 
@@ -147,6 +148,14 @@ def finding_area(finding: dict[str, Any]) -> str:
             ("sample_construction_auditor", "Sample construction"),
             ("abstract_conclusion_consistency_auditor", "Abstract/conclusion consistency"),
             ("limitations_external_validity_auditor", "External validity"),
+            ("model_equation_auditor", "Model/equation"),
+            ("theory_logic_auditor", "Theory logic"),
+            ("literature_auditor", "Literature"),
+            ("data_availability_replication_auditor", "Replication"),
+            ("institutional_context_auditor", "Institutional context"),
+            ("power_multiple_testing_auditor", "Power/multiple testing"),
+            ("design_randomization_auditor", "Experimental design"),
+            ("economic_magnitude_auditor", "Economic magnitude"),
         ]
         for reviewer, area in area_by_reviewer:
             if reviewer in reviewers:
@@ -176,8 +185,10 @@ def route_finding(finding: dict[str, Any]) -> tuple[str, str]:
         return PARSER_SECTION, "parser_artifact findings belong with preprocessing caveats"
     if is_cannot_verify(finding):
         return CANNOT_VERIFY_SECTION, "cannot-verify findings need explicit uncertainty handling"
-    if issue_class in {"reference_integrity", "bibliography_maintenance"}:
-        return REFERENCE_SECTION, "reference findings belong in the reference-integrity section"
+    if issue_class == "reference_integrity":
+        return REFERENCE_SECTION, "material source problems belong in the reference-integrity section"
+    if issue_class == "bibliography_maintenance":
+        return BIBLIOGRAPHY_APPENDIX_SECTION, "routine citation maintenance belongs in its appendix"
     if "literature_auditor" in reviewers:
         return LITERATURE_SECTION, "literature-auditor findings belong in the literature section"
     if issue_class == "manuscript_issue" and finding_confidence(finding) == "high" and score >= TOP_SYNTHESIS_SCORE:
@@ -216,7 +227,6 @@ def requires_body_coverage(finding: dict[str, Any]) -> bool:
         "manuscript_issue",
         "cannot_verify",
         "reference_integrity",
-        "parser_artifact",
     }
 
 
@@ -230,7 +240,9 @@ def selection_reason_map(selection_json: dict[str, Any] | None) -> dict[str, str
     reasons = {}
     for item in selection_json.get("selected_optional_reviewers", []):
         if isinstance(item, dict) and item.get("name"):
-            reasons[str(item["name"])] = str(item.get("reason") or "selected by reviewer selector")
+            reasons[str(item["name"])] = str(
+                item.get("reason") or "selected by reviewer applicability routing"
+            )
     return reasons
 
 
@@ -250,7 +262,11 @@ def active_reviewer_rows(
     for reviewer in reviewers:
         reason = selector_reasons.get(reviewer.name)
         if reason is None:
-            reason = "mandatory baseline reviewer" if reviewer.selection_policy == "mandatory" else "active configured reviewer"
+            reason = (
+                "universal quality-baseline reviewer"
+                if reviewer.selection_policy == "mandatory"
+                else "active conditional specialist"
+            )
         output = output_by_name.get(reviewer.name, {})
         review_json = review_json_by_name.get(reviewer.name, {})
         rows.append(
@@ -272,14 +288,20 @@ def optional_reviewer_rows(
     selection_json: dict[str, Any] | None, reviewers: list[Any]
 ) -> list[list[str]]:
     selected = [
-        [str(item.get("name") or ""), str(item.get("reason") or "selected by reviewer selector")]
+        [
+            str(item.get("name") or ""),
+            str(item.get("reason") or "selected by reviewer applicability routing"),
+        ]
         for item in (selection_json or {}).get("selected_optional_reviewers", [])
         if isinstance(item, dict) and item.get("name")
     ]
     if selected:
         return selected
     return [
-        [reviewer.name, "Active configured optional reviewer; selector provenance unavailable."]
+        [
+            reviewer.name,
+            "Active conditional specialist; applicability provenance unavailable.",
+        ]
         for reviewer in reviewers
         if reviewer.selection_policy == "optional"
     ]
@@ -334,7 +356,14 @@ def editor_brief_markdown(
     optional_rows = optional_reviewer_rows(selection_json, reviewers)
 
     chunks = ["# Deterministic Editor Brief\n\n"]
-    chunks.append("Use this brief as the organizing map for the report. The normalized bundle remains authoritative for details and traceability. This brief is internal guidance; do not reproduce run summaries, scoring tables, routing tables, reviewer-count tables, or this wording in the final report.\n\n")
+    chunks.append(
+        "Use this brief only as a retrieval and coverage map. The normalized bundle remains "
+        "authoritative for evidence, editorial judgment, and traceability. Candidate routes and "
+        "internal scores are advisory heuristics that cannot distinguish confirmed corrections "
+        "from judgment-dependent critiques. Inspect the complete bundle and override the suggested "
+        "order whenever the evidence warrants it. Do not reproduce run summaries, scoring tables, "
+        "routing tables, reviewer-count tables, or this wording in the final report.\n\n"
+    )
     chunks.append("## Run Summary\n\n")
     chunks.append(f"- paper_id: `{paper_id}`\n")
     chunks.append(f"- canonical findings: `{len(findings)}`\n")
@@ -344,17 +373,38 @@ def editor_brief_markdown(
     chunks.append("## Review Configuration Guidance\n\n")
     chunks.append(f"- Mandatory baseline reviewers: {baseline_reviewers or 'none recorded'}.\n")
     selection_mode = (selection_json or {}).get("selection_mode")
-    if selection_mode == "static":
+    if selection_mode == "applicability":
         chunks.append(
-            "- Static quality-first mode ran every enabled optional reviewer; no model-based selector filtering was used.\n"
+            f"- Applicability routing classified the paper as "
+            f"`{selection_json.get('paper_type', 'unknown')}` with "
+            f"`{selection_json.get('selection_confidence', 'unknown')}` confidence.\n"
+        )
+        chunks.append(
+            "- Conditional specialists may be skipped only when their entire remit is clearly "
+            "absent; mixed, unknown, or lower-confidence classifications expand to the full "
+            "conditional roster.\n"
+        )
+    elif selection_mode == "static":
+        chunks.append(
+            "- This is a legacy exhaustive run in which every then-enabled optional reviewer ran.\n"
+        )
+    elif selection_mode == "dynamic":
+        chunks.append(
+            f"- This is a legacy dynamically routed run classified as "
+            f"`{selection_json.get('paper_type', 'unknown')}` with "
+            f"`{selection_json.get('selection_confidence', 'unknown')}` confidence.\n"
         )
     elif selection_json:
-        chunks.append(f"- Reviewer selector classified the paper as `{selection_json.get('paper_type', 'unknown')}` with `{selection_json.get('selection_confidence', 'unknown')}` confidence.\n")
+        chunks.append("- Reviewer-selection provenance uses an unrecognized legacy mode.\n")
     else:
         chunks.append(
             "- Selection provenance is unavailable; the active configured optional reviewers listed below were run.\n"
         )
-    chunks.append("- In the final report, summarize reviewer selection in prose only; do not print reviewer-count or active-reviewer tables.\n\n")
+    chunks.append(
+        "- In the final report, use at most one short plain-language paragraph near the end to "
+        "describe review scope and material coverage limitations. Do not name agents, state reviewer "
+        "counts, or narrate routing unless a specific coverage gap affects confidence.\n\n"
+    )
     chunks.append("Optional reviewers used and why:\n")
     chunks.append(markdown_table(["Reviewer", "Selection reason"], optional_rows))
     status_caveats = reviewer_status_caveats(active_rows)
@@ -362,17 +412,21 @@ def editor_brief_markdown(
         chunks.append("\nReviewer status caveats to mention only if they materially limit confidence:\n")
         chunks.append(markdown_table(["Reviewer", "Status", "Coverage summary"], status_caveats))
 
-    chunks.append("\n## Findings Recommended For Cross-Agent Synthesis\n\n")
+    chunks.append("\n## Machine-Ranked Candidate Findings (Advisory Only)\n\n")
+    chunks.append(
+        "These candidates are retrieval aids, not a final priority list. The heuristic can "
+        "over-promote interpretive concerns and under-promote single-reviewer arithmetic or source "
+        "contradictions. Apply the editor prompt's evidence tiers after reading every canonical "
+        "finding.\n\n"
+    )
     chunks.append(
         markdown_table(
-            ["Canonical ID", "Score", "Severity", "Confidence", "Agents", "Issue"],
+            ["Canonical ID", "Severity", "Confidence", "Issue"],
             [
                 [
                     finding.get("canonical_id"),
-                    score,
                     finding.get("severity"),
                     finding_confidence(finding),
-                    ", ".join(sorted(reviewer_names(finding))),
                     short_text(finding_problem_text(finding)),
                 ]
                 for finding, _section, _reason, score in synthesis_candidates
@@ -393,7 +447,7 @@ def editor_brief_markdown(
                 ]
                 for finding, section, _reason, score in sorted(
                     routed,
-                    key=lambda item: (-item[3], item[0].get("canonical_id", "")),
+                    key=lambda item: item[0].get("canonical_id", ""),
                 )
                 if section == ADDITIONAL_FINDINGS_SECTION
             ],
@@ -405,8 +459,10 @@ def editor_brief_markdown(
     ]
     chunks.append("\n## Required Body Coverage Audit\n\n")
     chunks.append(
-        "Before finalizing, silently confirm that every row below is addressed in a substantive body section. "
-        "A traceability row alone does not count; one body discussion may cover several genuinely related rows.\n\n"
+        "Before finalizing, silently confirm that every row below is addressed substantively outside "
+        "the traceability map. One discussion may cover several genuinely related rows. Parser, routine "
+        "bibliography-maintenance, and copyediting findings are excluded here and may be covered only in "
+        "their technical appendices.\n\n"
     )
     chunks.append(
         markdown_table(

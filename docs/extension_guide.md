@@ -13,18 +13,20 @@ The workflow is meant to be forkable without changing the privacy boundary: sour
 - `scripts/pipeline_paths.py`: shared path conventions for wrappers that reuse the same paper workspace layout.
 - `tests/`: synthetic fixtures and regression tests for reviewer, selector, parser, editor, and privacy behavior.
 
-The default wrapper uses static exhaustive selection: 4 mandatory and 14 optional review-stage agents, for 18 substantive reviewers after parser-quality preflight. Dynamic selection is an explicit opt-in that selects 7 to 13 optional reviewers, for 11 to 17 substantive reviewers in total.
+The wrapper exposes one conservative applicability workflow. Eight universal review-stage agents always run, and 11 conditional specialists run whenever their remit is plausibly material. Only high-confidence single-type classifications can skip clearly inapplicable specialists; mixed, unknown, or lower-confidence classifications run all 19 substantive reviewers.
 
 ## Adding A Reviewer
 
 1. Add the prompt template under `prompts/templates/`.
 2. Add one enabled reviewer entry in `config/reviewers.json`.
-3. Choose `selection_policy`: use `mandatory` only for reviewers that must run in both static and dynamic modes; otherwise use `optional`. Static mode still runs every enabled optional reviewer.
+3. Choose `selection_policy`: use `mandatory` for universal baseline audits and `optional` for applicability-routed specialists. The router must account for every enabled optional reviewer, and the wrapper expands uncertain classifications to the full conditional roster.
 4. Choose `normalization_role` so downstream routing knows whether findings are manuscript issues, reference issues, cross-reference issues, copyedits, or parser artifacts.
 5. Update `schemas/reviewer_output.schema.json` and `scripts/validate_review_json.py` only if the output contract changes.
 6. Add focused tests with synthetic inputs.
 
 Search-enabled reviewers should declare `"search": true` and should return `cannot_verify` rather than guessing when evidence is unavailable.
+
+An optional reviewer prompt must state what counts as inapplicable and return `run_status: ok` with an empty findings array when that scope is absent. Add the role-specific selection cue to `prompts/templates/reviewer_selection.txt`. Formal theory validity belongs in `theory_logic_auditor`; notation and text-equation consistency remain with `model_equation_auditor`.
 
 Parser extensions must preserve the local deterministic evidence boundary. Do not make an external document service, OCR engine, or LLM-generated repair layer part of the default path, and never infer missing signs, values, labels, cells, or formulas.
 

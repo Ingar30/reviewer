@@ -81,8 +81,8 @@ def main() -> int:
         "--model",
         default=None,
         help=(
-            "Override the Codex model when --run-editor is used. "
-            "When omitted, the project default from .codex/config.toml is used."
+            "Advanced testing override for the editor model when --run-editor is used. "
+            "The supported quality default comes from .codex/config.toml."
         ),
     )
     parser.add_argument(
@@ -90,8 +90,8 @@ def main() -> int:
         choices=["none", "low", "medium", "high", "xhigh", "max"],
         default=None,
         help=(
-            "Override Codex model_reasoning_effort when --run-editor is used. "
-            "When omitted, the project default from .codex/config.toml is used."
+            "Advanced testing override for editor reasoning when --run-editor is used. "
+            "The supported quality default comes from .codex/config.toml."
         ),
     )
     args = parser.parse_args()

@@ -22,23 +22,18 @@ SELECTOR_TEMPLATE = "reviewer_selection.txt"
 SELECTOR_OUTPUT = "reviewer_selection.json"
 MIN_EDITOR_REPORT_CHARS = 2000
 REASONING_EFFORT_CHOICES = ("none", "low", "medium", "high", "xhigh", "max")
-DEFAULT_REVIEWER_SELECTION = "static"
-PILOT_REVIEWER_NAMES = {
-    "data_availability_replication_auditor",
-    "institutional_context_auditor",
-    "power_multiple_testing_auditor",
-    "design_randomization_auditor",
-    "economic_magnitude_auditor",
-}
-MAX_SELECTED_OPTIONAL_REVIEWERS = 13
-MAX_SELECTED_PILOT_REVIEWERS = 4
+REVIEWER_SELECTION_MODE = "applicability"
+THEORY_REVIEWER_NAME = "theory_logic_auditor"
 EDITOR_REPORT_REQUIRED_HEADINGS = [
     "## Executive Summary",
-    "## Review Configuration",
     "## Highest-Priority Cross-Agent Findings",
     "## Suggested Revision Priorities",
     "## Additional Findings",
 ]
+EDITOR_REPORT_SCOPE_HEADINGS = (
+    "## Appendix: Review Scope and Limitations",
+    "## Review Configuration",
+)
 
 
 @dataclass
@@ -280,7 +275,9 @@ def plausible_editor_report(text: str) -> bool:
         return False
     if not stripped.startswith("# Multi-Agent Paper Review Report"):
         return False
-    return all(heading in stripped for heading in EDITOR_REPORT_REQUIRED_HEADINGS)
+    return all(heading in stripped for heading in EDITOR_REPORT_REQUIRED_HEADINGS) and any(
+        heading in stripped for heading in EDITOR_REPORT_SCOPE_HEADINGS
+    )
 
 
 def extract_editor_report_from_transcript(text: str) -> str | None:
@@ -367,27 +364,73 @@ def reviewer_catalog(reviewers: list[ReviewerConfig]) -> list[dict[str, object]]
     ]
 
 
-def static_reviewer_selection(
-    paper_id: str, optional_reviewers: list[ReviewerConfig]
-) -> dict[str, object]:
-    return {
-        "paper_id": paper_id,
-        "paper_type": "unknown",
-        "selection_confidence": "high",
-        "selection_mode": "static",
+def enforce_conservative_applicability(
+    selection: dict, optional_reviewers: list[ReviewerConfig]
+) -> dict:
+    """Expand an uncertain selection and guarantee theory coverage for theory papers."""
+    guarded = {
+        **selection,
         "selected_optional_reviewers": [
-            {
-                "name": reviewer.name,
-                "reason": "Included because static quality-first mode runs every enabled optional reviewer.",
-            }
-            for reviewer in optional_reviewers
-            if reviewer.enabled
+            dict(item) for item in selection.get("selected_optional_reviewers", [])
         ],
-        "skipped_optional_reviewers": [],
-        "notes": [
-            "Static mode records exhaustive reviewer provenance; no model-based routing decision was used."
+        "skipped_optional_reviewers": [
+            dict(item) for item in selection.get("skipped_optional_reviewers", [])
         ],
+        "notes": list(selection.get("notes", [])),
     }
+    selected_by_name = {
+        item["name"]: item for item in guarded["selected_optional_reviewers"]
+    }
+    skipped_by_name = {
+        item["name"]: item for item in guarded["skipped_optional_reviewers"]
+    }
+    enabled_optional = [reviewer for reviewer in optional_reviewers if reviewer.enabled]
+    uncertain = (
+        guarded.get("paper_type") in {"mixed", "unknown"}
+        or guarded.get("selection_confidence") != "high"
+    )
+
+    if uncertain:
+        guarded["selected_optional_reviewers"] = [
+            selected_by_name.get(reviewer.name)
+            or {
+                "name": reviewer.name,
+                "reason": (
+                    "Included by the conservative applicability guardrail because the paper "
+                    "type or routing confidence is uncertain."
+                ),
+            }
+            for reviewer in enabled_optional
+        ]
+        guarded["skipped_optional_reviewers"] = []
+        guarded["notes"].append(
+            "The wrapper expanded an uncertain classification to every conditional specialist."
+        )
+        return guarded
+
+    if guarded.get("paper_type") == "theory" and THEORY_REVIEWER_NAME in skipped_by_name:
+        selected_by_name[THEORY_REVIEWER_NAME] = {
+            "name": THEORY_REVIEWER_NAME,
+            "reason": (
+                "Included by the conservative applicability guardrail because a theory paper "
+                "requires a dedicated formal-logic audit."
+            ),
+        }
+        skipped_by_name.pop(THEORY_REVIEWER_NAME)
+        guarded["notes"].append(
+            "The wrapper restored the theory-logic specialist required for a theory paper."
+        )
+    guarded["selected_optional_reviewers"] = [
+        selected_by_name[reviewer.name]
+        for reviewer in enabled_optional
+        if reviewer.name in selected_by_name
+    ]
+    guarded["skipped_optional_reviewers"] = [
+        skipped_by_name[reviewer.name]
+        for reviewer in enabled_optional
+        if reviewer.name in skipped_by_name
+    ]
+    return guarded
 
 
 def render_selector_prompt(
@@ -457,7 +500,6 @@ def validate_selection_output(
     paper_id: str,
     mandatory_reviewers: list[ReviewerConfig],
     optional_reviewers: list[ReviewerConfig],
-    expected_selection_mode: str | None = None,
 ) -> list[str]:
     errors = []
     if selection.get("paper_id") != paper_id:
@@ -475,18 +517,8 @@ def validate_selection_output(
         errors.append("selection paper_type is invalid")
     if selection.get("selection_confidence") not in {"high", "medium", "low"}:
         errors.append("selection_confidence is invalid")
-    declared_selection_mode = selection.get("selection_mode", "dynamic")
-    if declared_selection_mode not in {"dynamic", "static"}:
-        errors.append("selection_mode is invalid")
-    if (
-        expected_selection_mode is not None
-        and declared_selection_mode != expected_selection_mode
-    ):
-        errors.append(
-            "selection_mode does not match the requested workflow mode: "
-            f"expected {expected_selection_mode}, got {declared_selection_mode}"
-        )
-    selection_mode = expected_selection_mode or declared_selection_mode
+    if selection.get("selection_mode") != REVIEWER_SELECTION_MODE:
+        errors.append(f"selection_mode must be {REVIEWER_SELECTION_MODE!r}")
 
     optional_by_name = {reviewer.name: reviewer for reviewer in optional_reviewers if reviewer.enabled}
     mandatory_names = {reviewer.name for reviewer in mandatory_reviewers}
@@ -520,18 +552,6 @@ def validate_selection_output(
     duplicates = sorted({name for name in selected_names if selected_names.count(name) > 1})
     for name in duplicates:
         errors.append(f"selected reviewer is duplicated: {name}")
-    if selection_mode == "dynamic" and len(selected_names) > MAX_SELECTED_OPTIONAL_REVIEWERS:
-        errors.append(
-            f"selected optional reviewer count exceeds {MAX_SELECTED_OPTIONAL_REVIEWERS}: "
-            f"{len(selected_names)}"
-        )
-    selected_pilots = [name for name in selected_names if name in PILOT_REVIEWER_NAMES]
-    if selection_mode == "dynamic" and len(selected_pilots) > MAX_SELECTED_PILOT_REVIEWERS:
-        errors.append(
-            f"selected pilot reviewer count exceeds {MAX_SELECTED_PILOT_REVIEWERS}: "
-            f"{len(selected_pilots)}"
-        )
-
     skipped_names = []
     for index, item in enumerate(skipped_items):
         if not isinstance(item, dict):
@@ -557,15 +577,6 @@ def validate_selection_output(
     accounted_for = set(selected_names) | set(skipped_names)
     for name in sorted(set(optional_by_name) - accounted_for):
         errors.append(f"enabled optional reviewer is neither selected nor skipped: {name}")
-    if selection_mode == "static":
-        if skipped_names:
-            errors.append("static selection cannot skip enabled optional reviewers")
-        missing_static = sorted(set(optional_by_name) - set(selected_names))
-        if missing_static:
-            errors.append(
-                "static selection must include every enabled optional reviewer: "
-                + ", ".join(missing_static)
-            )
     return errors
 
 
@@ -712,17 +723,11 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "--reviewer-selection",
-        choices=["dynamic", "static"],
-        default=DEFAULT_REVIEWER_SELECTION,
-        help="Run all enabled reviewers (default) or use dynamic optional-reviewer selection.",
-    )
-    parser.add_argument(
         "--model",
         default=None,
         help=(
-            "Codex model for all agents in this run, for example gpt-5.6-sol or "
-            "gpt-5.6-terra. When omitted, .codex/config.toml is used."
+            "Advanced testing override for the Codex model used by all agents. "
+            "The supported quality default is gpt-5.6-sol from .codex/config.toml."
         ),
     )
     parser.add_argument(
@@ -730,7 +735,8 @@ def main() -> int:
         choices=REASONING_EFFORT_CHOICES,
         default="xhigh",
         help=(
-            "Codex model_reasoning_effort for substantive reviewers and the editor. Default: xhigh."
+            "Advanced testing override for substantive reviewers and the editor. "
+            "The supported quality default is xhigh."
         ),
     )
     parser.add_argument(
@@ -742,8 +748,8 @@ def main() -> int:
     parser.add_argument(
         "--selector-reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
-        default="medium",
-        help="Reasoning effort for dynamic reviewer selection. Default: medium.",
+        default="high",
+        help="Reasoning effort for conservative reviewer applicability routing. Default: high.",
     )
     parser.add_argument(
         "--max-parallel-reviewers",
@@ -761,7 +767,7 @@ def main() -> int:
         "--selector-timeout-minutes",
         type=float,
         default=15.0,
-        help="Timeout for dynamic reviewer selection. Default: 15 minutes.",
+        help="Timeout for reviewer applicability routing. Default: 15 minutes.",
     )
     args = parser.parse_args()
 
@@ -850,7 +856,7 @@ def main() -> int:
         "reviewer_editor_reasoning_effort": effective_reasoning,
         "preflight_reasoning_effort": args.preflight_reasoning_effort,
         "selector_reasoning_effort": args.selector_reasoning_effort,
-        "reviewer_selection": args.reviewer_selection,
+        "reviewer_selection": REVIEWER_SELECTION_MODE,
         "max_parallel_reviewers": args.max_parallel_reviewers,
         "agent_timeout_minutes": args.agent_timeout_minutes,
         "selector_timeout_minutes": args.selector_timeout_minutes,
@@ -948,63 +954,64 @@ def main() -> int:
         if preflight_errors:
             raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
 
-    active_reviewers_config = args.reviewers_config
-    if args.reviewer_selection == "dynamic":
-        selection, _selection_started_at = run_reviewer_selector(
-            repo,
-            paper_id,
-            parsed_dir,
-            optional_reviewers,
-            selection_dir,
-            selection_schema_path,
-            log_dir,
-            args.model,
-            args.selector_reasoning_effort,
-            args.selector_timeout_minutes * 60,
+    selection, _selection_started_at = run_reviewer_selector(
+        repo,
+        paper_id,
+        parsed_dir,
+        optional_reviewers,
+        selection_dir,
+        selection_schema_path,
+        log_dir,
+        args.model,
+        args.selector_reasoning_effort,
+        args.selector_timeout_minutes * 60,
+    )
+    selection_errors = validate_selection_output(
+        selection,
+        paper_id,
+        mandatory_reviewers,
+        optional_reviewers,
+    )
+    if selection_errors:
+        raise RuntimeError("Reviewer applicability routing failed: " + "; ".join(selection_errors))
+    selection = enforce_conservative_applicability(selection, optional_reviewers)
+    selection_errors = validate_selection_output(
+        selection,
+        paper_id,
+        mandatory_reviewers,
+        optional_reviewers,
+    )
+    if selection_errors:
+        raise RuntimeError(
+            "Conservative reviewer applicability guardrail failed: "
+            + "; ".join(selection_errors)
         )
-        selection_errors = validate_selection_output(
-            selection,
-            paper_id,
-            mandatory_reviewers,
-            optional_reviewers,
-            expected_selection_mode="dynamic",
-        )
-        if selection_errors:
-            raise RuntimeError("Reviewer selection failed: " + "; ".join(selection_errors))
-        standard_reviewers = selected_reviewers_from_selection(selection, mandatory_reviewers, optional_reviewers)
-        write_reviewers_config(selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers])
-        active_reviewers_config = str(selected_reviewers_config_path.relative_to(repo))
-        print("[selection] selected reviewers: " + ", ".join(reviewer.name for reviewer in standard_reviewers))
-        run_required(
-            "render-selected-prompts",
-            render_prompts_command(
-                paper_id=paper_id,
-                parsed_dir=parsed_dir,
-                reviews_dir=reviews_dir,
-                schema_path=schema_path,
-                prompts_dir=prompts_dir,
-                reviewers_config=active_reviewers_config,
-                repo=repo,
-            ),
-            repo,
-            log_dir,
-        )
-    else:
-        selection = static_reviewer_selection(paper_id, optional_reviewers)
-        selection_errors = validate_selection_output(
-            selection,
-            paper_id,
-            mandatory_reviewers,
-            optional_reviewers,
-            expected_selection_mode="static",
-        )
-        if selection_errors:
-            raise RuntimeError("Static reviewer selection failed: " + "; ".join(selection_errors))
-        selection_dir.mkdir(parents=True, exist_ok=True)
-        write_run_manifest(selection_dir / SELECTOR_OUTPUT, selection)
-        write_reviewers_config(selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers])
-        active_reviewers_config = str(selected_reviewers_config_path.relative_to(repo))
-        print("[selection] static mode selected every enabled reviewer")
+    write_run_manifest(selection_dir / SELECTOR_OUTPUT, selection)
+    standard_reviewers = selected_reviewers_from_selection(
+        selection, mandatory_reviewers, optional_reviewers
+    )
+    write_reviewers_config(
+        selected_reviewers_config_path, [*preflight_reviewers, *standard_reviewers]
+    )
+    active_reviewers_config = str(selected_reviewers_config_path.relative_to(repo))
+    print(
+        "[selection] applicability roster: "
+        + ", ".join(reviewer.name for reviewer in standard_reviewers)
+    )
+    run_required(
+        "render-selected-prompts",
+        render_prompts_command(
+            paper_id=paper_id,
+            parsed_dir=parsed_dir,
+            reviews_dir=reviews_dir,
+            schema_path=schema_path,
+            prompts_dir=prompts_dir,
+            reviewers_config=active_reviewers_config,
+            repo=repo,
+        ),
+        repo,
+        log_dir,
+    )
 
     reviewer_started_at = run_reviewer_batch(
         standard_reviewers,

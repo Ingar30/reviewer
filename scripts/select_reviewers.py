@@ -8,14 +8,19 @@ from pipeline_paths import SELECTED_REVIEWERS_CONFIG
 from reviewer_config import load_reviewers_config, write_reviewers_config
 from review_paper import (
     REASONING_EFFORT_CHOICES,
+    SELECTOR_OUTPUT,
+    enforce_conservative_applicability,
     run_reviewer_selector,
     selected_reviewers_from_selection,
     validate_selection_output,
+    write_run_manifest,
 )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run only the dynamic reviewer selector for an existing parsed paper.")
+    parser = argparse.ArgumentParser(
+        description="Run the conservative reviewer applicability router for an existing parsed paper."
+    )
     parser.add_argument("--paper-id", required=True)
     parser.add_argument("--parsed-dir", required=True)
     parser.add_argument("--selection-dir", required=True)
@@ -24,13 +29,16 @@ def main() -> int:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override the Codex model. When omitted, .codex/config.toml is used.",
+        help=(
+            "Advanced testing override for the applicability router model. "
+            "The supported quality default comes from .codex/config.toml."
+        ),
     )
     parser.add_argument(
         "--reasoning-effort",
         choices=REASONING_EFFORT_CHOICES,
-        default=None,
-        help="Override Codex model_reasoning_effort.",
+        default="high",
+        help="Codex model_reasoning_effort for applicability routing. Default: high.",
     )
     parser.add_argument(
         "--timeout-minutes",
@@ -79,10 +87,21 @@ def main() -> int:
         args.paper_id,
         mandatory_reviewers,
         optional_reviewers,
-        expected_selection_mode="dynamic",
     )
     if errors:
-        raise RuntimeError("Reviewer selection failed: " + "; ".join(errors))
+        raise RuntimeError("Reviewer applicability routing failed: " + "; ".join(errors))
+    selection = enforce_conservative_applicability(selection, optional_reviewers)
+    errors = validate_selection_output(
+        selection,
+        args.paper_id,
+        mandatory_reviewers,
+        optional_reviewers,
+    )
+    if errors:
+        raise RuntimeError(
+            "Conservative reviewer applicability guardrail failed: " + "; ".join(errors)
+        )
+    write_run_manifest(selection_dir / SELECTOR_OUTPUT, selection)
 
     selected_reviewers = selected_reviewers_from_selection(selection, mandatory_reviewers, optional_reviewers)
     write_reviewers_config(selection_dir / SELECTED_REVIEWERS_CONFIG, [*preflight_reviewers, *selected_reviewers])

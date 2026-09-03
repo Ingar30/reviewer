@@ -45,26 +45,38 @@ from preprocess_pdf import (  # noqa: E402
     FIGURE_CAPTION_RE,
     TABLE_CAPTION_RE,
     align_positioned_glyph_repairs,
+    apply_reconciled_geometric_page_label_artifacts,
     apply_text_repairs,
     attach_captions_to_auto_tables,
     caption_column_bounds,
     caption_table_quality,
+    caption_match,
     choose_normalized_text,
     disallowed_control_character_codes,
     extract_crossrefs,
+    extract_citations,
     extract_reference_list,
     extract_sections,
+    figure_render_crop_bbox,
+    infer_page_label_from_words,
     is_heading,
     join_text_chunks_preserving_hyphens,
+    label_only_table_title,
     merge_reference_line_fragments,
     native_blocks_are_column_major,
     normalize_page_label,
+    normalize_page_text,
     page_quality_summary,
+    page_label_ordinal,
+    page_label_layout_artifacts,
     parse_captioned_table_rows,
     portable_path,
     positioned_numbered_headings,
     positioned_text_repair_plan,
     repaired_word_records,
+    reconcile_geometric_page_labels,
+    remove_layout_artifact_text,
+    repeated_layout_artifacts,
     rect_overlap_ratio,
     save_tables,
     should_append_caption_continuation,
@@ -2271,6 +2283,110 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(metrics["zero_finding_selected_optional"], ["data_availability_replication_auditor"])
         self.assertEqual(metrics["score"], 92.0)
 
+    def test_uppercase_unpunctuated_caption_is_typographically_bounded(self) -> None:
+        figure = caption_match("figure", "FIGURE 1 Vignette experiment: Skills")
+        table = caption_match("table", "TABLE A1 Main estimates")
+
+        self.assertIsNotNone(figure)
+        self.assertEqual(figure.group("label"), "1")
+        self.assertEqual(figure.group("title"), "Vignette experiment: Skills")
+        self.assertIsNotNone(table)
+        self.assertEqual(table.group("label"), "A1")
+        self.assertIsNone(caption_match("figure", "Figure 1 shows the estimates"))
+
+    def test_citation_inventory_excludes_references_and_keeps_later_appendix(self) -> None:
+        pages = [
+            {
+                'pdf_page_number': 1,
+                'page_label': '1',
+                'normalized_text': (
+                    'Becker (1973, 1974) motivates the design.\n'
+                    'Canonical models (Becker, 1973, 1974) motivate it.\n'
+                    'References\n'
+                    'Smith (2020). A cited paper.\n'
+                ),
+            },
+            {
+                'pdf_page_number': 2,
+                'page_label': '2',
+                'normalized_text': (
+                    'Jones (2021). Another cited paper.\n'
+                    'Appendix A. Checks\n'
+                    'Brown (2022) motivates this check.\n'
+                ),
+            },
+        ]
+
+        matches = [item['match'] for item in extract_citations(pages)]
+
+        self.assertEqual(
+            set(matches),
+            {'Becker (1973, 1974)', '(Becker, 1973, 1974)', 'Brown (2022)'},
+        )
+
+    def test_repeated_chart_categories_are_not_section_headings(self) -> None:
+        self.assertFalse(is_heading('2 Groups 3 Groups'))
+        self.assertFalse(is_heading('N 2,715 2,529'))
+        self.assertFalse(
+            is_heading(
+                'A US daily newspapers B Weekly news source C Digital share of'
+            )
+        )
+        self.assertFalse(is_heading('R E S E A R C H A R T I C L E'))
+        self.assertFalse(is_heading('I. P. L. Png, University of Example'))
+        self.assertFalse(is_heading('EDITED BY'))
+        self.assertFalse(is_heading('G V ='))
+        self.assertFalse(
+            is_heading(
+                'Appendix C Table C2, the results are similar to those reported in the text'
+            )
+        )
+        self.assertFalse(
+            is_heading(
+                '1 Uniqueness Factor 1 indicates that it is a suitable and trustworthy measure for analysis'
+            )
+        )
+
+    def test_front_matter_order_divergence_is_flagged_without_global_overflagging(self) -> None:
+        common = {
+            'raw_text': 'substantive text ' * 100,
+            'normalized_text': 'substantive text ' * 100,
+            'likely_scanned': False,
+            'normalized_text_strategy': 'coordinate_sorted',
+            'raw_sorted_similarity': 0.3,
+        }
+
+        summary = page_quality_summary(
+            [
+                {'pdf_page_number': 1, **common},
+                {'pdf_page_number': 2, **common},
+            ]
+        )
+
+        self.assertEqual(summary['reading_order_review_pages'], [1])
+
+    def test_suspect_native_table_can_still_receive_matching_caption(self) -> None:
+        captions = [
+            {
+                'page': 2,
+                'label': '1',
+                'caption': 'Table 1: Main estimates',
+                'caption_source': 'positioned_lines',
+                'caption_bbox': [10, 100, 300, 120],
+                'crop_bbox': [10, 90, 300, 300],
+            }
+        ]
+        auto_tables = [
+            {
+                'page': 2,
+                'bbox': [20, 130, 290, 280],
+                'status': 'auto_extracted_suspect',
+            }
+        ]
+
+        self.assertEqual(attach_captions_to_auto_tables(captions, auto_tables), {0})
+        self.assertEqual(auto_tables[0]['table_label'], '1')
+
     def test_raw_caption_continuation_accepts_split_caption_but_not_notes(self) -> None:
         self.assertTrue(should_append_raw_caption_continuation("Table 1: Analysis when", "labels disagree"))
         self.assertTrue(should_append_raw_caption_continuation("Figure 2: Distribution of", "quality scores"))
@@ -2352,6 +2468,34 @@ class ReviewerConfigTests(unittest.TestCase):
                 "table", match, [label, {**title, "block_index": 2}], 0
             )
         )
+        self.assertEqual(
+            label_only_table_title(
+                [{**label, "text": "Table 1: Inline caption title"}, title], 0
+            ),
+            "",
+        )
+
+    def test_same_row_caption_title_uses_geometry_without_bold_font(self) -> None:
+        match = FIGURE_CAPTION_RE.match('FIGURE 1')
+        assert match is not None
+        lines = [
+            {
+                'text': 'FIGURE 1',
+                'bbox': [40, 209, 88, 218],
+                'block_index': 3,
+                'font_size': 8.5,
+                'is_bold': False,
+            },
+            {
+                'text': 'Vignette experiment: Skills.',
+                'bbox': [96, 209, 300, 218],
+                'block_index': 3,
+                'font_size': 8.5,
+                'is_bold': False,
+            },
+        ]
+
+        self.assertTrue(supported_caption_match('figure', match, lines, 0))
 
     def test_same_block_caption_wrap_preserves_complete_title(self) -> None:
         self.assertTrue(
@@ -2365,6 +2509,19 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertTrue(
             should_append_caption_continuation(
                 "Table 5: Outcomes (1990s", "Index to Public Records)", 14.5
+            )
+        )
+        self.assertTrue(
+            should_append_caption_continuation(
+                "Figure A.17: Background characteristics: Experiment",
+                "2 (YouGov)",
+                14.5,
+                same_block_wrap=True,
+            )
+        )
+        self.assertFalse(
+            should_append_caption_continuation(
+                "Figure 1: Complete title", "2 4 6 8", 14.5
             )
         )
         self.assertFalse(
@@ -2381,6 +2538,17 @@ class ReviewerConfigTests(unittest.TestCase):
         page = doc.new_page(width=800, height=600)
         try:
             self.assertEqual(caption_column_bounds(page, [80, 100, 300, 120]), (24.0, 776.0))
+        finally:
+            doc.close()
+
+    def test_rotated_figure_uses_explicit_full_page_crop_fallback(self) -> None:
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.set_rotation(90)
+        try:
+            crop, strategy = figure_render_crop_bbox(page, [100, 250, 500, 612])
+            self.assertEqual(crop, [0.0, 0.0, 792.0, 612.0])
+            self.assertEqual(strategy, 'full_page_rotated_fallback')
         finally:
             doc.close()
 
@@ -2452,6 +2620,243 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(normalize_page_label("<FEFF0030>"), "0")
         self.assertEqual(normalize_page_label("<FEFF0041002E0031>"), "A.1")
         self.assertEqual(normalize_page_label("<NOTHEX>"), "<NOTHEX>")
+
+    def test_page_label_uses_isolated_geometric_footer_candidate(self) -> None:
+        words = [
+            [421, 79, 426, 91, '2', 0, 0, 0],
+            [293, 800, 302, 808, '02', 1, 0, 0],
+        ]
+
+        self.assertEqual(infer_page_label_from_words(words, 595, 842), '02')
+
+    def test_geometric_page_labels_require_consecutive_document_sequence(self) -> None:
+        records = [
+            {
+                'page_label': label,
+                'page_label_source': 'geometric_footer_or_header',
+                'rejected_page_label_candidate': None,
+            }
+            for label in ('01', '02', '03')
+        ]
+        isolated = [
+            {
+                'page_label': label,
+                'page_label_source': 'geometric_footer_or_header',
+                'rejected_page_label_candidate': None,
+            }
+            for label in ('183', '8', 'i')
+        ]
+
+        reconcile_geometric_page_labels(records)
+        reconcile_geometric_page_labels(isolated)
+
+        self.assertEqual([item['page_label'] for item in records], ['01', '02', '03'])
+        self.assertEqual([item['page_label'] for item in isolated], [None, None, None])
+        self.assertEqual(isolated[0]['rejected_page_label_candidate'], '183')
+        self.assertEqual(page_label_ordinal('XIV'), ('roman', 14))
+
+    def test_repeated_layout_artifacts_require_geometry_and_recurrence(self) -> None:
+        pages = []
+        for page_index in range(3):
+            blocks = [
+                [50, 30, 545, 42, f'Journal 2024 page {page_index + 1}', 0, 0],
+                [50, 90, 545, 700, 'Substantive body text', 1, 0],
+                [250, 760, 280, 770, str((page_index + 1) * 15), 3, 0],
+            ]
+            if page_index < 2:
+                blocks.append([570, 20, 580, 700, 'Repeated license notice', 2, 0])
+            else:
+                blocks.append([570, 100, 580, 500, 'Unique axis label', 2, 0])
+            pages.append(
+                {
+                    'page_index': page_index,
+                    'page_width': 600,
+                    'page_height': 800,
+                    'blocks': blocks,
+                }
+            )
+
+        artifacts = repeated_layout_artifacts(pages)
+
+        self.assertEqual(
+            {item['reason'] for item in artifacts[0]},
+            {'repeated_header', 'repeated_vertical_margin'},
+        )
+        self.assertEqual(
+            {item['reason'] for item in artifacts[2]}, {'repeated_header'}
+        )
+        self.assertNotIn('Unique axis label', str(artifacts))
+        self.assertFalse(
+            any(
+                item['source_text'].strip().isdigit()
+                for page_items in artifacts.values()
+                for item in page_items
+            )
+        )
+        cleaned = remove_layout_artifact_text(
+            'Journal 2024 page 1\nSubstantive body text\nRepeated license notice',
+            artifacts[0],
+        )
+        self.assertEqual(cleaned.strip(), 'Substantive body text')
+
+    def test_pdf_page_label_token_is_removed_only_at_page_edge(self) -> None:
+        blocks = [
+            [300, 705, 312, 717, '52\n', 19, 0],
+            [70, 300, 82, 312, '52\n', 20, 0],
+        ]
+        words = [
+            [526, 701, 540, 712, 'the', 18, 6, 17],
+            [300, 705, 312, 717, '52', 19, 0, 0],
+            [88, 715, 118, 725, 'market', 18, 7, 0],
+        ]
+
+        artifacts = page_label_layout_artifacts(
+            blocks, words, '52', 'pdf_label', 612, 792
+        )
+
+        self.assertEqual([item['block_number'] for item in artifacts], [19])
+        self.assertEqual(artifacts[0]['reason'], 'pdf_page_label_token')
+        self.assertEqual(
+            page_label_layout_artifacts(
+                blocks, [], '52', 'text_edge', 612, 792
+            ),
+            [],
+        )
+        self.assertEqual(
+            remove_layout_artifact_text(
+                'able to beat the                                      52\n   market',
+                artifacts,
+            ),
+            'able to beat the\nmarket',
+        )
+
+    def test_only_reconciled_geometric_page_labels_are_removed(self) -> None:
+        records = []
+        for page_number, label in enumerate(('01', '02', '03', '183'), start=1):
+            artifact = page_label_layout_artifacts(
+                [[300, 750, 312, 765, f'{label}\n', 2, 0]],
+                [
+                    [70, 700, 110, 712, 'body', 1, 0, 0],
+                    [300, 750, 312, 765, label, 2, 0, 0],
+                ],
+                label,
+                'geometric_footer_or_header',
+                612,
+                792,
+            )
+            records.append(
+                {
+                    'pdf_page_number': page_number,
+                    'page_label': label,
+                    'page_label_source': 'geometric_footer_or_header',
+                    'rejected_page_label_candidate': None,
+                    'normalized_text': f'body\n{label}\n',
+                    'excluded_layout_artifact_count': 0,
+                    'excluded_layout_artifact_reasons': [],
+                    '_pending_geometric_page_label_artifacts': artifact,
+                }
+            )
+
+        reconcile_geometric_page_labels(records)
+        provenance = []
+        apply_reconciled_geometric_page_label_artifacts(records, provenance)
+
+        self.assertEqual([record['page_label'] for record in records], ['01', '02', '03', None])
+        self.assertEqual([record['normalized_text'] for record in records[:3]], ['body\n'] * 3)
+        self.assertEqual(records[3]['normalized_text'], 'body\n183\n')
+        self.assertEqual(len(provenance), 3)
+        self.assertTrue(
+            all('_pending_geometric_page_label_artifacts' not in record for record in records)
+        )
+
+    def test_page_label_cleanup_finishes_reordered_recurring_footer(self) -> None:
+        recurring_footer = {
+            'reason': 'repeated_footer',
+            'source_text': 'Frontiers in Psychology\n01\nfrontiersin.org\n',
+        }
+        page_label = {
+            'reason': 'pdf_page_label_word',
+            'source_text': '01',
+            'label_text': '01',
+            'previous_word': 'Psychology',
+            'next_word': 'frontiersin.org',
+        }
+
+        cleaned = remove_layout_artifact_text(
+            'body\nFrontiers in Psychology\nfrontiersin.org\n01\n',
+            [recurring_footer],
+        )
+        cleaned = remove_layout_artifact_text(cleaned, [page_label])
+
+        self.assertEqual(cleaned.strip(), 'body')
+
+    def test_embedded_pdf_page_label_word_preserves_its_mixed_text_block(self) -> None:
+        blocks = [
+            [50, 700, 360, 732, 'Note text.\n53\n', 14, 0],
+        ]
+        words = [
+            [270, 696, 276, 708, '53', 13, 4, 2],
+            [266, 707, 326, 717, 'autocorrelation', 13, 15, 9],
+            [300, 705, 312, 717, '53', 14, 1, 0],
+            [329, 707, 336, 717, 'in', 13, 15, 10],
+        ]
+
+        artifacts = page_label_layout_artifacts(
+            blocks, words, '53', 'pdf_label', 612, 792
+        )
+
+        self.assertEqual(artifacts[0]['reason'], 'pdf_page_label_word')
+        self.assertEqual(artifacts[0]['block_number'], 14)
+        self.assertFalse(artifacts[0]['exclude_entire_block'])
+        self.assertEqual(
+            remove_layout_artifact_text(
+                'about autocorrelation53 in returns; -10.53 and 53.0', artifacts
+            ),
+            'about autocorrelation in returns; -10.53 and 53.0',
+        )
+
+    def test_page_label_context_preserves_numeric_cells_and_footnote_markers(self) -> None:
+        numeric_artifact = page_label_layout_artifacts(
+            [[303, 705, 309, 717, '7\n', 8, 0]],
+            [
+                [497, 700, 540, 709, 'confidence', 6, 11, 16],
+                [303, 705, 309, 717, '7', 8, 0, 0],
+                [89, 712, 97, 721, 'in', 6, 12, 0],
+            ],
+            '7',
+            'pdf_label',
+            612,
+            792,
+        )
+        self.assertEqual(
+            remove_layout_artifact_text(
+                'Control mean 37.7\nHigh confidence\n 7 in their ability',
+                numeric_artifact,
+            ),
+            'Control mean 37.7\nHigh confidence\nin their ability',
+        )
+
+        end_artifact = page_label_layout_artifacts(
+            [[303, 760, 309, 772, '1\n', 20, 0]],
+            [
+                [100, 740, 145, 752, 'material', 19, 2, 3],
+                [303, 760, 309, 772, '1', 20, 0, 0],
+            ],
+            '1',
+            'pdf_label',
+            612,
+            792,
+        )
+        self.assertEqual(
+            remove_layout_artifact_text(
+                '1Hsieh et al. (2019) footnote\n1\nOther material\n1\n',
+                end_artifact,
+            ),
+            '1Hsieh et al. (2019) footnote\n1\nOther material\n',
+        )
+
+    def test_soft_hyphen_is_removed_only_from_normalized_text(self) -> None:
+        self.assertEqual(normalize_page_text('inter\u00adnational'), 'international\n')
 
     def test_positioned_text_repairs_are_font_and_coordinate_grounded(self) -> None:
         raw_dict = {
@@ -2559,6 +2964,9 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(positioned_count, 5)
         self.assertEqual([word[4] for word in words], ["[", "h"])
         self.assertEqual(word_count, 1)
+        self.assertEqual(summary['unresolved_control_glyph_count'], 1)
+        self.assertEqual(summary['unresolved_control_glyph_codes'], ['U+0002'])
+        self.assertEqual(summary['unresolved_control_glyphs'][0]['font_family'], 'PICUP10')
         self.assertEqual(summary["known_font_glyph_repair_count"], 5)
         self.assertEqual(summary["positioned_font_glyph_repair_count"], 5)
         self.assertEqual(summary["positioned_accent_composition_count"], 2)
@@ -2653,6 +3061,17 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(paths.selected_reviewers_config_path.name, "selected_reviewers.json")
         self.assertEqual(paths.report_path, REPO_ROOT / "outputs" / "paper-x" / "report.md")
         self.assertEqual(paths.run_manifest_path, REPO_ROOT / "work" / "paper-x" / "run_manifest.json")
+
+    def test_parser_quality_prompt_uses_new_parser_provenance(self) -> None:
+        prompt = (
+            REPO_ROOT / 'prompts' / 'templates' / 'parser_quality_audit.txt'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('unresolved_control_glyph_pages', prompt)
+        self.assertIn('layout_artifacts.json', prompt)
+        self.assertIn('rejected_geometric_page_label_pages', prompt)
+        self.assertIn('unlabeled_candidate', prompt)
+        self.assertIn('table_candidate_count', prompt)
 
     def test_selector_prompt_contains_conservative_applicability_gates(self) -> None:
         prompt = (REPO_ROOT / "prompts" / "templates" / "reviewer_selection.txt").read_text(encoding="utf-8")

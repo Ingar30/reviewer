@@ -17,7 +17,10 @@ Focus on parser defects that could poison downstream reviewers:
 - missing page artifacts or likely scanned pages
 - scrambled reading order in normalized page text
 - suspicious OCR or text-extraction artifacts
-- unresolved control glyphs listed in manifest.summary.page_quality.residual_control_character_pages
+- unresolved control glyphs listed in manifest.summary.page_quality.unresolved_control_glyph_pages; use the font, code, and bounding-box details in page_index.json and never infer the missing symbol
+- residual literal control characters listed in manifest.summary.page_quality.residual_control_character_pages
+- pages cleaned of repeated geometric headers, footers, or vertical margin notices in manifest.summary.page_quality.layout_artifact_pages; spot-check layout_artifacts.json against raw text and page images to ensure substantive content was not excluded
+- isolated geometric page-label candidates rejected for lacking a consecutive document sequence in manifest.summary.page_quality.rejected_geometric_page_label_pages; treat page_index.json page labels as missing on those pages
 - unresolved math-font glyphs listed in manifest.summary.page_quality.unresolved_math_glyph_pages
 - reading-order risk on manifest.summary.page_quality.font_fidelity_order_fallback_pages, where source-faithful native text was preferred because coordinate-sorted text could not retain every verified glyph repair
 - broken table extraction
@@ -25,7 +28,13 @@ Focus on parser defects that could poison downstream reviewers:
 - figure/table extraction failures
 - inventory contradictions, such as visible captions or embedded images missing from structured inventories
 
+Artifact interpretation rules:
+- Normalized page markdown begins with a generated `# Page ... (label: ...)` metadata header. Do not count that header as retained manuscript footer/header text; test only the normalized body below the first blank line.
+- A `layout_artifacts.json` entry is provenance that a geometric candidate was handled, not evidence that its text remains in normalized prose. Compare the normalized body with raw text and the page image before reporting retained or damaged content.
+- For a figure whose inventory uses `crop_strategy: full_page_rotated_fallback`, compare its file size, pixel dimensions, and hash with the corresponding page image before alleging a blank or truncated crop. If the files are byte-identical, treat the page image as confirmation that the crop is complete.
+
 Table inventory status rules:
+- `caption_matched_table` and `caption_anchored_table` inventory roles are canonical table objects. `unlabeled_candidate` objects are retained extraction candidates, not canonical tables; audit them for missed captions or false positives. The manifest `table_count` excludes these candidates, while `table_candidate_count` retains the full candidate count.
 - `auto_extracted_suspect`, `caption_text_contaminated`, and `caption_text_unstructured` are unsafe as primary evidence.
 - `auto_extracted_needs_visual_verification` and `caption_text_needs_visual_verification` are deterministic candidates, not verified tables. Compare them with the cited page image or crop before relying on column alignment, signs, or values.
 - Never infer missing cells, signs, values, or formulas to make a table look complete.

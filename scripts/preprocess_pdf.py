@@ -42,8 +42,41 @@ ANY_CAPTION_RE = re.compile(
     r"^\s*(?:Table|Figure|Fig\.)\s+(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?(?:\s*:|\s*$)",
     re.IGNORECASE,
 )
+UPPERCASE_UNPUNCTUATED_CAPTION_RE = re.compile(
+    r"^\s*(?P<kind>TABLE|FIGURE|FIG\.)\s+"
+    r"(?P<label>(?:[A-Z]\.?)?\d+(?:\.\d+)?[A-Za-z]?)\s+"
+    r"(?P<title>[A-Z][^\n]{2,}?)\s*$"
+)
+
+
+def caption_match(kind: str, text: str) -> re.Match[str] | None:
+    primary = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
+    match = primary.match(text)
+    if match:
+        return match
+    match = UPPERCASE_UNPUNCTUATED_CAPTION_RE.match(text)
+    if not match:
+        return None
+    token = match.group("kind")
+    if kind == "table":
+        return match if token == "TABLE" else None
+    return match if token in {"FIGURE", "FIG."} else None
+
+
+def is_caption_line(text: str) -> bool:
+    return bool(caption_match("table", text) or caption_match("figure", text))
 
 CITATION_PATTERNS = [
+    re.compile(
+        r'\([A-Z][A-Za-z\x27`\-]+'
+        r'(?:\s+(?:and|&)\s+[A-Z][A-Za-z\x27`\-]+)?'
+        r'(?:\s+et al\.)?,\s*(?:19|20)\d{2}[a-z]?'
+        r'(?:\s*,\s*(?:19|20)\d{2}[a-z]?)+(?:;\s*[^)]*)?\)'
+    ),
+    re.compile(
+        r'\b[A-Z][A-Za-z\x27`\-]+(?:\s+et al\.)?\s*'
+        r'\((?:19|20)\d{2}[a-z]?(?:\s*,\s*(?:19|20)\d{2}[a-z]?)+\)'
+    ),
     re.compile(r"\(([A-Z][A-Za-z'`\-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-z'`\-]+)?(?:\s+et al\.)?,\s*(?:19|20)\d{2}[a-z]?(?:;\s*[^)]*)?)\)"),
     re.compile(r"\b([A-Z][A-Za-z'`\-]+(?:\s+et al\.)?\s*\((?:19|20)\d{2}[a-z]?\))"),
     re.compile(r"(\[[0-9,\-\s]+\])"),
@@ -170,6 +203,8 @@ class PageMeta:
     pdf_page_index: int
     pdf_page_number: int
     page_label: str | None
+    page_label_source: str | None
+    rejected_page_label_candidate: str | None
     page_width: float
     page_height: float
     raw_text_path: str
@@ -192,8 +227,14 @@ class PageMeta:
     positioned_font_glyph_repair_count: int
     unresolved_math_glyph_count: int
     unresolved_math_glyph_codes: list[str]
+    unresolved_control_glyph_count: int
+    unresolved_control_glyph_codes: list[str]
+    unresolved_control_glyphs: list[dict[str, Any]]
     residual_control_character_count: int
     residual_control_character_codes: list[str]
+    soft_hyphen_count: int
+    excluded_layout_artifact_count: int
+    excluded_layout_artifact_reasons: list[str]
 
 
 def slugify(value: str) -> str:
@@ -252,6 +293,18 @@ def is_heading(line: str) -> bool:
     s = " ".join(line.strip().split())
     if not s:
         return False
+    if re.match(r'^(?:[A-Z]\s+){3,}[A-Z](?:\s|$)', s):
+        return False
+    if re.fullmatch(r'(?:[A-Z]\s+)+[A-Z]', s):
+        return False
+    if re.match(r'^(?:[A-Z]\.\s*){2,}', s):
+        return False
+    if re.fullmatch(r'(?:EDITED|REVIEWED|APPROVED)\s+BY', s, re.IGNORECASE):
+        return False
+    if re.search(r'[=<>≤≥≈≠‰]', s):
+        return False
+    if APPENDIX_START_RE.match(s) and (',' in s or len(s.split()) > 12):
+        return False
     if len(s) > 140:
         return False
     if s.endswith((".", ",", ";", ":")):
@@ -273,6 +326,8 @@ def is_heading(line: str) -> bool:
     if numeric_heading:
         first_number = int(numeric_heading.group("num").split(".")[0])
         title = numeric_heading.group("title")
+        if len(title.split()) > 12:
+            return False
         if first_number < 1 or first_number > 9:
             return False
         if re.search(r"\.\s+\S", title):
@@ -289,6 +344,7 @@ def is_heading(line: str) -> bool:
 
 
 def normalize_page_text(text: str) -> str:
+    text = text.replace('\u00ad', '')
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u00a0", " ")
     text = re.sub(r"[ \t]+", " ", text)
@@ -437,6 +493,7 @@ def positioned_text_repair_plan(text_dict: dict[str, Any]) -> tuple[dict[str, st
     spacing_accent_count = 0
     unresolved_math_glyph_count = 0
     unresolved_math_glyph_codes: set[str] = set()
+    unresolved_control_glyphs: list[dict[str, Any]] = []
 
     for block in text_dict.get("blocks", []):
         for line in block.get("lines", []):
@@ -450,6 +507,20 @@ def positioned_text_repair_plan(text_dict: dict[str, Any]) -> tuple[dict[str, st
                     if not value:
                         continue
                     font_family = normalized_font_family(font)
+                    for character in value:
+                        if (
+                            ord(character) < 32
+                            and character not in ALLOWED_TEXT_CONTROLS
+                            and cmex_glyph_replacement(font, character) is None
+                        ):
+                            unresolved_control_glyphs.append(
+                                {
+                                    'font_family': font_family,
+                                    'code': f'U+{ord(character):04X}',
+                                    'bbox': list(char.get('bbox', [])),
+                                    'origin': list(char.get('origin', [])),
+                                }
+                            )
                     if re.fullmatch(r"CMEX\d+", font_family):
                         replacement = cmex_glyph_replacement(font, value)
                         if replacement is None and value not in CMEX_PASSTHROUGH_GLYPHS:
@@ -492,6 +563,11 @@ def positioned_text_repair_plan(text_dict: dict[str, Any]) -> tuple[dict[str, st
             positioned_accent_composition_count += count
 
     return replacements, {
+        'unresolved_control_glyph_count': len(unresolved_control_glyphs),
+        'unresolved_control_glyph_codes': sorted(
+            {item['code'] for item in unresolved_control_glyphs}
+        ),
+        'unresolved_control_glyphs': unresolved_control_glyphs,
         "known_font_glyph_repair_count": known_font_glyph_repair_count,
         "positioned_accent_composition_count": positioned_accent_composition_count,
         "uncomposed_spacing_accent_count": max(
@@ -816,8 +892,390 @@ def infer_page_label_from_text(*texts: str) -> str | None:
     return None
 
 
-def clean_page_label(page: fitz.Page, raw_text: str, sorted_text: str) -> str | None:
-    return normalize_page_label(page.get_label()) or infer_page_label_from_text(raw_text, sorted_text)
+def infer_page_label_from_words(
+    words: list[list[Any]], page_width: float, page_height: float
+) -> str | None:
+    candidates: list[tuple[float, str]] = []
+    for word in words:
+        if len(word) <= 4:
+            continue
+        candidate = plausible_page_label_line(str(word[4]))
+        if candidate is None:
+            continue
+        try:
+            x0, y0, x1, y1 = (float(value) for value in word[:4])
+        except (TypeError, ValueError):
+            continue
+        in_footer = y0 >= page_height * 0.88
+        in_header = y1 <= page_height * 0.08
+        if not (in_footer or in_header):
+            continue
+        center_x = (x0 + x1) / 2
+        edge_distance = page_height - y1 if in_footer else y0
+        center_distance = abs(center_x - page_width / 2) / max(page_width, 1.0)
+        location_penalty = 0.0 if in_footer else page_height * 0.05
+        candidates.append((edge_distance + location_penalty + center_distance, candidate))
+    return min(candidates, default=(0.0, None), key=lambda item: item[0])[1]
+
+
+def clean_page_label_details(
+    page: fitz.Page,
+    raw_text: str,
+    sorted_text: str,
+    words: list[list[Any]] | None = None,
+) -> tuple[str | None, str | None]:
+    explicit = normalize_page_label(page.get_label())
+    if explicit is not None:
+        return explicit, 'pdf_label'
+    geometric = infer_page_label_from_words(
+        words or [], float(page.rect.width), float(page.rect.height)
+    )
+    if geometric is not None:
+        return geometric, 'geometric_footer_or_header'
+    inferred = infer_page_label_from_text(raw_text, sorted_text)
+    return inferred, 'text_edge' if inferred is not None else None
+
+
+def clean_page_label(
+    page: fitz.Page,
+    raw_text: str,
+    sorted_text: str,
+    words: list[list[Any]] | None = None,
+) -> str | None:
+    return clean_page_label_details(page, raw_text, sorted_text, words)[0]
+
+
+def page_label_ordinal(label: str | None) -> tuple[str, int] | None:
+    text = clean_inline_text(label or '')
+    if text.isdigit():
+        return 'arabic', int(text)
+    if not re.fullmatch(r'[ivxlcdmIVXLCDM]+', text):
+        return None
+    values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+    total = 0
+    previous = 0
+    for character in reversed(text.upper()):
+        value = values[character]
+        total += -value if value < previous else value
+        previous = max(previous, value)
+    return 'roman', total
+
+
+def reconcile_geometric_page_labels(page_records: list[dict[str, Any]]) -> None:
+    accepted_indexes: set[int] = set()
+    run: list[tuple[int, str, int]] = []
+
+    def accept_run() -> None:
+        if len(run) >= 3:
+            accepted_indexes.update(index for index, _kind, _value in run)
+
+    for index, page in enumerate(page_records):
+        ordinal = page_label_ordinal(page.get('page_label'))
+        if page.get('page_label_source') != 'geometric_footer_or_header' or ordinal is None:
+            accept_run()
+            run = []
+            continue
+        kind, value = ordinal
+        if run and (run[-1][0] != index - 1 or run[-1][1] != kind or run[-1][2] + 1 != value):
+            accept_run()
+            run = []
+        run.append((index, kind, value))
+    accept_run()
+
+    for index, page in enumerate(page_records):
+        if page.get('page_label_source') != 'geometric_footer_or_header':
+            continue
+        if index in accepted_indexes:
+            continue
+        page['rejected_page_label_candidate'] = page.get('page_label')
+        page['page_label'] = None
+        page['page_label_source'] = 'geometric_candidate_rejected'
+
+
+def layout_artifact_signature(text: str) -> str:
+    signature = clean_inline_text(text).casefold()
+    return re.sub(r'\d+', '#', signature)
+
+
+def layout_artifact_reason(
+    block: list[Any], page_width: float, page_height: float
+) -> str | None:
+    if len(block) <= 6 or block[6] != 0 or not clean_inline_text(str(block[4])):
+        return None
+    try:
+        x0, y0, x1, y1 = (float(value) for value in block[:4])
+    except (TypeError, ValueError):
+        return None
+    width = max(0.0, x1 - x0)
+    height = max(0.0, y1 - y0)
+    near_side = x1 <= page_width * 0.14 or x0 >= page_width * 0.86
+    if near_side and width <= page_width * 0.06 and height >= page_height * 0.30:
+        return 'repeated_vertical_margin'
+    if y1 <= page_height * 0.07 and height <= page_height * 0.035:
+        return 'repeated_header'
+    if y0 >= page_height * 0.94 and height <= page_height * 0.035:
+        return 'repeated_footer'
+    return None
+
+
+def repeated_layout_artifacts(
+    page_blocks: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    candidates: list[dict[str, Any]] = []
+    for page in page_blocks:
+        for block in page.get('blocks', []):
+            reason = layout_artifact_reason(
+                block, float(page['page_width']), float(page['page_height'])
+            )
+            if reason is None:
+                continue
+            source_text = str(block[4])
+            signature = layout_artifact_signature(source_text)
+            # Numeric-only blocks near an edge are commonly chart ticks. Page
+            # numbers are handled separately by page-label extraction, so they
+            # must not establish a recurring layout-artifact signature.
+            if not signature or not any(char.isalpha() for char in signature):
+                continue
+            try:
+                block_number = int(block[5])
+            except (TypeError, ValueError):
+                continue
+            candidates.append(
+                {
+                    'page_index': int(page['page_index']),
+                    'block_number': block_number,
+                    'reason': reason,
+                    'bbox': [float(value) for value in block[:4]],
+                    'source_text': source_text,
+                    'signature': signature,
+                }
+            )
+
+    pages_by_key: dict[tuple[str, str], set[int]] = {}
+    for candidate in candidates:
+        key = (candidate['reason'], candidate['signature'])
+        pages_by_key.setdefault(key, set()).add(candidate['page_index'])
+
+    selected: dict[int, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        key = (candidate['reason'], candidate['signature'])
+        minimum_pages = 2 if candidate['reason'] == 'repeated_vertical_margin' else 3
+        if len(pages_by_key[key]) < minimum_pages:
+            continue
+        selected.setdefault(candidate['page_index'], []).append(candidate)
+    return selected
+
+
+def page_label_layout_artifacts(
+    blocks: list[list[Any]],
+    words: list[list[Any]],
+    page_label: str | None,
+    page_label_source: str | None,
+    page_width: float,
+    page_height: float,
+) -> list[dict[str, Any]]:
+    """Find printed PDF page-label tokens without treating arbitrary numbers as noise."""
+    if page_label_source not in {
+        'pdf_label',
+        'geometric_footer_or_header',
+    } or not page_label:
+        return []
+    normalized_label = clean_inline_text(page_label)
+    exact_blocks: dict[int, list[Any]] = {}
+    block_candidates: list[tuple[float, int, list[float]]] = []
+    for block in blocks:
+        if len(block) <= 6 or block[6] != 0:
+            continue
+        source_text = str(block[4])
+        if clean_inline_text(source_text) != normalized_label:
+            continue
+        try:
+            x0, y0, x1, y1 = (float(value) for value in block[:4])
+            block_number = int(block[5])
+        except (TypeError, ValueError):
+            continue
+        in_footer = y0 >= page_height * 0.82
+        in_header = y1 <= page_height * 0.08
+        if not (in_footer or in_header):
+            continue
+        exact_blocks[block_number] = block
+        center_x = (x0 + x1) / 2
+        edge_distance = page_height - y1 if in_footer else y0
+        block_candidates.append(
+            (
+                edge_distance + abs(center_x - page_width / 2) * 0.25,
+                block_number,
+                [x0, y0, x1, y1],
+            )
+        )
+
+    word_candidates: list[tuple[float, int, int, list[float]]] = []
+    for word_index, word in enumerate(words):
+        if len(word) <= 5 or clean_inline_text(str(word[4])) != normalized_label:
+            continue
+        try:
+            x0, y0, x1, y1 = (float(value) for value in word[:4])
+            block_number = int(word[5])
+        except (TypeError, ValueError):
+            continue
+        in_footer = y0 >= page_height * 0.82
+        in_header = y1 <= page_height * 0.08
+        if not (in_footer or in_header):
+            continue
+        center_x = (x0 + x1) / 2
+        edge_distance = page_height - y1 if in_footer else y0
+        score = edge_distance + abs(center_x - page_width / 2) * 0.25
+        word_candidates.append((score, word_index, block_number, [x0, y0, x1, y1]))
+    if word_candidates:
+        _score, word_index, block_number, bbox = min(
+            word_candidates, key=lambda item: item[0]
+        )
+        exact_block = exact_blocks.get(block_number)
+        previous_word = words[word_index - 1] if word_index > 0 else None
+        next_word = words[word_index + 1] if word_index + 1 < len(words) else None
+        same_source_line = bool(
+            previous_word is not None
+            and next_word is not None
+            and len(previous_word) > 7
+            and len(next_word) > 7
+            and previous_word[5:7] == next_word[5:7]
+        )
+        return [
+            {
+                'block_number': block_number,
+                'reason': (
+                    'pdf_page_label_token'
+                    if exact_block is not None
+                    else 'pdf_page_label_word'
+                ),
+                'bbox': bbox,
+                'source_text': (
+                    str(exact_block[4])
+                    if exact_block is not None
+                    else normalized_label
+                ),
+                'signature': normalized_label.casefold(),
+                'label_text': normalized_label,
+                'previous_word': (
+                    clean_inline_text(str(previous_word[4]))
+                    if previous_word is not None
+                    else None
+                ),
+                'next_word': (
+                    clean_inline_text(str(next_word[4]))
+                    if next_word is not None
+                    else None
+                ),
+                'context_separator': ' ' if same_source_line else '\n',
+                'exclude_entire_block': exact_block is not None,
+            }
+        ]
+    if block_candidates:
+        _score, block_number, bbox = min(block_candidates, key=lambda item: item[0])
+        return [
+            {
+                'block_number': block_number,
+                'reason': 'pdf_page_label_token',
+                'bbox': bbox,
+                'source_text': str(exact_blocks[block_number][4]),
+                'signature': normalized_label.casefold(),
+                'label_text': normalized_label,
+                'previous_word': None,
+                'next_word': None,
+                'context_separator': '\n',
+                'exclude_entire_block': True,
+            }
+        ]
+    return []
+
+
+def remove_layout_artifact_text(
+    text: str, artifacts: list[dict[str, Any]]
+) -> str:
+    cleaned = text
+    for artifact in artifacts:
+        source_text = str(artifact.get('source_text', ''))
+        if artifact.get('reason') in {
+            'pdf_page_label_token',
+            'pdf_page_label_word',
+        }:
+            label_text = clean_inline_text(str(artifact.get('label_text', '')))
+            previous_word = clean_inline_text(
+                str(artifact.get('previous_word') or '')
+            )
+            next_word = clean_inline_text(str(artifact.get('next_word') or ''))
+            if label_text and previous_word and not next_word:
+                trailing_pattern = re.compile(
+                    rf'(?m)^[ \t]*{re.escape(label_text)}[ \t]*(?:\r?\n)?\Z'
+                )
+                if trailing_pattern.search(cleaned):
+                    cleaned = trailing_pattern.sub('', cleaned, count=1)
+                    continue
+            if label_text and next_word and not previous_word:
+                leading_pattern = re.compile(
+                    rf'\A[ \t]*{re.escape(label_text)}[ \t]*\r?\n'
+                )
+                if leading_pattern.search(cleaned):
+                    cleaned = leading_pattern.sub('', cleaned, count=1)
+                    continue
+            if label_text and previous_word and next_word:
+                context_pattern = re.compile(
+                    rf'{re.escape(previous_word)}[ \t\r\n]*'
+                    rf'{re.escape(label_text)}[ \t\r\n]*'
+                    rf'{re.escape(next_word)}'
+                )
+                context_matches = list(context_pattern.finditer(cleaned))
+                if len(context_matches) == 1:
+                    separator = str(artifact.get('context_separator') or ' ')
+                    cleaned = context_pattern.sub(
+                        f'{previous_word}{separator}{next_word}', cleaned, count=1
+                    )
+                    continue
+            if label_text:
+                standalone_pattern = re.compile(
+                    rf'(?m)^[ \t]*{re.escape(label_text)}[ \t]*(?:\r?\n|$)'
+                )
+                standalone_matches = list(standalone_pattern.finditer(cleaned))
+                if len(standalone_matches) == 1:
+                    cleaned = standalone_pattern.sub('', cleaned, count=1)
+            continue
+        if source_text and source_text in cleaned:
+            cleaned = cleaned.replace(source_text, '', 1)
+            continue
+        for line in source_text.splitlines():
+            if len(clean_inline_text(line)) >= 3:
+                cleaned = cleaned.replace(line, '', 1)
+    return cleaned
+
+
+def apply_reconciled_geometric_page_label_artifacts(
+    page_records: list[dict[str, Any]],
+    all_layout_artifacts: list[dict[str, Any]],
+) -> None:
+    for record in page_records:
+        pending = record.pop('_pending_geometric_page_label_artifacts', [])
+        if (
+            record.get('page_label_source') != 'geometric_footer_or_header'
+            or not record.get('page_label')
+            or not pending
+        ):
+            continue
+        record['normalized_text'] = normalize_page_text(
+            remove_layout_artifact_text(record['normalized_text'], pending)
+        )
+        record['excluded_layout_artifact_count'] = int(
+            record.get('excluded_layout_artifact_count', 0)
+        ) + len(pending)
+        record['excluded_layout_artifact_reasons'] = sorted(
+            {
+                *record.get('excluded_layout_artifact_reasons', []),
+                *(artifact['reason'] for artifact in pending),
+            }
+        )
+        all_layout_artifacts.extend(
+            {**artifact, 'page': record['pdf_page_number']}
+            for artifact in pending
+        )
 
 
 def page_label_for(page_labels: dict[int, str | None] | None, page_number: int, page: fitz.Page) -> str | None:
@@ -983,7 +1441,7 @@ def table_region_above_caption(
             break
         row_has_cells = bool(split_trailing_table_cells(row["text"])[1])
         if selected and (
-            ANY_CAPTION_RE.match(row["text"])
+            is_caption_line(row["text"])
             or (is_heading(row["text"]) and not row_has_cells)
         ):
             break
@@ -1036,7 +1494,7 @@ def table_region_below_caption(
             break
         text = row["text"]
         row_cells = split_trailing_table_cells(text)[1]
-        if ANY_CAPTION_RE.match(text) or re.match(r"^\s*Notes?\s*:", text, re.IGNORECASE):
+        if is_caption_line(text) or re.match(r"^\s*Notes?\s*:", text, re.IGNORECASE):
             break
         if (
             selected
@@ -1132,11 +1590,36 @@ def figure_crop_above_caption(
     ]
 
 
+def figure_render_crop_bbox(page: fitz.Page, caption_crop_bbox: list[float]) -> tuple[list[float], str]:
+    """Use a complete page fallback when PDF rotation makes caption crops unreliable."""
+    if int(page.rotation) in {90, 270}:
+        return [
+            float(page.rect.x0),
+            float(page.rect.y0),
+            float(page.rect.x1),
+            float(page.rect.y1),
+        ], 'full_page_rotated_fallback'
+    return caption_crop_bbox, 'caption_region'
+
+
 def looks_like_table_or_axis_line(text: str) -> bool:
     s = clean_inline_text(text)
-    if ANY_CAPTION_RE.match(s):
+    number = r"[-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+    if re.fullmatch(rf"N(?:\s+{number}){{2,}}", s, re.IGNORECASE):
         return True
-    numeric_tokens = re.findall(r"[-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?", s)
+    panel_markers = re.findall(r"(?:^|\s)[A-Z]\s+(?=[A-Z][A-Za-z])", s)
+    if len(panel_markers) >= 2:
+        return True
+    if re.fullmatch(
+        r'\d+(?:\.\d+)?\s+(?P<label>[A-Za-z][A-Za-z-]*)'
+        r'(?:\s+\d+(?:\.\d+)?\s+(?P=label))+',
+        s,
+        re.IGNORECASE,
+    ):
+        return True
+    if is_caption_line(s):
+        return True
+    numeric_tokens = re.findall(number, s)
     if len(numeric_tokens) >= 3:
         alpha_tokens = re.findall(r"[A-Za-z]+", s)
         if len(alpha_tokens) <= 8:
@@ -1209,7 +1692,7 @@ def positioned_numbered_headings(lines: list[dict[str, Any]]) -> list[dict[str, 
                 len(title) <= 120
                 and title[:1].isupper()
                 and not title.endswith((".", ",", ";", ":"))
-                and not ANY_CAPTION_RE.match(title)
+                and not is_caption_line(title)
             )
             if y_gap <= 1.5 and 0 <= x_gap <= 42 and plausible_title:
                 candidates.append((x_gap, title))
@@ -1277,18 +1760,58 @@ def extract_sections(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]
     return sections
 
 
+def reference_list_text_ranges(
+    page_records: list[dict[str, Any]],
+) -> dict[int, list[tuple[int, int]]]:
+    ranges_by_page: dict[int, list[tuple[int, int]]] = {}
+    in_references = False
+    for page in page_records:
+        text = page['normalized_text']
+        page_ranges: list[tuple[int, int]] = []
+        range_start: int | None = 0 if in_references else None
+        offset = 0
+        for line in text.splitlines(keepends=True):
+            cleaned = clean_inline_text(line)
+            if not in_references and REF_START_RE.match(cleaned):
+                in_references = True
+                range_start = offset
+            elif in_references and (
+                APPENDIX_START_RE.match(cleaned) or REF_SECTION_END_RE.match(cleaned)
+            ):
+                page_ranges.append((range_start or 0, offset))
+                in_references = False
+                range_start = None
+            offset += len(line)
+        if in_references:
+            page_ranges.append((range_start or 0, len(text)))
+        if page_ranges:
+            ranges_by_page[int(page['pdf_page_number'])] = page_ranges
+    return ranges_by_page
+
+
 def extract_citations(page_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[tuple[int, int, str]] = set()
+    reference_ranges = reference_list_text_ranges(page_records)
 
     for page in page_records:
         text = page["normalized_text"]
+        excluded_ranges = reference_ranges.get(int(page['pdf_page_number']), [])
+        accepted_spans: list[tuple[int, int]] = []
         for pattern in CITATION_PATTERNS:
             for match in pattern.finditer(text):
                 key = (page["pdf_page_number"], match.start(), match.group(0))
                 if key in seen:
                     continue
+                if any(start <= match.start() < end for start, end in excluded_ranges):
+                    continue
+                if any(
+                    max(start, match.start()) < min(end, match.end())
+                    for start, end in accepted_spans
+                ):
+                    continue
                 seen.add(key)
+                accepted_spans.append((match.start(), match.end()))
                 out.append(
                     {
                         "page": page["pdf_page_number"],
@@ -1643,7 +2166,7 @@ def extract_reference_list_positioned(page_records: list[dict[str, Any]]) -> lis
             if (
                 APPENDIX_START_RE.match(text)
                 or REF_SECTION_END_RE.match(text)
-                or ANY_CAPTION_RE.match(text)
+                or is_caption_line(text)
                 or split_appendix_heading
             ):
                 started = False
@@ -1720,12 +2243,12 @@ def extract_reference_list_text(page_records: list[dict[str, Any]]) -> list[dict
             continue
         if re.fullmatch(r"\d+", text):
             continue
-        if APPENDIX_START_RE.match(text) or REF_SECTION_END_RE.match(text) or ANY_CAPTION_RE.match(text):
+        if APPENDIX_START_RE.match(text) or REF_SECTION_END_RE.match(text) or is_caption_line(text):
             break
         starts_new_entry = (
             not item["is_indented"]
             and REF_ENTRY_START_RE.match(text)
-            and not ANY_CAPTION_RE.match(text)
+            and not is_caption_line(text)
             and not re.fullmatch(r"\d+", text)
         )
         if repeated_author_entry_start(text, current):
@@ -1772,7 +2295,7 @@ def should_append_caption_continuation(
     text = clean_inline_text(next_text)
     if y_gap < -0.5 or y_gap > 18:
         return False
-    if not text or ANY_CAPTION_RE.match(text):
+    if not text or is_caption_line(text):
         return False
     continuation_expected = bool(
         title_so_far.rstrip().endswith(":")
@@ -1788,7 +2311,11 @@ def should_append_caption_continuation(
         re.IGNORECASE,
     ):
         return False
-    if re.match(r"^[-−]?\d", text) and not continuation_expected:
+    if (
+        re.match(r"^[-−]?\d", text)
+        and not continuation_expected
+        and not same_block_wrap
+    ):
         return False
     if title_so_far.count("(") > title_so_far.count(")"):
         return True
@@ -1813,7 +2340,7 @@ def fallback_caption_crop_bbox(page: fitz.Page) -> list[float]:
 
 def should_append_raw_caption_continuation(title_so_far: str, next_text: str) -> bool:
     text = clean_inline_text(next_text)
-    if not text or ANY_CAPTION_RE.match(text):
+    if not text or is_caption_line(text):
         return False
     continuation_expected = bool(
         title_so_far.rstrip().endswith(":")
@@ -1855,11 +2382,34 @@ def label_only_figure_has_note(
 ) -> bool:
     for line in lines[caption_index + 1 :]:
         text = caption_line_text(line)
-        if ANY_CAPTION_RE.match(text):
+        if is_caption_line(text):
             break
         if re.match(r"^Notes?\s*:", text, re.IGNORECASE):
             return True
     return False
+
+
+def same_row_caption_title(
+    label_line: dict[str, Any], title_line: dict[str, Any]
+) -> bool:
+    label_bbox = label_line.get('bbox')
+    title_bbox = title_line.get('bbox')
+    if not all(
+        isinstance(value, (list, tuple)) and len(value) == 4
+        for value in (label_bbox, title_bbox)
+    ):
+        return False
+    return (
+        label_line.get('block_index') is not None
+        and label_line.get('block_index') == title_line.get('block_index')
+        and abs(
+            float(label_line.get('font_size', 0.0))
+            - float(title_line.get('font_size', 0.0))
+        )
+        <= 0.5
+        and abs(float(label_bbox[1]) - float(title_bbox[1])) <= 1.5
+        and 0 <= float(title_bbox[0]) - float(label_bbox[2]) <= 30
+    )
 
 
 def label_only_table_title(
@@ -1872,11 +2422,21 @@ def label_only_table_title(
     if not isinstance(label_line, dict) or not isinstance(title_line, dict):
         return ""
 
+    label_text = caption_line_text(label_line)
+    inline_match = caption_match("table", label_text) or caption_match(
+        "figure", label_text
+    )
+    if inline_match and clean_inline_text(
+        inline_match.groupdict().get("title") or ""
+    ):
+        return ""
+
     label_bbox = label_line.get("bbox")
     title_bbox = title_line.get("bbox")
     title = caption_line_text(title_line)
+    same_row_title = same_row_caption_title(label_line, title_line)
     if (
-        not label_line.get("is_bold")
+        not (label_line.get("is_bold") or same_row_title)
         or not title
         or not isinstance(label_bbox, (list, tuple))
         or len(label_bbox) != 4
@@ -1885,11 +2445,17 @@ def label_only_table_title(
         or label_line.get("block_index") is None
         or label_line.get("block_index") != title_line.get("block_index")
         or abs(float(label_line.get("font_size", 0.0)) - float(title_line.get("font_size", 0.0))) > 0.5
-        or abs(float(label_bbox[0]) - float(title_bbox[0])) > 4
-        or not -1 <= float(title_bbox[1]) - float(label_bbox[3]) <= 12
+        or (
+            not same_row_title
+            and abs(float(label_bbox[0]) - float(title_bbox[0])) > 4
+        )
+        or (
+            not same_row_title
+            and not -1 <= float(title_bbox[1]) - float(label_bbox[3]) <= 12
+        )
         or len(title) > 220
         or not re.search(r"[A-Za-z]", title)
-        or ANY_CAPTION_RE.match(title)
+        or is_caption_line(title)
         or re.match(r"^(?:Notes?\s*:|Panel\b)", title, re.IGNORECASE)
         or looks_like_table_or_axis_line(title)
     ):
@@ -1906,8 +2472,8 @@ def supported_caption_match(
     title = match.groupdict().get("title")
     if isinstance(title, str) and title.strip():
         return True
-    if kind == "table":
-        return bool(label_only_table_title(lines, caption_index))
+    if label_only_table_title(lines, caption_index):
+        return True
     return kind == "figure" and label_only_figure_has_note(lines, caption_index)
 
 
@@ -1917,7 +2483,6 @@ def extract_raw_captioned_items_for_page(
     page_number: int,
     page_label: str | None,
 ) -> list[dict[str, Any]]:
-    pattern = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
     display_kind = "Table" if kind == "table" else "Figure"
     replacements, repair_summary = page_text_repair_plan(page)
     raw_text, _applied = align_positioned_glyph_repairs(
@@ -1932,7 +2497,7 @@ def extract_raw_captioned_items_for_page(
 
     i = 0
     while i < len(lines):
-        match = pattern.match(lines[i])
+        match = caption_match(kind, lines[i])
         if not match or not supported_caption_match(kind, match, lines, i):
             i += 1
             continue
@@ -1950,7 +2515,7 @@ def extract_raw_captioned_items_for_page(
         title = clean_inline_text(join_text_chunks_preserving_hyphens(title_parts))
         next_caption_idx = None
         for j in range(caption_end + 1, len(lines)):
-            if ANY_CAPTION_RE.match(lines[j]):
+            if is_caption_line(lines[j]):
                 next_caption_idx = j
                 break
 
@@ -1989,7 +2554,6 @@ def extract_captioned_items(
     kind: str,
     page_labels: dict[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
-    pattern = TABLE_CAPTION_RE if kind == "table" else FIGURE_CAPTION_RE
     display_kind = "Table" if kind == "table" else "Figure"
     items: list[dict[str, Any]] = []
 
@@ -2002,14 +2566,14 @@ def extract_captioned_items(
 
         i = 0
         while i < len(lines):
-            match = pattern.match(lines[i]["text"])
+            match = caption_match(kind, lines[i]["text"])
             if not match or not supported_caption_match(kind, match, lines, i):
                 i += 1
                 continue
 
             label = match.group("label")
             initial_title = clean_inline_text(match.groupdict().get("title") or "")
-            label_only_title = label_only_table_title(lines, i) if kind == "table" else ""
+            label_only_title = label_only_table_title(lines, i)
             if not initial_title:
                 initial_title = label_only_title
             title_parts = [initial_title] if initial_title else []
@@ -2031,7 +2595,7 @@ def extract_captioned_items(
                     )
                     <= 4
                     and -1 <= y_gap <= 12
-                    and not ANY_CAPTION_RE.match(next_line["text"])
+                    and not is_caption_line(next_line["text"])
                 )
                 if not same_caption_block:
                     break
@@ -2068,7 +2632,7 @@ def extract_captioned_items(
 
             next_caption_idx = None
             for j in range(caption_end + 1, len(lines)):
-                if ANY_CAPTION_RE.match(lines[j]["text"]):
+                if is_caption_line(lines[j]["text"]):
                     next_caption_idx = j
                     break
 
@@ -2235,10 +2799,11 @@ def save_figures(
         crop_path = figures_dir / f"figure_{figure_counter}.png"
         text_path = figures_dir / f"figure_{figure_counter}.txt"
         page = doc[item["page"] - 1]
-        crop_saved = save_page_clip_image(page, crop_path, item["crop_bbox"], dpi=dpi)
+        crop_bbox, crop_strategy = figure_render_crop_bbox(page, item["crop_bbox"])
+        crop_saved = save_page_clip_image(page, crop_path, crop_bbox, dpi=dpi)
         text_path.write_text("\n".join(item["raw_lines"]).strip() + "\n", encoding="utf-8")
 
-        associated_images = associated_embedded_images(embedded_images, item["page"], item["crop_bbox"])
+        associated_images = associated_embedded_images(embedded_images, item["page"], crop_bbox)
         source = "raw_text_caption_fallback" if item.get("caption_source") == "raw_text" else "caption"
         inventory.append(
             {
@@ -2251,7 +2816,8 @@ def save_figures(
                 "source": source,
                 "caption_source": item.get("caption_source"),
                 "status": "captioned_with_embedded_image" if associated_images else "captioned_visual_crop_only",
-                "crop_bbox": item["crop_bbox"],
+                "crop_bbox": crop_bbox,
+                "crop_strategy": crop_strategy,
                 "crop_path": relative_artifact_path(crop_path, repo_root) if crop_saved else None,
                 "text_path": relative_artifact_path(text_path, repo_root),
                 "embedded_image_count": len(associated_images),
@@ -2610,8 +3176,6 @@ def attach_captions_to_auto_tables(
 ) -> set[int]:
     matched_caption_indexes: set[int] = set()
     for auto_table in auto_tables:
-        if auto_table.get("status") != "auto_extracted_needs_visual_verification":
-            continue
         auto_bbox = auto_table.get("bbox")
         if not isinstance(auto_bbox, (list, tuple)) or len(auto_bbox) != 4:
             continue
@@ -2669,6 +3233,10 @@ def save_tables(
         figure_regions_by_page,
     )
     matched_caption_indexes = attach_captions_to_auto_tables(captioned_items, auto_tables)
+    for table in auto_tables:
+        table['inventory_role'] = (
+            'caption_matched_table' if table.get('table_label') else 'unlabeled_candidate'
+        )
     unmatched_captions = [
         item for index, item in enumerate(captioned_items) if index not in matched_caption_indexes
     ]
@@ -2681,6 +3249,8 @@ def save_tables(
         captioned_tables=unmatched_captions,
         start_table_id=len(auto_tables) + 1,
     )
+    for table in caption_fallbacks:
+        table['inventory_role'] = 'caption_anchored_table'
     return [*auto_tables, *caption_fallbacks]
 
 
@@ -2734,7 +3304,11 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
     known_font_glyph_repair_pages = []
     positioned_accent_composition_pages = []
     unresolved_math_glyph_pages = []
+    unresolved_control_glyph_pages = []
     residual_control_character_pages = []
+    soft_hyphen_pages = []
+    layout_artifact_pages = []
+    rejected_geometric_page_label_pages = []
     raw_normalized_ratios = []
     suspicious_order_pages = []
     normalized_text_strategies: dict[str, int] = {}
@@ -2754,8 +3328,16 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
             positioned_accent_composition_pages.append(page_number)
         if page.get("unresolved_math_glyph_count", 0):
             unresolved_math_glyph_pages.append(page_number)
+        if page.get('unresolved_control_glyph_count', 0):
+            unresolved_control_glyph_pages.append(page_number)
         if page.get("residual_control_character_count", 0):
             residual_control_character_pages.append(page_number)
+        if page.get('soft_hyphen_count', 0):
+            soft_hyphen_pages.append(page_number)
+        if page.get('excluded_layout_artifact_count', 0):
+            layout_artifact_pages.append(page_number)
+        if page.get('page_label_source') == 'geometric_candidate_rejected':
+            rejected_geometric_page_label_pages.append(page_number)
         strategy = page.get("normalized_text_strategy", "coordinate_sorted")
         normalized_text_strategies[strategy] = normalized_text_strategies.get(strategy, 0) + 1
         two_column_unresolved = page.get("two_column_detected") and strategy != "native_content_order_two_column"
@@ -2765,6 +3347,13 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
         if (
             (two_column_unresolved or font_fidelity_fallback or page.get("landscape"))
             and page.get("raw_sorted_similarity", 1.0) < 0.9
+        ):
+            reading_order_review_pages.append(page_number)
+        elif (
+            page_number == 1
+            and strategy == 'coordinate_sorted'
+            and len(raw_text.strip()) >= 1000
+            and page.get('raw_sorted_similarity', 1.0) < 0.5
         ):
             reading_order_review_pages.append(page_number)
         if len(raw_text.strip()) < 250 and not page.get("likely_scanned"):
@@ -2787,6 +3376,10 @@ def page_quality_summary(page_records: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             median_ratio = (ratios[middle - 1] + ratios[middle]) / 2
     return {
+        'unresolved_control_glyph_pages': unresolved_control_glyph_pages,
+        'soft_hyphen_pages': soft_hyphen_pages,
+        'layout_artifact_pages': layout_artifact_pages,
+        'rejected_geometric_page_label_pages': rejected_geometric_page_label_pages,
         "low_text_pages": low_text_pages,
         "sparse_plausible_pages": sparse_plausible_pages,
         "ocr_recommended_pages": ocr_recommended_pages,
@@ -2856,24 +3449,86 @@ def main() -> int:
     ocr_recommended_pages = []
 
     with fitz.open(pdf_path) as doc:
+        layout_pages = [
+            {
+                'page_index': page_index,
+                'page_width': float(page.rect.width),
+                'page_height': float(page.rect.height),
+                'blocks': page.get_text('blocks', sort=False) or [],
+            }
+            for page_index, page in enumerate(doc)
+        ]
+        layout_artifacts_by_page = repeated_layout_artifacts(layout_pages)
+        all_layout_artifacts: list[dict[str, Any]] = []
         for page_index, page in enumerate(doc):
             pdf_page_number = page_index + 1
             text_repairs, repair_summary = page_text_repair_plan(page)
             raw_text, sorted_text, words, blocks = extract_page_text(
                 page, text_repairs, repair_summary
             )
-            page_label = clean_page_label(page, raw_text, sorted_text)
+            page_label, page_label_source = clean_page_label_details(
+                page, raw_text, sorted_text, words
+            )
+            page_layout_artifacts = list(layout_artifacts_by_page.get(page_index, []))
+            existing_artifact_blocks = {
+                int(artifact['block_number']) for artifact in page_layout_artifacts
+            }
+            detected_page_label_artifacts = page_label_layout_artifacts(
+                blocks,
+                words,
+                page_label,
+                page_label_source,
+                float(page.rect.width),
+                float(page.rect.height),
+            )
+            pending_geometric_page_label_artifacts = []
+            if page_label_source == 'geometric_footer_or_header':
+                # Keep the label cleanup even when a recurring footer/header
+                # owns the same block. A different normalized reading order can
+                # leave the short label behind after the longer recurring text
+                # is removed line by line.
+                pending_geometric_page_label_artifacts = detected_page_label_artifacts
+            else:
+                page_layout_artifacts.extend(
+                    artifact
+                    for artifact in detected_page_label_artifacts
+                    if int(artifact['block_number']) not in existing_artifact_blocks
+                )
+            all_layout_artifacts.extend(
+                {**artifact, 'page': pdf_page_number}
+                for artifact in page_layout_artifacts
+            )
+            content_raw_text = remove_layout_artifact_text(raw_text, page_layout_artifacts)
+            content_sorted_text = remove_layout_artifact_text(sorted_text, page_layout_artifacts)
+            excluded_block_numbers = {
+                int(artifact['block_number'])
+                for artifact in page_layout_artifacts
+                if artifact.get('exclude_entire_block', True)
+            }
+            content_blocks = [
+                block
+                for block in blocks
+                if len(block) <= 5 or int(block[5]) not in excluded_block_numbers
+            ]
             two_column_detected = two_column_layout_detected(page)
             landscape = float(page.rect.width) > float(page.rect.height)
-            normalized_source, normalized_text_strategy = choose_normalized_text(
-                raw_text,
-                sorted_text,
-                blocks,
-                float(page.rect.width),
-                two_column_detected,
-                repair_summary,
-                landscape=landscape,
-            )
+            if any(
+                artifact['reason'] == 'repeated_vertical_margin'
+                for artifact in page_layout_artifacts
+            ):
+                normalized_source = content_raw_text
+                normalized_text_strategy = 'native_content_order_marginal_artifact_removed'
+            else:
+                normalized_source, normalized_text_strategy = choose_normalized_text(
+                    content_raw_text,
+                    content_sorted_text,
+                    content_blocks,
+                    float(page.rect.width),
+                    two_column_detected,
+                    repair_summary,
+                    landscape=landscape,
+                )
+            soft_hyphen_count = normalized_source.count('\u00ad')
             normalized_text = normalize_page_text(normalized_source)
             positioned_lines = positioned_text_lines(page, text_repairs)
             positioned_repair_count = int(
@@ -2945,12 +3600,14 @@ def main() -> int:
             ocr_recommended = ocr_reason is not None
             if ocr_recommended:
                 ocr_recommended_pages.append(pdf_page_number)
-            raw_sorted_similarity = text_order_similarity(raw_text, sorted_text)
+            raw_sorted_similarity = text_order_similarity(content_raw_text, content_sorted_text)
 
             page_meta = PageMeta(
                 pdf_page_index=page_index,
                 pdf_page_number=pdf_page_number,
                 page_label=page_label,
+                page_label_source=page_label_source,
+                rejected_page_label_candidate=None,
                 page_width=float(page.rect.width),
                 page_height=float(page.rect.height),
                 raw_text_path=portable_path(raw_text_path, repo_root),
@@ -2979,8 +3636,22 @@ def main() -> int:
                 positioned_font_glyph_repair_count=positioned_repair_count,
                 unresolved_math_glyph_count=unresolved_math_glyph_count,
                 unresolved_math_glyph_codes=sorted(unresolved_math_glyph_codes),
+                unresolved_control_glyph_count=int(
+                    repair_summary['unresolved_control_glyph_count']
+                ),
+                unresolved_control_glyph_codes=list(
+                    repair_summary['unresolved_control_glyph_codes']
+                ),
+                unresolved_control_glyphs=list(
+                    repair_summary['unresolved_control_glyphs']
+                ),
                 residual_control_character_count=residual_control_character_count,
                 residual_control_character_codes=residual_control_character_codes,
+                soft_hyphen_count=soft_hyphen_count,
+                excluded_layout_artifact_count=len(page_layout_artifacts),
+                excluded_layout_artifact_reasons=sorted(
+                    {artifact['reason'] for artifact in page_layout_artifacts}
+                ),
             )
 
             page_records.append(
@@ -2989,7 +3660,30 @@ def main() -> int:
                     "raw_text": raw_text,
                     "normalized_text": normalized_text,
                     "positioned_lines": positioned_lines,
+                    "_pending_geometric_page_label_artifacts": (
+                        pending_geometric_page_label_artifacts
+                    ),
                 }
+            )
+
+        reconcile_geometric_page_labels(page_records)
+        apply_reconciled_geometric_page_label_artifacts(
+            page_records, all_layout_artifacts
+        )
+        for record in page_records:
+            normalized_path = Path(record['normalized_text_path'])
+            if not normalized_path.is_absolute():
+                normalized_path = repo_root / normalized_path
+            normalized_path.write_text(
+                f"# Page {record['pdf_page_number']}"
+                + (
+                    f" (label: {record['page_label']})"
+                    if record['page_label']
+                    else ''
+                )
+                + '\n\n'
+                + record['normalized_text'],
+                encoding='utf-8',
             )
 
         full_text = build_full_text(page_records)
@@ -3003,6 +3697,7 @@ def main() -> int:
                 if k not in {"raw_text", "normalized_text", "positioned_lines"}
             }
             page_index_json.append(copy)
+        write_json(parsed_dir / 'layout_artifacts.json', all_layout_artifacts)
         write_json(parsed_dir / "page_index.json", page_index_json)
         page_labels = {rec["pdf_page_number"]: rec["page_label"] for rec in page_records}
 
@@ -3052,6 +3747,14 @@ def main() -> int:
     write_json(parsed_dir / "numbers_in_text.json", numbers)
     write_json(parsed_dir / "crossrefs.json", crossrefs)
     write_json(tables_dir / "table_inventory.json", tables_inventory)
+    write_json(
+        tables_dir / 'unlabeled_table_candidates.json',
+        [
+            item
+            for item in tables_inventory
+            if item.get('inventory_role') == 'unlabeled_candidate'
+        ],
+    )
     write_json(figures_dir / "figure_inventory.json", figures_inventory)
     write_json(figures_dir / "embedded_image_inventory.json", embedded_images_inventory)
 
@@ -3082,7 +3785,15 @@ def main() -> int:
             "reference_count": len(references),
             "numeric_claim_candidate_count": len(numbers),
             "crossref_count": len(crossrefs),
-            "table_count": len(tables_inventory),
+            "table_count": sum(
+                item.get('inventory_role') != 'unlabeled_candidate'
+                for item in tables_inventory
+            ),
+            'table_candidate_count': len(tables_inventory),
+            'unlabeled_table_candidate_count': sum(
+                item.get('inventory_role') == 'unlabeled_candidate'
+                for item in tables_inventory
+            ),
             "figure_count": len(figures_inventory),
             "embedded_image_count": len(embedded_images_inventory),
         },

@@ -1,4 +1,4 @@
-pymupdf==1.27.2.2
+pymupdf==1.28.2
 pdfplumber==0.11.9
 pandas==3.0.2
 jsonschema==4.26.0

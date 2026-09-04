@@ -85,6 +85,7 @@ from preprocess_pdf import (  # noqa: E402
     split_trailing_table_cells,
     structure_captioned_table_rows,
     table_candidate_is_excluded,
+    table_render_crop_bbox,
     table_region_below_caption,
     valid_crossref_label,
 )
@@ -3314,6 +3315,45 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertIsNotNone(region)
         self.assertNotIn(lines[-1]["text"], region["raw_lines"])
         self.assertLess(region["crop_bbox"][3], 181)
+
+    def test_table_region_keeps_later_panels(self) -> None:
+        page = mock.Mock()
+        page.rect = fitz.Rect(0, 0, 600, 800)
+        lines = [
+            {"text": "Panel A: Main treatment", "bbox": [70, 105, 300, 117], "is_page_footer": False},
+            {"text": "Treatment -0.55 0.22", "bbox": [70, 125, 530, 137], "is_page_footer": False},
+            {"text": "Constant 0.32 0.04", "bbox": [70, 145, 530, 157], "is_page_footer": False},
+            {"text": "Panel B: Alternative treatment", "bbox": [70, 170, 340, 182], "is_page_footer": False},
+            {"text": "Treatment -0.48 0.19", "bbox": [70, 190, 530, 202], "is_page_footer": False},
+            {"text": "Constant 0.28 0.06", "bbox": [70, 210, 530, 222], "is_page_footer": False},
+            {"text": "Notes: Robust standard errors.", "bbox": [70, 235, 530, 247], "is_page_footer": False},
+        ]
+
+        region = table_region_below_caption(page, lines, [60, 70, 540, 88])
+
+        self.assertIsNotNone(region)
+        self.assertIn("Panel B: Alternative treatment", region["raw_lines"])
+        self.assertIn("Treatment -0.48 0.19", region["raw_lines"])
+        self.assertNotIn("Notes: Robust standard errors.", region["raw_lines"])
+
+    def test_multi_panel_table_uses_explicit_full_page_crop_fallback(self) -> None:
+        page = mock.Mock()
+        page.rect = fitz.Rect(0, 0, 600, 800)
+        bounded = [60, 70, 540, 230]
+
+        crop, strategy = table_render_crop_bbox(
+            page,
+            bounded,
+            ["Panel A: Main treatment", "Panel B: Alternative treatment"],
+        )
+        ordinary_crop, ordinary_strategy = table_render_crop_bbox(
+            page, bounded, ["Panel A: Main treatment"]
+        )
+
+        self.assertEqual(crop, [0.0, 0.0, 600.0, 800.0])
+        self.assertEqual(strategy, "full_page_multi_panel_fallback")
+        self.assertEqual(ordinary_crop, bounded)
+        self.assertEqual(ordinary_strategy, "caption_region")
 
     def test_reference_inventory_uses_hanging_indents_and_stops_at_appendix(self) -> None:
         page = {

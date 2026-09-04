@@ -726,8 +726,8 @@ def main() -> int:
         "--model",
         default=None,
         help=(
-            "Advanced testing override for the Codex model used by all agents. "
-            "The supported quality default is gpt-5.6-sol from .codex/config.toml."
+            "Override the Codex model used by all agents. "
+            "The recommended default is gpt-5.6-sol from .codex/config.toml."
         ),
     )
     parser.add_argument(
@@ -735,8 +735,8 @@ def main() -> int:
         choices=REASONING_EFFORT_CHOICES,
         default="xhigh",
         help=(
-            "Advanced testing override for substantive reviewers and the editor. "
-            "The supported quality default is xhigh."
+            "Override the reasoning effort for substantive reviewers and the editor. "
+            "The recommended default is xhigh."
         ),
     )
     parser.add_argument(

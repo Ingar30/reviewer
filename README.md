@@ -35,7 +35,7 @@ You need:
 
 - Python 3.12 or newer
 - Codex CLI installed and authenticated
-- access to GPT-5.6 Sol and Codex web search
+- access to the selected GPT-5.6 model and Codex web search
 
 ### 3. Set Up Python
 
@@ -111,9 +111,25 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom
 
 ## Quality Defaults
 
-The supported quality configuration uses `gpt-5.6-sol`, which [OpenAI identifies as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). Substantive reviewers and the editor use `xhigh` reasoning. Parser-quality preflight and reviewer-applicability routing use `high`.
+The recommended default uses `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and reviewer-applicability routing use `high`. [OpenAI identifies Sol as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). The repository's evaluations found that it remains the strongest tested configuration, so the ordinary command keeps this default.
 
-This is the only recommended configuration. The current setup also improves deterministic parsing, conservative reviewer selection, and editorial style. Quality-first acceptance runs took roughly 45 to 95 minutes and reported about 1.7 to 4.2 million aggregate tokens. Runtime and usage vary with paper length, reviewer applicability, web search, caching, and service load.
+Users who prefer another model may override the model and reasoning effort for one run. For example, [OpenAI describes Terra as balancing intelligence and cost](https://developers.openai.com/api/docs/models/gpt-5.6-terra):
+
+```powershell
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
+```
+
+On the fresh 116-page Paper 21 comparison, Terra/xhigh used approximately 2.57 million aggregate logged tokens versus 3.34 million for Sol/xhigh: about 23% fewer tokens. It produced a valid and useful report but materially fewer findings, so it is an override example rather than a co-equal recommended profile. A prior Terra/xhigh run used 2.36 million tokens, illustrating ordinary run-to-run variation.
+
+These figures are not quotas or billing estimates. Shorter papers and smaller selected reviewer rosters can use substantially fewer tokens; paper structure, web verification, caching, and stochastic run length also matter. See [Model Overrides](docs/model_profiles.md) for the full evidence and limitations.
+
+To deliberately use another combination:
+
+```powershell
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model MODEL_ID --reasoning-effort EFFORT
+```
+
+Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`. Overrides apply only to that run and should be treated as unbenchmarked unless evaluated on representative papers. The run manifest records the effective model and reasoning settings.
 
 The wrapper runs up to four reviewer agents concurrently and records the PDF hash, effective model, reasoning settings, active roster, Git state, and elapsed time in `work/<paper_id>/run_manifest.json`.
 

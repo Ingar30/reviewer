@@ -8,7 +8,7 @@ Accept the current bounded parser changes. They fix material failures found in t
 
 The agreed report-quality condition is now met. A fresh paper21 run completed all 18 selected substantive reviewers, validation, normalization, editing, and final-report smoke checks. Relative to the preserved healthy baseline, the new report is materially better: it removes disproven parser claims, surfaces newly verified table omissions, improves reviewer completion status, retains comparable editorial depth, and concentrates more of the final bundle on high-severity issues.
 
-The next parser milestone should target table structure. It should not add document-specific strings or silently repair mathematical content.
+The next larger parser milestone should target table-cell alignment with a conservative extraction ensemble. It should not add document-specific strings or silently repair mathematical content.
 
 ## Validation method
 
@@ -26,7 +26,7 @@ The next parser milestone should target table structure. It should not add docum
 | All ten PDFs preprocess successfully | Pass |
 | Source PDF hashes unchanged from baseline | Pass: 0 mismatches |
 | Raw extracted page text unchanged | Pass: 0 mismatches across 378 pages |
-| Unit suite | Pass: 113 tests |
+| Unit suite | Pass: 115 tests |
 | Duplicate canonical table or figure labels | Pass: 0 duplicate groups |
 | Environment check | Pass |
 | Shareable-repository check | Pass |
@@ -79,6 +79,7 @@ Caption matching now supports a split label and title on the same geometric row,
 - Ong recovers table labels 1 through 5 and figure labels 1 through 6.
 - Vincent's false cover-design table remains visible as an unlabeled candidate but is excluded from the canonical count, which falls from 13 to 12.
 - Paper21's five figures on 90-degree rotated pages use an explicit `full_page_rotated_fallback`; each saved crop is byte-identical to its 72-DPI full page image and therefore no longer omits upper or right panels.
+- Explicit multi-panel tables retain later panel markers during caption-region extraction. When at least two distinct `Panel <label>` rows are present, the visual fallback uses a provenance-labelled `full_page_multi_panel_fallback`; this preserves later panels and notes without claiming that structured cells are correct.
 - Wrapped captions are complete for paper21 Figure A.17 and paper22 Figures 1 and 2. The same general fix also completes paper9 Figures 3 and 4.
 - Unsafe table status is not upgraded merely because a caption was recovered.
 
@@ -140,6 +141,21 @@ An intervening degraded run remains useful only as failure evidence: 13 substant
 The final fresh run completed all 18 selected substantive reviewers with 16 `ok`, 2 `partial`, and no failures; including parser preflight, the totals are 17 `ok` and 2 `partial`. Its 118 source findings normalize to 110 canonical findings in an 8,123-word report with 25 URLs. The lower count reflects a more selective bundle rather than obvious lost depth: high-severity findings increase from 6 to 8, low-severity findings fall from 31 to 24, bibliography-maintenance items fall from 10 to 4, and the number of `cannot_verify` assessments falls from 15 to 11.
 
 Qualitatively, the new report removes the false claims that Figure A.3 is blank/truncated and that cleaned footer labels remain in body prose. It adds the verified Table 4 and Table A.9 panel omissions, retains the central outcome-definition, portfolio-accounting, preregistration, governance, treatment-source, external-validity, and replication issues, and gives the most directly actionable problems higher priority. The final report validator returns `VALID`. This is materially better than both the degraded run and the healthy baseline for the parser-related dimensions under test.
+
+## Follow-up validation: multi-panel table completeness
+
+The completed paper21 preflight identified two specific remaining completeness failures: Table 4 and Table A.9 stopped after Panel A in both their structured artifacts and visual crops. The follow-up implementation recognizes only explicit `Panel <label>` rows, allows those rows to continue a caption-grounded table region, and uses a full-page visual fallback only when at least two distinct panel labels are retained. Ordinary single-panel tables keep their bounded caption-region crops. The fallback is explicitly provenance-labelled and does not upgrade the table's structural status.
+
+The implementation was rerun from scratch at 72 DPI on the same ten-paper, 378-page regression corpus under `tmp/parser-validation/multipanel-table-2026-09-04/` and compared with `final-v4-ten-paper-2026-09-04/`:
+
+- All 10 source hashes matched; all 378 raw-page and 378 normalized-page hashes matched byte for byte.
+- Every manifest summary matched, including page, section, citation, reference, numeric-claim, cross-reference, canonical-table, candidate-table, and figure counts.
+- Of 79 captioned tables, 49 retained bounded caption-region crops and 15 genuine multi-panel tables used the explicit full-page fallback. The remaining caption-matched native objects do not use this crop path.
+- All 15 full-page fallback crops were byte-identical to their corresponding page images.
+- Only the two known incomplete tables changed row counts: paper21 Table 4 increased from 11 to 30 rows and Table A.9 from 9 to 22. Both now retain Panels A, B, and C plus the summary rows. Visual inspection confirms that their fallbacks include the full tables and notes.
+- The complete unit suite passed: 115 tests. New focused tests cover continuation across later panels and the explicit full-page fallback; existing tests still verify that notes and separated prose terminate ordinary table extraction.
+
+This is a material, bounded quality improvement over the accepted baseline: it closes both known multi-panel completeness defects, improves safe visual routing for 15 corpus tables, and introduces no detected change to source evidence, normalized prose, global inventories, or unrelated table row counts.
 
 ## Quality-first boundary
 

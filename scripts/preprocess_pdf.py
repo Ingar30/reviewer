@@ -1398,6 +1398,15 @@ def group_positioned_rows(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return grouped
 
 
+def table_panel_label(text: str) -> str | None:
+    match = re.match(
+        r'^\s*Panel\s+(?P<label>[A-Za-z0-9]+)\s*(?::|\b)',
+        clean_inline_text(text),
+        re.IGNORECASE,
+    )
+    return match.group('label').casefold() if match else None
+
+
 def caption_column_bounds(page: fitz.Page, caption_bbox: list[float]) -> tuple[float, float]:
     page_width = float(page.rect.width)
     if float(page.rect.width) > float(page.rect.height):
@@ -1440,9 +1449,10 @@ def table_region_above_caption(
         if caption_bbox[1] - row["bbox"][1] > 380:
             break
         row_has_cells = bool(split_trailing_table_cells(row["text"])[1])
+        panel_row = table_panel_label(row["text"]) is not None
         if selected and (
             is_caption_line(row["text"])
-            or (is_heading(row["text"]) and not row_has_cells)
+            or (is_heading(row["text"]) and not row_has_cells and not panel_row)
         ):
             break
         selected.append(row)
@@ -1490,9 +1500,10 @@ def table_region_below_caption(
         gap = row["bbox"][1] - boundary
         if gap < -8:
             continue
-        if gap > (60 if not selected else 30):
-            break
         text = row["text"]
+        panel_row = table_panel_label(text) is not None
+        if gap > (60 if not selected or panel_row else 30):
+            break
         row_cells = split_trailing_table_cells(text)[1]
         if is_caption_line(text) or re.match(r"^\s*Notes?\s*:", text, re.IGNORECASE):
             break
@@ -1501,6 +1512,7 @@ def table_region_below_caption(
             and numeric_rows_seen >= 2
             and len(row_cells) < 2
             and (gap > 18 or is_heading(text))
+            and not panel_row
         ):
             break
         selected.append(row)
@@ -1599,6 +1611,25 @@ def figure_render_crop_bbox(page: fitz.Page, caption_crop_bbox: list[float]) -> 
             float(page.rect.x1),
             float(page.rect.y1),
         ], 'full_page_rotated_fallback'
+    return caption_crop_bbox, 'caption_region'
+
+
+def table_render_crop_bbox(
+    page: fitz.Page,
+    caption_crop_bbox: list[float],
+    raw_lines: list[str],
+) -> tuple[list[float], str]:
+    """Use a complete-page visual fallback for tables with multiple panels."""
+    panel_labels = {
+        label for line in raw_lines if (label := table_panel_label(line)) is not None
+    }
+    if len(panel_labels) >= 2:
+        return [
+            float(page.rect.x0),
+            float(page.rect.y0),
+            float(page.rect.x1),
+            float(page.rect.y1),
+        ], 'full_page_multi_panel_fallback'
     return caption_crop_bbox, 'caption_region'
 
 
@@ -3019,7 +3050,10 @@ def save_captioned_tables(
             encoding="utf-8",
         )
         text_path.write_text(table_text, encoding="utf-8")
-        crop_saved = save_page_clip_image(page, crop_path, item["crop_bbox"], dpi=dpi)
+        crop_bbox, crop_strategy = table_render_crop_bbox(
+            page, item["crop_bbox"], item["raw_lines"]
+        )
+        crop_saved = save_page_clip_image(page, crop_path, crop_bbox, dpi=dpi)
 
         write_json(
             raw_json_path,
@@ -3035,7 +3069,8 @@ def save_captioned_tables(
                 "page": item["page"],
                 "page_label": item["page_label"],
                 "caption_source": item.get("caption_source"),
-                "crop_bbox": item["crop_bbox"],
+                "crop_bbox": crop_bbox,
+                "crop_strategy": crop_strategy,
                 "raw_lines": item["raw_lines"],
                 "parsed_rows": parsed_rows,
                 "structured_rows": structured_rows,
@@ -3068,7 +3103,8 @@ def save_captioned_tables(
                 "raw_json_path": relative_artifact_path(raw_json_path, repo_root),
                 "text_path": relative_artifact_path(text_path, repo_root),
                 "crop_path": relative_artifact_path(crop_path, repo_root) if crop_saved else None,
-                "crop_bbox": item["crop_bbox"],
+                "crop_bbox": crop_bbox,
+                "crop_strategy": crop_strategy,
                 "row_count": len(structured_rows),
                 "col_count": len(columns) if structured_rows else 0,
                 "header_names": columns if header_promoted else [],

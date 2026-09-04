@@ -36,7 +36,8 @@ The normal workflow is:
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
 - Fresh wrapper runs use one conservative applicability workflow. Eight universal review-stage auditors always run. Eleven conditional specialists, including the theory-logic auditor, run whenever their remit is plausibly material; only high-confidence single-type classifications may skip clearly inapplicable roles. Mixed, unknown, medium-confidence, and low-confidence classifications run all 19 substantive reviewers.
-- The quality-first model default is `gpt-5.6-sol`. Substantive reviewers and the editor use `xhigh` reasoning by default; parser-quality preflight and applicability routing use `high`.
+- The quality-first default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
+- Users may explicitly override the model and reasoning through wrapper flags. Documentation uses `gpt-5.6-terra` with `xhigh` reasoning as a lower-usage example, not a second recommended default. Other combinations are unbenchmarked and must remain explicit in the run manifest.
 - Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.

@@ -113,7 +113,7 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom
 
 The recommended default uses `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and reviewer-applicability routing use `high`. [OpenAI identifies Sol as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). The repository's evaluations found that it remains the strongest tested configuration, so the ordinary command keeps this default.
 
-Users who prefer another model may override the model and reasoning effort for one run. For example, [OpenAI describes Terra as balancing intelligence and cost](https://developers.openai.com/api/docs/models/gpt-5.6-terra):
+Users who prefer another model may override the model and reasoning effort for one run. If you are not on one of Codex's higher-usage plans, consider a more cost-efficient model and/or lower reasoning effort so a full review is less likely to exhaust your allowance. [OpenAI similarly recommends switching to a smaller model when approaching usage limits](https://developers.openai.com/codex/pricing). One tested example uses [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) while retaining `xhigh` reasoning:
 
 ```powershell
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh

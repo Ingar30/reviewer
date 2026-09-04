@@ -113,15 +113,15 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom
 
 The recommended default uses `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and reviewer-applicability routing use `high`. [OpenAI identifies Sol as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). The repository's evaluations found that it remains the strongest tested configuration, so the ordinary command keeps this default.
 
-Users who prefer another model may override the model and reasoning effort for one run. For example, [OpenAI describes Terra as balancing intelligence and cost](https://developers.openai.com/api/docs/models/gpt-5.6-terra):
+Users who prefer another model may override the model and reasoning effort for one run. If you are not on one of Codex's higher-usage plans, consider a more cost-efficient model and/or lower reasoning effort so a full review is less likely to exhaust your allowance. [OpenAI similarly recommends switching to a smaller model when approaching usage limits](https://developers.openai.com/codex/pricing). One tested example uses [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) while retaining `xhigh` reasoning:
 
 ```powershell
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
 ```
 
-On the fresh 116-page Paper 21 comparison, Terra/xhigh used approximately 2.57 million aggregate logged tokens versus 3.34 million for Sol/xhigh: about 23% fewer tokens. It produced a valid and useful report but materially fewer findings, so it is an override example rather than a co-equal recommended profile. A prior Terra/xhigh run used 2.36 million tokens, illustrating ordinary run-to-run variation.
+In a full-pipeline test on a 116-page applied microeconomics paper, including a large online appendix with many tables and figures, Terra/xhigh used about 23% fewer logged tokens than Sol/xhigh. Its report was useful but materially less exhaustive, so Terra/xhigh remains an optional override rather than a co-equal default.
 
-These figures are not quotas or billing estimates. Shorter papers and smaller selected reviewer rosters can use substantially fewer tokens; paper structure, web verification, caching, and stochastic run length also matter. See [Model Overrides](docs/model_profiles.md) for the full evidence and limitations.
+This comparison is not a quota or billing estimate. Shorter papers and smaller selected reviewer rosters can use substantially fewer tokens; paper structure, web verification, caching, and stochastic run length also matter. See [Model Overrides](docs/model_profiles.md) for the evidence and limitations.
 
 To deliberately use another combination:
 

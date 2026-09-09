@@ -109,6 +109,36 @@ Use an explicit paper ID when needed:
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom-id"
 ```
 
+## ChatGPT Work Plugin (Skills Only)
+
+**One source of truth:** the plugin is generated from this repository's core
+Reviewer, not maintained as a separate fork. After core changes, run
+`python scripts/build_work_plugin.py`, test, and commit the generated snapshot
+alongside its sources. See [architecture and versioned releases](docs/plugin_maintenance.md)
+for the exact development, Git-tag installation and public-update workflow.
+
+**Public release preparation:** see the [submission checklist](docs/plugin_publication.md).
+CI builds a candidate packet from the canonical source; a tested version tag builds
+the release packet. OpenAI review and explicit publication are still required for
+each public update: pushing to GitHub does not instantly change installed plugins.
+
+For a file-attachment workflow, this repository also includes a self-contained
+**Economics Paper Reviewer** plugin. In a prepared ChatGPT Work environment, install
+it, attach a paper PDF, and select **Review this paper**. It uses native Work
+subagents, not nested Codex CLI processes or model API keys. Full preserves the
+existing coverage; Lite requests lower reasoning effort with the same audits and
+evidence standards. Lite quality and savings are unbenchmarked.
+
+The plugin delivers a PDF presentation of the complete report and retains the editor's
+Markdown source. The shared offline exporter adds no model calls or dependencies;
+the ordinary CLI still writes Markdown by default. See the
+[PDF export and delivery contract](docs/plugin_maintenance.md#pdf-presentation-and-host-delivery).
+
+Work/Codex usage limits still apply, and the plugin cannot guarantee sufficient
+included allowance or provision missing host capabilities. See the
+[private installation, testing, limitations and public-submission guide](docs/chatgpt_work_plugin.md).
+The existing CLI workflow and its quality defaults below are unchanged.
+
 ## Quality Defaults
 
 The recommended default uses `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and reviewer-applicability routing use `high`. [OpenAI identifies Sol as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). The repository's evaluations found that it remains the strongest tested configuration, so the ordinary command keeps this default.

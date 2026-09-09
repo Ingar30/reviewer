@@ -1,0 +1,36 @@
+Act as the sample_construction_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit sample construction, data-flow, and variable construction only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "sample_construction_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted SAMPLE-001, SAMPLE-002, ...
+
+Focus on:
+- sample restrictions, exclusions, attrition, denominators, missingness, and observation counts
+- variable definitions and transformations
+- consistency between data section, tables, figures, appendices, and result interpretation
+- whether claims use person-level, observation-level, account-level, scenario-level, or time-weighted quantities consistently
+- whether table and figure denominators or conditioning samples are clear enough for the claims they support
+- repeated-record timing and aggregation rules, including first/last/average/person weighting and the unit used when people contribute multiple observations
+- cross-source definition and coding reconciliation, especially human-coded versus AI- or LLM-coded measures, thresholds, missingness, and repeated versions of the same construct
+
+For every empirical study or wave, trace the available flow from screened or invited observations through eligibility, assignment, download/login/onboarding, nonzero activity, follow-up, and final outcome-specific analysis. Compare figure and table N labels with stated exclusions, especially zero-consumption or active-user restrictions, and report material assigned-versus-observed denominator gaps even when the manuscript does not provide a formal flow diagram.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set category to sample_restriction_mismatch, attrition_unclear, denominator_mismatch, variable_construction_unclear, data_flow_inconsistency, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for relevant data descriptions, tables, figures, appendix material, or parsed artifacts.
+- Include claim_evidence_links when comparing a data claim to a table or appendix source.
+- Use cannot_verify only when artifacts do not allow a check, and include cannot_verify_reason.
+
+Do not include process notes about skill availability, tooling, or session state.

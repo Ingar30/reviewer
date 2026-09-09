@@ -63,3 +63,10 @@ The normal workflow is:
 - Prefer deterministic scripts for file handling, preprocessing, validation, and report assembly.
 - Use Codex for judgment-heavy auditing and synthesis tasks.
 - Keep the workflow reproducible, inspectable, and easy to rerun.
+
+## Joint CLI and plugin maintenance
+- Read `docs/plugin_maintenance.md` before changing shared Reviewer behavior, the plugin adapter, packaging, or release tooling. It is the living guide for maintaining both execution hosts.
+- Keep core Reviewer files authoritative. Never hand-edit generated plugin runtime copies or separately maintain plugin review methodology.
+- When bundled sources change, regenerate the plugin, inspect the diff, and run relevant tests and the bundle drift check. Consider compatibility with both the ordinary CLI and native-host adapter.
+- Update `docs/plugin_maintenance.md` in the same change when source ownership, shared interfaces, host exceptions, verification commands, release steps, or compatibility limits change. Do not duplicate routine prompt edits in the guide when the maintenance process is unchanged.
+- In the handoff, distinguish repository changes and local checks from installed-plugin updates and public releases. Do not install, tag, push, or publish without the user's authorization.

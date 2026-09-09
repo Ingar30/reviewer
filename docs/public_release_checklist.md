@@ -2,6 +2,10 @@
 
 Use this before changing the GitHub repository from private to public, and again before tagging public releases.
 
+For the separate ChatGPT/Codex directory release, also complete the
+[plugin submission checklist](plugin_publication.md). A public GitHub repository or
+passing local test is not an approved/published plugin.
+
 - Confirm `git ls-files` contains only project machinery, documentation, tests, schemas, prompts, and placeholder README files for private runtime directories.
 - Confirm no PDFs, paper text, reviewer JSON, generated prompts, logs, editor bundles, or final reports are tracked.
 - Confirm internal slides, talks, and paper-specific notes are ignored or removed from Git tracking.

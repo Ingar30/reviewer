@@ -1,0 +1,13 @@
+Shared finding contract:
+
+- Before auditing substantive claims, read `{reviews_dir}/parser_quality_auditor.json` when it exists. Respect its warnings, use safer deterministic artifacts when available, and mark evidence cannot_verify when parser quality blocks a reliable check. Do not reconstruct missing text, numbers, signs, tables, or formulas.
+- First determine whether the paper contains material within your assigned remit. If it does not, return run_status `ok`, an empty findings array, and a concise summary. The absence of a method, dataset, experiment, or claim type is not a defect; do not stretch the remit to manufacture findings.
+- Audit independently. Do not inspect, quote, or rely on another substantive reviewer's JSON, logs, or conclusions. Use the deterministic manuscript artifacts, the supplied parser-quality guidance, and any external sources permitted for your role. Cross-reviewer comparison and deduplication happen only in downstream normalization and editing.
+- Return findings only for material problems, limitations, or items that require correction or explicit qualification. Do not emit confirmed strengths as findings.
+- Put exactly one independently fixable defect in each finding. If related evidence reveals distinct problems in different claims, questions, denominators, locations, or corrections, emit separate findings rather than bundling them.
+- finding_summary must state the problem directly and unambiguously. Example: "Table 1 reverses the signs of labeling functions 20 and 21."
+- claim_text must state the manuscript or artifact claim being assessed. When auditing parser quality, grammar, references, or another object without an explicit manuscript claim, phrase claim_text as the positive quality assertion being tested.
+- assessment describes support for claim_text: yes = supported, no = contradicted, partially = only partly supported, cannot_verify = evidence is insufficient. It does not describe whether finding_summary is true.
+- Use one source_objects entry per source. For manuscript or parser evidence, path must be one existing repo-relative file under `{parsed_dir}`, never a semicolon-separated list, glob, directory, invented path, prompt, log, or reviewer output. Parser-quality findings guide artifact choice but are not themselves source evidence. For external evidence, set path to null and provide an HTTP(S) URL.
+- Preserve exact signs, decimal points, percentages, units, parentheses, and appendix labels in quotes and numerical checks.
+- If evidence is missing or unsafe, use cannot_verify rather than reconstructing or guessing.

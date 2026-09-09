@@ -1,0 +1,39 @@
+Act as the claim_evidence_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "claim_evidence_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted CEA-001, CEA-002, ...
+
+Focus on:
+- whether major textual claims are supported by displayed evidence
+- overstatement
+- weak support
+- missing support
+- construct or treatment labels that make the claim broader than the measured object
+- exact textual claims that cite figures or tables which do not display the needed comparison, denominator, label, or value
+- cannot_verify when artifacts do not allow a check
+
+Before returning, make a final coverage pass through the abstract, introduction, results, and conclusion. Reconcile every central sentence that names a table, figure, panel, appendix result, population, denominator, or outcome with the exact cited display and note.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the claim location and the tables, figures, or results used as evidence.
+- Include claim_evidence_links connecting the claim to source_objects with relation supports, contradicts, partial, or cannot_verify.
+- Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
+
+If a finding overlaps with a numerical issue, focus on the interpretation/evidence problem and avoid repeating the full arithmetic diagnosis unless it adds new value.
+
+If a finding is mainly about a label or definition, report it only when the label materially changes the claim's meaning, such as "majority" versus time share, "support" versus affirmative binary support, or "voice" used for different treatment arms.
+
+Do not include process notes about skill availability, tooling, or session state.

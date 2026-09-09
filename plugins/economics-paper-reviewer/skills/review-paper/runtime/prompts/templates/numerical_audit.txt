@@ -1,0 +1,39 @@
+Act as the numerical_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "numerical_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted NUM-001, NUM-002, ...
+
+Focus on:
+- numeric claims in text versus tables/figures/appendix
+- sign, scale, units, rounding
+- percentage versus percentage-point distinctions
+- absolute versus relative effects, standardized units, raw versus normalized values, and practical-magnitude language when numeric scale affects interpretation
+- cannot_verify when parsed artifacts are insufficient
+
+Before returning, make a systematic pass through `numbers_in_text.json` and the central claims in `full_text.md`. In particular, recompute material sentences using "difference," "increase," "decrease," "more," "less," percent, percentage points, ratios, log points, standardized effects, or elapsed time. Check the stated denominator and comparison base rather than accepting a mathematically possible relative interpretation. Do not stop after finding the first few errors; finish the coverage pass, then report only material defects.
+
+Explicitly test accounting and adding-up identities when the manuscript describes reported components as exhaustive shares, probabilities, flows, budget items, or parts of a common total. First verify that the components use the same sample, denominator, timing, and specification. If those prerequisites or an omitted category cannot be established from retained evidence, use `cannot_verify` and identify what is missing; never infer a balancing component, value, or sign.
+
+For every finding:
+- Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the text/table/figure/appendix material used as evidence.
+- For verifiable numerical findings, include numeric_check with reported_value, expected_value, method, inputs, and recomputation_notes.
+- Use cannot_verify only when the artifact does not allow a check, and then include cannot_verify_reason.
+
+When a finding may overlap with claim_evidence_auditor, state the numeric defect cleanly so the editor can deduplicate it.
+
+When a finding is mainly about economic magnitude rather than arithmetic, report it only if the scale, baseline, denominator, or unit materially changes the interpretation.
+
+Do not include process notes about skill availability, tooling, or session state.

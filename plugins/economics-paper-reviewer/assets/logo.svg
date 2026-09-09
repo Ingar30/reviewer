@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Economics Paper Reviewer">
+  <rect width="256" height="256" rx="48" fill="#18384D"/>
+  <path d="M65 43h86l40 40v130H65z" fill="#FFFFFF"/>
+  <path d="M151 43v40h40" fill="#D8E6EE"/>
+  <path d="M87 105h69M87 126h48M87 147h31" fill="none" stroke="#18384D" stroke-width="9" stroke-linecap="round"/>
+  <path d="m120 172 20 20 44-49" fill="none" stroke="#087F75" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

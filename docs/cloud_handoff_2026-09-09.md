@@ -8,7 +8,17 @@ Start with `AGENTS.md` and [joint maintenance](plugin_maintenance.md). Keep the
 original cloud test conversation available; its failed environment may still be
 useful. Starting a new development conversation does not repair that environment.
 
-## Latest update: public submission preparation
+## Latest update: authorized GitHub release-candidate preparation
+
+The initial source commit is now public on GitHub and its fresh-checkout CI passed
+all 187 tests, bundle drift/hygiene and candidate-packet generation. The current
+source version is `0.1.0-rc.1`, not an approved public-directory release. See the
+[GitHub preparation record](plugin_maintenance.md#authorized-github-release-candidate-preparation---2026-09-09)
+for the commit/run links and the remaining publisher and cloud-acceptance gates.
+Earlier statements below about uncommitted work describe their dated preparation
+stage, not the current Git state. No OpenAI submission or publication is implied.
+
+## Earlier update: public submission preparation
 
 The user requested public submission preparation following the successful Full
 run. See [the publication runbook](plugin_publication.md) and the updated

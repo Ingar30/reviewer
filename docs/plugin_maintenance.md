@@ -457,3 +457,30 @@ Verification for this preparation:
   and no submission/publication. No dependency install, local plugin refresh, Git
   commit/push/tag, or portal action was performed. Policy URLs are not live merely
   because their source documents now exist locally.
+
+## Authorized GitHub release-candidate preparation - 2026-09-09
+
+The user subsequently authorized the Git release steps. The initial source commit
+[`7a71ba0`](https://github.com/Ingar30/reviewer/commit/7a71ba064594a133c68ec939c8b856dba83ad0f3)
+is public on `main`. Its [GitHub CI run](https://github.com/Ingar30/reviewer/actions/runs/34350950452)
+passed all **187 tests** from a fresh Ubuntu checkout, plus bundle drift, hygiene
+and candidate-packet generation. This establishes Linux CI preparation, not clean
+ChatGPT Work installation or native-agent acceptance in that host.
+
+The public privacy, terms and publication URLs returned HTTP 200 without authentication;
+privacy and terms remain drafts awaiting publisher approval. Machine-specific paths
+and the cloud environment identifier were removed from the public handoff after
+preserving its original in an ignored private folder. Private inputs, outputs,
+Downloads evidence and old runtime bundles remain outside Git.
+
+CI reported a deprecated Node.js runtime in the old artifact uploader. Both workflows
+now pin GitHub's official `actions/upload-artifact` v7.0.1 commit
+`043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`, whose action definition uses Node.js 24.
+`archive: true` explicitly preserves the complete packet as one Actions artifact.
+This changes release tooling only. Candidate artifacts expire after 30 days and tag
+artifacts after 90 days; archive the exact ZIP and receipts before expiry.
+
+The current source/version is `0.1.0-rc.1`; tag only a passing commit and never move
+the tag. Git tags and green Actions runs do not mean OpenAI has approved or published
+the plugin. Keep publisher declarations and the remaining host-acceptance gates
+pending until their evidence exists. Check Actions for the actual tagged-build result.

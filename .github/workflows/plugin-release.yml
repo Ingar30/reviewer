@@ -41,9 +41,10 @@ jobs:
           python scripts/check_tracked_sensitive_names.py
       - name: Build immutable ZIP, listing, tests and source receipts
         run: python scripts/prepare_plugin_submission.py --release-tag "$RELEASE_TAG" --output output/plugin-release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, Node.js 24
         with:
           name: reviewer-plugin-${{ env.RELEASE_TAG }}
           path: output/plugin-release/
+          archive: true
           if-no-files-found: error
           retention-days: 90

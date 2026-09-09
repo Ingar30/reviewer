@@ -1,0 +1,174 @@
+{
+  "$defs": {
+    "source_object": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["text", "table", "figure", "equation", "section", "reference", "external", "parsed_artifact"]
+        },
+        "label": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] },
+        "page": { "type": ["integer", "null"] },
+        "page_label": { "type": ["string", "null"] },
+        "section": { "type": ["string", "null"] },
+        "text_quote": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] }
+      },
+      "required": ["id", "type", "label", "path", "page", "page_label", "section", "text_quote", "url"],
+      "additionalProperties": false
+    },
+    "numeric_check": {
+      "type": "object",
+      "properties": {
+        "reported_value": { "type": ["string", "number", "null"] },
+        "expected_value": { "type": ["string", "number", "null"] },
+        "method": { "type": ["string", "null"] },
+        "inputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "recomputation_notes": { "type": ["string", "null"] }
+      },
+      "required": ["reported_value", "expected_value", "method", "inputs", "recomputation_notes"],
+      "additionalProperties": false
+    },
+    "claim_evidence_link": {
+      "type": "object",
+      "properties": {
+        "claim_text": { "type": "string" },
+        "source_object_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "relation": {
+          "type": "string",
+          "enum": ["supports", "contradicts", "partial", "cannot_verify"]
+        },
+        "note": { "type": ["string", "null"] }
+      },
+      "required": ["claim_text", "source_object_ids", "relation", "note"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paper_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_status": {
+      "type": "string",
+      "enum": ["ok", "partial", "cannot_verify", "failed"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "category": { "type": "string" },
+          "finding_summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue_type": {
+            "type": "string",
+            "enum": [
+              "manuscript_issue",
+              "parser_artifact",
+              "reference_integrity",
+              "bibliography_maintenance",
+              "copyedit_issue",
+              "cannot_verify"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "page": { "type": ["integer", "null"] },
+              "page_label": { "type": ["string", "null"] },
+              "section": { "type": ["string", "null"] },
+              "text_quote": { "type": ["string", "null"] },
+              "precision": {
+                "type": "string",
+                "enum": ["exact", "partial", "missing"]
+              }
+            },
+            "required": ["page", "page_label", "section", "text_quote", "precision"],
+            "additionalProperties": false
+          },
+          "claim_text": { "type": "string" },
+          "assessment": {
+            "type": "string",
+            "enum": ["yes", "no", "partially", "cannot_verify"]
+          },
+          "cannot_verify_reason": { "type": ["string", "null"] },
+          "evidence_summary": { "type": "string" },
+          "source_objects": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/source_object" }
+          },
+          "claim_evidence_links": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/claim_evidence_link" }
+          },
+          "numeric_check": {
+            "anyOf": [
+              { "$ref": "#/$defs/numeric_check" },
+              { "type": "null" }
+            ]
+          },
+          "suggested_fix": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "category",
+          "finding_summary",
+          "issue_type",
+          "severity",
+          "confidence",
+          "location",
+          "claim_text",
+          "assessment",
+          "cannot_verify_reason",
+          "evidence_summary",
+          "source_objects",
+          "claim_evidence_links",
+          "numeric_check",
+          "suggested_fix"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "reviewer",
+    "paper_id",
+    "run_status",
+    "summary",
+    "findings",
+    "notes"
+  ],
+  "additionalProperties": false
+}

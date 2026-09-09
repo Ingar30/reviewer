@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 
+MIN_REPORT_CHARS = 2000
 DEFAULT_REQUIRED_HEADINGS = [
     "## Executive Summary",
     "## Highest-Priority Cross-Agent Findings",
@@ -134,7 +135,7 @@ def traceability_failures(text: str, bundle: dict) -> list[str]:
     return failures
 
 
-def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2000) -> list[str]:
+def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = MIN_REPORT_CHARS) -> list[str]:
     failures = []
     if len(text.strip()) < min_chars:
         failures.append(f"report is too short: {len(text.strip())} chars < {min_chars}")
@@ -148,7 +149,10 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = 2
             "missing review-scope heading: expected Appendix: Review Scope and Limitations "
             "or legacy Review Configuration"
         )
-    if not re.search(r"\b(?:CANON-\d{3}|[A-Z]+-[A-Z]+-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b", text):
+    # A genuinely empty validated bundle has no identifiers to cite. Do not force
+    # an editor to invent a finding merely to satisfy the smoke check.
+    expects_identifiers = bundle is None or bundle.get("canonical_findings") != []
+    if expects_identifiers and not re.search(r"\b(?:CANON-\d{3}|[A-Z]+-[A-Z]+-\d{3}|claim_evidence_\d{3}|NA-\d{3})\b", text):
         failures.append("report does not mention canonical or source finding identifiers")
 
     if bundle:
@@ -174,7 +178,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check that an editor output is a real report.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--bundle", default=None, help="Optional normalized bundle for traceability coverage checks.")
-    parser.add_argument("--min-chars", type=int, default=2000)
+    parser.add_argument("--min-chars", type=int, default=MIN_REPORT_CHARS)
     args = parser.parse_args()
 
     path = Path(args.input)

@@ -1,0 +1,33 @@
+{
+  "name": "economics-paper-reviewer",
+  "version": "0.1.0-rc.1",
+  "description": "Evidence-grounded economics paper reviews using native ChatGPT Work subagents and deterministic PDF processing.",
+  "author": {
+    "name": "Ingar30",
+    "url": "https://github.com/Ingar30"
+  },
+  "homepage": "https://github.com/Ingar30/reviewer",
+  "repository": "https://github.com/Ingar30/reviewer",
+  "license": "MIT",
+  "keywords": ["economics", "academic", "paper", "review"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Economics Paper Reviewer",
+    "shortDescription": "Evidence-grounded PDF reviews",
+    "longDescription": "Attach an economics paper PDF and request a Full or Lite review. Native ChatGPT Work subagents audit the parsed paper, check evidence, and synthesize a traceable report, delivered as a PDF with its Markdown source preserved. Full retains all universal and applicable specialist audits; Lite keeps the same coverage with lower requested reasoning effort and is unbenchmarked. Uses the host's shared ChatGPT Work/Codex allowance, with no model API keys or API billing. Reviews can exhaust included usage. Requires a host with native subagents, Python PDF-processing dependencies, file access, and image viewing. Web verification depends on available search. Saves checkpoints for interrupted reviews; cannot guarantee quota, runtime capabilities, or completion.",
+    "developerName": "Ingar30",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/Ingar30/reviewer",
+    "privacyPolicyURL": "https://github.com/Ingar30/reviewer/blob/main/docs/plugin_privacy.md",
+    "termsOfServiceURL": "https://github.com/Ingar30/reviewer/blob/main/docs/plugin_terms.md",
+    "brandColor": "#18384D",
+    "logo": "./assets/logo.svg",
+    "composerIcon": "./assets/logo.svg",
+    "defaultPrompt": [
+      "Review this paper. Use native subagents for the Full review.",
+      "Review this paper in Lite mode. Use native subagents.",
+      "Resume my paper review from its checkpoint. Use native subagents."
+    ]
+  }
+}

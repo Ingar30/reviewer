@@ -7,6 +7,9 @@ on:
       - main
       - master
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: Python tests
@@ -30,8 +33,23 @@ jobs:
       - name: Run tests
         run: python -m unittest
 
+      - name: Check skills-only plugin bundle drift
+        run: python scripts/build_work_plugin.py --check
+
       - name: Check shareable tracked files
         run: python scripts/check_shareable_repo.py
 
       - name: Check sensitive-name hygiene
         run: python scripts/check_tracked_sensitive_names.py
+
+      - name: Prepare canonical submission candidate
+        run: python scripts/prepare_plugin_submission.py --output output/plugin-candidate
+
+      - name: Retain tested candidate (not a public release)
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewer-plugin-candidate-${{ github.sha }}
+          path: output/plugin-candidate/
+          if-no-files-found: error
+          retention-days: 30

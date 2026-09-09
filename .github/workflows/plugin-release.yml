@@ -1,0 +1,49 @@
+name: Build versioned Reviewer plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing immutable Reviewer tag matching the plugin version (vX.Y.Z)"
+        required: true
+        type: string
+
+# Build artifacts only. This workflow cannot publish to GitHub or OpenAI.
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify committed distribution matches core
+        run: python scripts/build_work_plugin.py --check
+      - name: Test ordinary Reviewer and native adapter
+        run: python -m unittest
+      - name: Check shareable source
+        run: |
+          python scripts/check_shareable_repo.py
+          python scripts/check_tracked_sensitive_names.py
+      - name: Build immutable ZIP, listing, tests and source receipts
+        run: python scripts/prepare_plugin_submission.py --release-tag "$RELEASE_TAG" --output output/plugin-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewer-plugin-${{ env.RELEASE_TAG }}
+          path: output/plugin-release/
+          if-no-files-found: error
+          retention-days: 90

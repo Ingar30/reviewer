@@ -1,0 +1,58 @@
+Act as the parser_quality_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit parser quality only:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "parser_quality_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted PARSER-001, PARSER-002, ...
+
+Focus on parser defects that could poison downstream reviewers:
+- missing page artifacts or likely scanned pages
+- scrambled reading order in normalized page text
+- suspicious OCR or text-extraction artifacts
+- unresolved control glyphs listed in manifest.summary.page_quality.unresolved_control_glyph_pages; use the font, code, and bounding-box details in page_index.json and never infer the missing symbol
+- residual literal control characters listed in manifest.summary.page_quality.residual_control_character_pages
+- pages cleaned of repeated geometric headers, footers, or vertical margin notices in manifest.summary.page_quality.layout_artifact_pages; spot-check layout_artifacts.json against raw text and page images to ensure substantive content was not excluded
+- isolated geometric page-label candidates rejected for lacking a consecutive document sequence in manifest.summary.page_quality.rejected_geometric_page_label_pages; treat page_index.json page labels as missing on those pages
+- unresolved math-font glyphs listed in manifest.summary.page_quality.unresolved_math_glyph_pages
+- reading-order risk on manifest.summary.page_quality.font_fidelity_order_fallback_pages, where source-faithful native text was preferred because coordinate-sorted text could not retain every verified glyph repair
+- broken table extraction
+- missing or detached table/figure captions
+- figure/table extraction failures
+- inventory contradictions, such as visible captions or embedded images missing from structured inventories
+
+Artifact interpretation rules:
+- Normalized page markdown begins with a generated `# Page ... (label: ...)` metadata header. Do not count that header as retained manuscript footer/header text; test only the normalized body below the first blank line.
+- A `layout_artifacts.json` entry is provenance that a geometric candidate was handled, not evidence that its text remains in normalized prose. Compare the normalized body with raw text and the page image before reporting retained or damaged content.
+- For a figure whose inventory uses `crop_strategy: full_page_rotated_fallback`, compare its file size, pixel dimensions, and hash with the corresponding page image before alleging a blank or truncated crop. If the files are byte-identical, treat the page image as confirmation that the crop is complete.
+- For a table whose inventory uses `crop_strategy: full_page_multi_panel_fallback`, the crop is deliberately a complete-page visual fallback. Compare it with the page image before alleging that later panels or notes are absent. This strategy does not certify the structured cells; continue to audit the CSV/markdown independently.
+
+Table inventory status rules:
+- `caption_matched_table` and `caption_anchored_table` inventory roles are canonical table objects. `unlabeled_candidate` objects are retained extraction candidates, not canonical tables; audit them for missed captions or false positives. The manifest `table_count` excludes these candidates, while `table_candidate_count` retains the full candidate count.
+- `auto_extracted_suspect`, `caption_text_contaminated`, and `caption_text_unstructured` are unsafe as primary evidence.
+- `auto_extracted_needs_visual_verification` and `caption_text_needs_visual_verification` are deterministic candidates, not verified tables. Compare them with the cited page image or crop before relying on column alignment, signs, or values.
+- Never infer missing cells, signs, values, or formulas to make a table look complete.
+
+Use these severity rules:
+- high: downstream reviewers cannot safely operate on a major evidence class or substantial page range, and no usable page-text/image fallback exists
+- medium: reviewers can proceed, but one evidence class or important object may be incomplete or misleading; use this for missing table/figure inventories when page text or page images still provide usable fallback evidence
+- low: localized parser defect or cleanup issue
+
+For every finding:
+- Set issue_type to parser_artifact or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for manifest, page text, raw text, word/block files, inventories, page images, table crops, figure crops, or embedded-image inventory entries used as evidence.
+- Use cannot_verify only when the parsed artifacts do not allow a check, and then include cannot_verify_reason.
+- Do not flag terminal display mojibake as an encoding defect. Only report encoding/OCR corruption when the file contents themselves contain replacement characters, repeated question-mark substitutions, or verified corrupted text. Normal Unicode such as en dashes, curly quotes, ligatures, accented names, or copyright symbols is not a parser defect by itself.
+- Known font-glyph repairs and positioned accent compositions are deterministic source-derived repairs. Spot-check repaired pages against their page images; report a defect only if the repaired character is wrong or an unresolved source glyph remains. Never infer a replacement for a code listed as unresolved.
+- Treat a preserved hyphen at a visual line break as ambiguous unless the page image resolves whether it is lexical or discretionary. Never recommend deleting an observed hyphen based only on a word guess.
+- Do not judge manuscript correctness, numerical correctness, reference correctness, or literature positioning.
+- Do not include process notes about skill availability, tooling, or session state.

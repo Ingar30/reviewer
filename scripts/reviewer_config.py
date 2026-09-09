@@ -131,3 +131,13 @@ def write_reviewers_config(path: Path | str, reviewers: list[ReviewerConfig]) ->
     output_path.parent.mkdir(parents=True, exist_ok=True)
     data = {"reviewers": [reviewer.to_json_dict() for reviewer in reviewers]}
     output_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def split_reviewers(reviewers: list[ReviewerConfig]) -> tuple[list[ReviewerConfig], list[ReviewerConfig], list[ReviewerConfig]]:
+    """Canonical preflight, universal, and conditional rosters (in config order)."""
+    enabled = [reviewer for reviewer in reviewers if reviewer.enabled]
+    return (
+        [r for r in enabled if r.stage == "preflight"],
+        [r for r in enabled if r.stage == "review" and r.selection_policy == "mandatory"],
+        [r for r in enabled if r.stage == "review" and r.selection_policy == "optional"],
+    )

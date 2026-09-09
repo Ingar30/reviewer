@@ -182,6 +182,24 @@ def semantic_errors(
     return errors
 
 
+def validate_review_output(data, schema: dict, reviewers, *, repo: Path,
+                          expected_reviewer: str | None = None,
+                          paper_id: str | None = None) -> list[str]:
+    """Shared schema, identity, semantic and provenance checks, without a subprocess."""
+    from jsonschema import Draft202012Validator
+
+    failures = [f"{path_label(list(err.path))}: {err.message}"
+                for err in sorted(Draft202012Validator(schema).iter_errors(data), key=lambda e: str(list(e.path)))]
+    if failures:
+        return failures
+    if expected_reviewer is not None and data.get("reviewer") != expected_reviewer:
+        failures.append("Output reviewer identity does not match this task.")
+    if paper_id is not None and data.get("paper_id") != paper_id:
+        failures.append("Output paper identity does not match this paper.")
+    failures.extend(semantic_errors(data, reviewers, repo=repo))
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--schema", required=True)
@@ -196,15 +214,7 @@ def main() -> int:
     data = json.loads(input_path.read_text(encoding="utf-8"))
     reviewers = load_reviewers_config(args.reviewers_config)
 
-    from jsonschema import Draft202012Validator
-
-    validator = Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
-    failures = []
-    for err in errors:
-        path = path_label(list(err.path))
-        failures.append(f"{path}: {err.message}")
-    failures.extend(semantic_errors(data, reviewers, repo=Path(__file__).resolve().parents[1]))
+    failures = validate_review_output(data, schema, reviewers, repo=Path(__file__).resolve().parents[1])
 
     if failures:
         print("INVALID")

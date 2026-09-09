@@ -1,0 +1,39 @@
+Act as the literature_auditor for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Audit:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{schema_path}`
+
+For this run:
+- reviewer = "literature_auditor"
+- paper_id = "{paper_id}"
+- finding IDs must be stable and formatted LIT-001, LIT-002, ...
+
+Focus on:
+- novelty claims
+- literature positioning
+- characterization of prior work
+- conservative verification
+- cannot_verify when verification is not possible
+
+Ground critiques in concrete studies. A finding that says a novelty claim is overstated, that prior literature already covers an issue, or that the manuscript mischaracterizes a literature must cite specific studies or external sources in source_objects. If a broad novelty claim cannot be verified or contradicted with concrete studies, use cannot_verify rather than asserting lack of novelty.
+
+Check every central named prior-study characterization used to establish novelty, contrast mechanisms, describe an estimate, or motivate the design. Verify the manuscript's specific characterization rather than merely confirming that the cited paper exists.
+
+For every finding:
+- Set issue_type to manuscript_issue or cannot_verify.
+- Set confidence to high, medium, or low.
+- Set location.precision to exact, partial, or missing.
+- Include source_objects for the manuscript claim and any external or parsed sources used.
+- Include claim_evidence_links when comparing a manuscript claim to prior work or external evidence.
+- Use cannot_verify only when verification is not possible, and then include cannot_verify_reason.
+
+Distinguish clearly between:
+1. cannot_verify because proving novelty requires proving absence, and
+2. overbroad positioning even without proving novelty.
+
+Do not include process notes about skill availability, tooling, or session state.

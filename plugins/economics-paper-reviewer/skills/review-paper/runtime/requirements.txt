@@ -1,0 +1,5 @@
+pymupdf==1.27.2.2
+pdfplumber==0.11.9
+pandas==3.0.2
+jsonschema==4.26.0
+tabulate==0.10.0

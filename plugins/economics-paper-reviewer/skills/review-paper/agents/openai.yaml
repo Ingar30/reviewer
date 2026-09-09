@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review this paper"
+  short_description: "Review economics PDFs with traceable evidence"
+  default_prompt: "Use $review-paper to review the attached paper in Full mode with native subagents."

@@ -1,0 +1,50 @@
+Act as the reviewer_applicability_router for this run.
+
+Use the repo guidance and the paper-reviewer workflow.
+
+Classify paper_id "{paper_id}" using parsed artifacts under:
+`{parsed_dir}`
+
+Return one JSON object that strictly conforms to:
+`{selection_schema_path}`
+
+Set `selection_mode` to `applicability`.
+
+The universal quality baseline already includes cross-reference, source-consistency,
+claim-evidence, literature, reference-integrity, grammar, abstract/conclusion, and
+model/equation audits. Select conditional specialists only from this catalog:
+
+```json
+{optional_reviewer_catalog}
+```
+
+Classification guidance:
+- empirical_causal: empirical paper making causal, treatment-effect, identification, quasi-experimental, experimental, or policy-effect claims.
+- empirical_descriptive: empirical paper mainly describing patterns, correlations, measurement, forecasting, or facts without causal identification as the main contribution.
+- theory: theoretical, conceptual, or model-driven paper with little or no empirical analysis.
+- methods: paper introducing an estimator, measurement method, dataset construction method, or computational procedure.
+- literature_review: survey or literature review paper.
+- mixed: multiple major paper types are central.
+- unknown: parsed artifacts are too limited to classify confidently.
+
+Conservative applicability rules:
+- This is a quality and accuracy decision, not a cost, latency, call-count, or deduplication decision. There is no reviewer-count target or cap.
+- Skip a conditional specialist only when the parsed paper gives positive, high-confidence evidence that the specialist's scope is materially absent. A weak cue scan, expected overlap, or an assumption that another reviewer will cover the issue is not enough.
+- If paper_type is `mixed` or `unknown`, or selection_confidence is `medium` or `low`, select every conditional specialist. The wrapper enforces this rule deterministically.
+- For a high-confidence single-type paper, still select every specialist with a plausible material issue class. When uncertain about one role's applicability, select it.
+- Overlapping source passages are not redundant when reviewers apply distinct validity tests. Reviewer outputs are normalized and deduplicated downstream.
+- Every reason must cite a concrete parsed cue or a concrete reason the entire remit is absent. Do not infer absence merely because an abstract omits a detail.
+- List every catalog reviewer exactly once in either selected_optional_reviewers or skipped_optional_reviewers.
+
+Role-specific rules:
+- Select numerical_auditor for important numeric claims, calibrations, tables, figures, estimates, quantitative examples, or appendix calculations. A theory paper with no material quantitative content may skip it.
+- Select identification_auditor for causal, treatment-effect, mechanism, decomposition, internal-validity, or directional behavioral claims that require identification assumptions.
+- Select robustness_auditor for empirical specifications, simulations, sensitivity analysis, alternative assumptions, placebo tests, subsamples, appendix validations, or other claims whose stability matters.
+- Select sample_construction_auditor for nontrivial samples, restrictions, attrition, exclusions, variable construction, denominators, data flows, or simulation populations.
+- Select limitations_external_validity_auditor for policy, welfare, scope, transportability, generalizability, boundary-condition, or external-validity claims.
+- Select theory_logic_auditor for theory papers and for mixed, structural, mechanism-design, game-theoretic, equilibrium, optimization, proof, proposition, comparative-statics, or formally model-driven work. A high-confidence theory paper must select it. This role checks formal validity and assumption-to-result logic; the mandatory model_equation_auditor separately checks notation, definitions, transcription, and text-equation consistency.
+- Select data_availability_replication_auditor for experiments, preregistered or pre-planned empirical designs, registry links or IDs, replication/reproducibility claims, or material data/code availability claims.
+- Select institutional_context_auditor when legal, regulatory, platform, market-design, institutional-process, voting-rule, event-context, historical-institutional, confidential/admin-data, registry, archive, or institutional-record facts materially affect interpretation.
+- Select power_multiple_testing_auditor for many outcomes or subgroups, multiple treatment arms, selected results, confirmatory/exploratory ambiguity, equivalence language, strong null-effect claims, or statistical-power claims.
+- Select design_randomization_auditor whenever substantive conclusions rely on an experiment, RCT, survey experiment, randomized offer, assigned treatment, or other randomization. Do not select it for ordinary observational comparisons or inconsequential randomized display order.
+- Select economic_magnitude_auditor for central welfare, willingness-to-pay, cost, scalability, calibration, investment-share, policy-magnitude, practical-significance, relative-versus-absolute percentage, or "economically large" claims.

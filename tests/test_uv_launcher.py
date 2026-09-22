@@ -1,4 +1,5 @@
 """Optional launcher regressions; all Codex calls are mocked, no quota is used."""
+from contextlib import chdir
 import json
 import os
 from pathlib import Path
@@ -194,7 +195,7 @@ class LauncherTests(unittest.TestCase):
         config.write_bytes((REPO / "config/reviewers.json").read_bytes())
         with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), mock.patch.object(
             cli, "check_codex"
-        ), mock.patch("os.getcwd", return_value=str(self.folder)), mock.patch.object(
+        ), chdir(self.folder), mock.patch.object(
             cli.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
         ) as run:
             self.assertEqual(cli.main(["--pdf", pdf.name, "--reviewers-config=" + config.name,
@@ -212,7 +213,7 @@ class LauncherTests(unittest.TestCase):
     def test_editor_refresh_preserves_default_reasoning_without_project_trust(self):
         with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), mock.patch.object(
             cli, "check_codex"
-        ), mock.patch("os.getcwd", return_value=str(self.folder)), mock.patch.object(
+        ), chdir(self.folder), mock.patch.object(
             cli.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
         ) as run:
             self.assertEqual(cli.main(["--refresh-editor", "--paper-id", "paper", "--run-editor"]), 0)

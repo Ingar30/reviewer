@@ -100,6 +100,33 @@ nevertheless found and removed avoidable divergence:
 
 ## Generated files are not another source of truth
 
+### Optional Python/uv launcher distribution
+
+The checkout/venv CLI remains primary. `pyproject.toml` and `setup.py` add the
+optional `economics-paper-reviewer` console script, distinct from the skills-only
+plugin. Its version is `0.1.0rc1` (Python's spelling of `0.1.0-rc.1`). Git-backed
+installation does not require PyPI publication.
+
+`scripts/build_cli_package.py` reuses the canonical resource inventory and import
+walker with CLI-specific entry points; native-plugin defaults stay unchanged.
+Resources, guidance and `.codex/config.toml` are generated into the wheel build
+tree, never hand-edited or committed as Python runtime copies. `requirements.txt`
+remains authoritative; setuptools is build-only.
+
+`src/economics_paper_reviewer/cli.py` copies caller-relative inputs and resources
+to a persistent, hash-checked workspace and invokes the original scripts. Its
+child-only `ECONOMICS_REVIEWER_NON_GIT=1` enables `--skip-git-repo-check`, without
+permission overrides, API keys or automatic trust. Canonical model defaults are
+passed explicitly when project trust may prevent loading project configuration.
+
+For packaging changes, build an sdist and wheel, test clean installation and both
+local-wheel/checkout launches using `scripts/validate_cli_package.py`, and run
+ordinary tests, setup checks, plugin regeneration/drift and hygiene checks. See
+[commands and evidence](uv_validation.md). Builds do not update installed plugins;
+commit, push, installation and publication still require authorization.
+
+### Skills-only plugin runtime
+
 Maintain the ordinary Reviewer sources above. **Do not edit
 `plugins/economics-paper-reviewer/skills/review-paper/runtime/` by hand.** It is a
 generated, LF-normalized snapshot committed so a Git-backed installation needs no

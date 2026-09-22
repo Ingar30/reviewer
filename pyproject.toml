@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "economics-paper-reviewer"
+version = "0.1.0rc1"
+description = "Optional local launcher for the Codex economics paper reviewer"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE.md"]
+dynamic = ["dependencies"]
+
+[project.scripts]
+economics-paper-reviewer = "economics_paper_reviewer.cli:main"
+
+[tool.setuptools]
+packages = ["economics_paper_reviewer"]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

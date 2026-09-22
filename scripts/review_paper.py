@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -118,6 +119,9 @@ def codex_exec_command(
     if reasoning_effort:
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     command.append("exec")
+    # Only the optional packaged launcher opts in; sandbox/approval flags are unchanged.
+    if os.environ.get("ECONOMICS_REVIEWER_NON_GIT") == "1":
+        command.append("--skip-git-repo-check")
     return command
 
 

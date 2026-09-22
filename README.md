@@ -109,6 +109,39 @@ Use an explicit paper ID when needed:
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom-id"
 ```
 
+## Optional: Run with uv
+
+The Quick Start above remains the primary workflow; **uv is optional**. With
+[uv installed](https://docs.astral.sh/uv/getting-started/installation/), Python
+3.12+, Git, and Codex CLI on PATH authenticated through `codex login`, run from
+the directory containing your PDF:
+
+```text
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --pdf "paper.pdf"
+```
+
+This uses the same review pipeline and Codex account, consumes normal review
+quota, and needs no new API key. Replace `--pdf "paper.pdf"` with `--help` or
+`--check` for checks without a review; `--check` does not verify model access or
+remaining quota. The manuscript-transmission notice above still applies.
+
+Input paths resolve from your current directory, which need not be a Git repo.
+Papers, intermediates and reports persist in `./reviewer-workspace/`, outside uv's
+cache; choose another location with `--workspace "D:/Review work"`. The report is
+at `outputs/<paper_id>/report.md` inside that workspace. Back it up; use distinct
+paper IDs or workspaces for papers with the same filename stem.
+
+Existing review flags still work. Resume with the same workspace, paper ID and
+runtime: `--resume-after-preflight` reuses preflight but reruns substantive reviews;
+`--refresh-editor --paper-id paper --run-editor` reuses completed reviewer outputs.
+Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recovery.
+Changed runtime resources and unrelated nonempty workspaces are not overwritten.
+Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
+
+Validated on Windows x64/Python 3.12, including a live review. Other platforms and
+live interruption recovery remain untested; recovery tests use mocked Codex.
+See [validation and local-package testing](docs/uv_validation.md).
+
 ## ChatGPT Work Plugin (Skills Only)
 
 **One source of truth:** the plugin is generated from this repository's core

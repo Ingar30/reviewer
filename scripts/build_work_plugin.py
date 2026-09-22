@@ -49,14 +49,16 @@ def canonical_files(repo: Path) -> list[str]:
     return sorted(files)
 
 
-def runtime_scripts(repo: Path) -> list[str]:
-    """Static local-import closure; never follow imports into CLI model launchers."""
-    pending, included = list(RUNTIME_ENTRYPOINTS), set()
+def runtime_scripts(
+    repo: Path, *, entrypoints=RUNTIME_ENTRYPOINTS, excluded=EXCLUDED_SCRIPTS
+) -> list[str]:
+    """Static local-import closure; native bundles exclude CLI model launchers."""
+    pending, included = list(entrypoints), set()
     while pending:
         name = pending.pop()
         if name in included:
             continue
-        if name in EXCLUDED_SCRIPTS:
+        if name in excluded:
             raise ValueError(f"Native adapter depends on excluded CLI/build script: {name}")
         tree = ast.parse(source_bytes(repo / "scripts" / name), filename=name)
         included.add(name)

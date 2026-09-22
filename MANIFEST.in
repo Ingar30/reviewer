@@ -1,0 +1,9 @@
+include requirements.txt AGENTS.md
+include .codex/config.toml
+recursive-include scripts *.py
+recursive-include config *.json
+recursive-include schemas *.json
+recursive-include prompts/templates *.txt
+recursive-include .agents/skills/paper-reviewer *.md *.txt *.json
+recursive-include tests *.py
+global-exclude __pycache__ *.py[cod]

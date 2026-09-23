@@ -19,8 +19,6 @@
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "websiteURL": "https://github.com/Ingar30/reviewer",
-    "privacyPolicyURL": "https://github.com/Ingar30/reviewer/blob/main/docs/plugin_privacy.md",
-    "termsOfServiceURL": "https://github.com/Ingar30/reviewer/blob/main/docs/plugin_terms.md",
     "brandColor": "#18384D",
     "logo": "./assets/logo.svg",
     "composerIcon": "./assets/logo.svg",

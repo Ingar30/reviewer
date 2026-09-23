@@ -42,9 +42,9 @@ Preprocessing stays local, but the review prompts send parsed manuscript text to
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
 ```
 
-This ordinary command is the single quality-first workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
+This ordinary command is the single quality-first workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and OpenAI usage. The project default is `gpt-6-sol` with `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
 
-Users may pass a different model and reasoning combination with `--model` and `--reasoning-effort`. [Model Overrides](model_profiles.md) gives a Terra/xhigh example, measured token usage, and the observed quality trade-off. Overrides are not co-equal recommended defaults.
+For an optional lower-cost run, add `--model gpt-6-luna`. [Model Overrides](model_profiles.md) describes the reviewer-only comparisons and their limits: coverage was uneven, and full-pipeline/editor validation remains outstanding. Sol remains the quality-first default; model and reasoning overrides do not change the workflow.
 
 There is no separate static or dynamic mode. A high-confidence classification may skip a conditional reviewer only when that reviewer's entire remit is clearly absent. For example, a purely theoretical paper without material quantitative content can skip empirical-design and numerical specialists while retaining the dedicated theory-logic auditor.
 

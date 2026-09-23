@@ -2,6 +2,8 @@
 
 Date: 2026-09-01; workflow decision updated 2026-09-02
 
+> Historical GPT-5.6 evaluation: model names, recommendations, and release status below describe that evaluation, not the current default. See [Model Overrides](model_profiles.md) for GPT-6 Sol and the optional GPT-6 Luna budget alternative.
+
 Scope: local-versus-GitHub audit, GPT-5.6 model migration, deterministic PDF preprocessing, reviewer routing, normalization, editor transport, and report-quality controls.
 
 This tracked record is intentionally safe to publish. It contains aggregate paper IDs and run metrics, not manuscript text, author identities, reviewer JSON, report excerpts, or issue-level details. Detailed adjudication remains in Git-ignored `work/` and `outputs/` artifacts.

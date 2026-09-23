@@ -81,7 +81,7 @@ def main() -> int:
         "--model",
         default=None,
         help=(
-            "Advanced testing override for the editor model when --run-editor is used. "
+            "Override the editor model when --run-editor is used. "
             "The supported quality default comes from .codex/config.toml."
         ),
     )
@@ -90,7 +90,7 @@ def main() -> int:
         choices=["none", "low", "medium", "high", "xhigh", "max"],
         default=None,
         help=(
-            "Advanced testing override for editor reasoning when --run-editor is used. "
+            "Override editor reasoning when --run-editor is used. "
             "The supported quality default comes from .codex/config.toml."
         ),
     )

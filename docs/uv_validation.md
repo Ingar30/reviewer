@@ -35,6 +35,7 @@ existing evidence directory. Clean-install and legacy setup checks are separate.
 Host: Windows x64, Python 3.12.10, uv 0.12.17. Automated model calls were mocked;
 deterministic PDF processing, routing checks, validation and report assembly were
 real. No manuscript or private logs are included in the package or this record.
+The live review below used GPT-5.6 Sol; it does not benchmark the newer GPT-6 Sol default.
 
 | Check | Result |
 | --- | --- |
@@ -46,7 +47,7 @@ real. No manuscript or private logs are included in the package or this record.
 | Interrupted selection/editor recovery | Passed with mocks; preflight reused, retained PDF usable after moving original |
 | Resource/input protection and missing Codex/login diagnostics | Passed; runtime mismatches and cache/install workspaces rejected |
 | Existing PowerShell setup and Python launch without uv | Fresh setup passed; full synthetic pipeline completed with 22 mocked calls |
-| Native-plugin regeneration, drift and repository hygiene | Passed; generated plugin runtime unchanged |
+| Generated-resource drift and repository hygiene | Passed; generated resources unchanged |
 
 The user separately completed a **live review** of a 71-page PDF from an unrelated
 Windows directory containing spaces, using the tested local wheel. A deterministic
@@ -65,7 +66,7 @@ not an independent scientific re-review or fresh verification of every citation.
 - Recovery tests use mocked stage failures, not live Ctrl+C, reboot, disk-full or
   concurrent same-paper runs. The live review was a fresh run.
 - Git-source installation requires a separate post-push check. No PyPI publication
-  or installed-plugin update is needed for this optional method.
+  is needed for this optional method.
 - Resume with the same workspace, paper ID and exact runtime (retain the wheel or
   pin the Git commit). `--resume-after-preflight` reuses valid preflight, then
   reruns selection and substantive reviews; `--refresh-editor --paper-id ID

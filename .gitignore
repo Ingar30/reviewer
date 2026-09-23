@@ -12,6 +12,7 @@ dist/
 reviewer-workspace/
 
 # Local secrets and machine-specific settings
+.private/
 .env
 .env.*
 !.env.example

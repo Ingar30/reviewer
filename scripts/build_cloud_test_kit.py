@@ -14,6 +14,16 @@ import fitz
 
 from build_work_plugin import PLUGIN_NAME, build, check_bundle
 
+PRIVATE_DOCS = Path(".private/plugin-docs/docs")
+
+
+def documentation_dir(repo: Path, override: Path | None = None) -> Path:
+    docs = override if override is not None else repo / PRIVATE_DOCS
+    if not docs.is_dir():
+        raise ValueError("Private plugin documentation is required; supply its directory with --docs-dir.")
+    return docs
+
+
 FIXTURE = (
     ("A Synthetic Economics Paper", "Cloud acceptance fixture - not real research"),
     ("Abstract", "We describe a synthetic two-group outcome comparison. The effect is a 2.5 percent increase. "
@@ -58,7 +68,7 @@ def write_fixture(pdf: Path, sections=FIXTURE, *, required_text=("-2.5 percent",
             raise ValueError("Synthetic fixture signs/text were not preserved.")
 
 
-def build_kit(repo: Path, destination: Path) -> dict:
+def build_kit(repo: Path, destination: Path, *, docs_dir: Path | None = None) -> dict:
     destination = destination.absolute()
     if destination.exists() or any(p.is_symlink() for p in (destination, *destination.parents)):
         raise ValueError("Choose a fresh, unlinked test-kit directory.")
@@ -66,6 +76,7 @@ def build_kit(repo: Path, destination: Path) -> dict:
     failures = check_bundle(repo, plugin)
     if failures:
         raise ValueError("Regenerate and validate the canonical plugin before building the cloud kit.")
+    prompt_bytes = (documentation_dir(repo, docs_dir) / "cloud_test_prompt.md").read_bytes()
     destination.mkdir(parents=True, exist_ok=False)
     archive = destination / "economics-paper-reviewer.zip"
     if build(repo, plugin, check=True, archive=archive):
@@ -73,7 +84,7 @@ def build_kit(repo: Path, destination: Path) -> dict:
     pdf = destination / "cloud-test-paper.pdf"
     write_fixture(pdf)
     prompt = destination / "START_HERE.md"
-    prompt.write_bytes((repo / "docs/cloud_test_prompt.md").read_bytes())
+    prompt.write_bytes(prompt_bytes)
     receipt = {"purpose": "private cloud acceptance preparation; not a hosted test result",
                "plugin_version": json.loads((plugin / ".codex-plugin/plugin.json").read_text())["version"],
                "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (archive, pdf, prompt)},
@@ -85,8 +96,13 @@ def build_kit(repo: Path, destination: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--docs-dir", type=Path, help="Private documentation directory; defaults to .private/plugin-docs/docs.")
     args = parser.parse_args()
-    receipt = build_kit(Path(__file__).resolve().parents[1], args.output)
+    try:
+        receipt = build_kit(Path(__file__).resolve().parents[1], args.output, docs_dir=args.docs_dir)
+    except (ValueError, OSError) as exc:
+        print(f"Cannot prepare private test kit: {exc}")
+        return 1
     print(json.dumps(receipt, indent=2))
     return 0
 

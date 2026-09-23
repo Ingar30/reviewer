@@ -36,8 +36,8 @@ The normal workflow is:
 - Preprocessing comes before review.
 - Reviewer agents are configured through `config/reviewers.json`.
 - Fresh wrapper runs use one conservative applicability workflow. Eight universal review-stage auditors always run. Eleven conditional specialists, including the theory-logic auditor, run whenever their remit is plausibly material; only high-confidence single-type classifications may skip clearly inapplicable roles. Mixed, unknown, medium-confidence, and low-confidence classifications run all 19 substantive reviewers.
-- The quality-first default is `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
-- Users may explicitly override the model and reasoning through wrapper flags. Documentation uses `gpt-5.6-terra` with `xhigh` reasoning as a lower-usage example, not a second recommended default. Other combinations are unbenchmarked and must remain explicit in the run manifest.
+- The quality-first default is `gpt-6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
+- Users may explicitly override the model and reasoning through wrapper flags. `gpt-6-luna` with `xhigh` reasoning is the optional lower-cost alternative, not a replacement default. Selected reviewers have been compared on three papers, with uneven Luna coverage; full-pipeline/editor validation remains outstanding for both GPT-6 models. Keep effective settings explicit in the run manifest and distinguish historical GPT-5.6 evidence from current comparisons.
 - Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
 - Only the editor writes the final markdown report.
@@ -65,8 +65,8 @@ The normal workflow is:
 - Keep the workflow reproducible, inspectable, and easy to rerun.
 
 ## Joint CLI and plugin maintenance
-- Read `docs/plugin_maintenance.md` before changing shared Reviewer behavior, the plugin adapter, packaging, or release tooling. It is the living guide for maintaining both execution hosts.
+- When available locally, read `.private/plugin-docs/docs/plugin_maintenance.md` before changing shared behavior, packaging, or release tooling. These private maintenance notes are not required for a public checkout to build or test.
 - Keep core Reviewer files authoritative. Never hand-edit generated plugin runtime copies or separately maintain plugin review methodology.
 - When bundled sources change, regenerate the plugin, inspect the diff, and run relevant tests and the bundle drift check. Consider compatibility with both the ordinary CLI and native-host adapter.
-- Update `docs/plugin_maintenance.md` in the same change when source ownership, shared interfaces, host exceptions, verification commands, release steps, or compatibility limits change. Do not duplicate routine prompt edits in the guide when the maintenance process is unchanged.
+- Update the private `.private/plugin-docs/docs/plugin_maintenance.md` when available in the same change when source ownership, shared interfaces, host exceptions, verification commands, release steps, or compatibility limits change. Do not duplicate routine prompt edits in the guide when the maintenance process is unchanged.
 - In the handoff, distinguish repository changes and local checks from installed-plugin updates and public releases. Do not install, tag, push, or publish without the user's authorization.

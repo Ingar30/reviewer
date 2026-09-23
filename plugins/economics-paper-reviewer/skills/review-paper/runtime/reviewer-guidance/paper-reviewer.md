@@ -45,7 +45,7 @@ The pipeline stages are:
 15. Run the editor to write `outputs/<paper_id>/report.md`.
 16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
-The supported quality defaults are `gpt-5.6-sol`, `xhigh` reasoning for substantive reviewers and the editor, and `high` for parser-quality preflight and applicability routing. Model and reasoning overrides are for controlled development tests, not alternate public review modes. There is one public workflow rather than separate static and dynamic modes.
+The supported quality defaults are `gpt-6-sol`, `xhigh` reasoning for substantive reviewers and the editor, and `high` for parser-quality preflight and applicability routing. GPT-6 Luna (`gpt-6-luna`) is an optional lower-cost override using the same workflow. Selected reviewer tests found uneven coverage, and full-pipeline/editor validation remains outstanding for both GPT-6 models; Sol remains the default. There is one public workflow rather than separate static and dynamic modes.
 
 ## Editor-only refresh
 If parsed artifacts, all selected reviewer JSON files, and `work/<paper_id>/selection/selected_reviewers.json` already exist, use `scripts/refresh_editor.py --paper-id <paper_id>` to resume synthesis without rerunning reviewers. The helper:

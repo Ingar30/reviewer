@@ -107,15 +107,25 @@ class EnvironmentSetupTests(unittest.TestCase):
 
     def test_cloud_kit_contains_exact_bundle_fixture_and_hash_receipt(self):
         destination = self.root / "cloud kit"
-        result = build_kit(REPO, destination)
+        docs = self.root / "synthetic docs"
+        docs.mkdir()
+        (docs / "cloud_test_prompt.md").write_text("Synthetic test prompt only.\n", encoding="utf-8")
+        result = build_kit(REPO, destination, docs_dir=docs)
         self.assertFalse(result["cloud_execution_verified"])
+        self.assertEqual((destination / "START_HERE.md").read_bytes(), (docs / "cloud_test_prompt.md").read_bytes())
         for name, expected in result["files"].items():
             self.assertEqual(hashlib.sha256((destination / name).read_bytes()).hexdigest(), expected)
         with zipfile.ZipFile(destination / "economics-paper-reviewer.zip") as package:
             self.assertIn("skills/review-paper/runtime/scripts/prepare_work_environment.py", package.namelist())
             self.assertFalse(any(name.startswith(("inputs/", "work/", "outputs/")) for name in package.namelist()))
         with self.assertRaises(ValueError):
-            build_kit(REPO, destination)
+            build_kit(REPO, destination, docs_dir=docs)
+
+    def test_cloud_kit_requires_private_prompt_before_writing(self):
+        destination = self.root / "missing docs kit"
+        with self.assertRaisesRegex(ValueError, "--docs-dir"):
+            build_kit(REPO, destination, docs_dir=self.root / "absent")
+        self.assertFalse(destination.exists())
 
     def test_cloud_kit_refuses_stale_bundle_before_writing(self):
         destination = self.root / "stale kit"

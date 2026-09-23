@@ -534,7 +534,7 @@ def main() -> int:
         default=None,
         help=(
             "Override the Codex model used by all agents. "
-            "The recommended default is gpt-5.6-sol from .codex/config.toml."
+            "The default model comes from .codex/config.toml."
         ),
     )
     parser.add_argument(

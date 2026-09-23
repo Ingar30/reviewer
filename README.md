@@ -34,8 +34,8 @@ Git is convenient but not required. You can also download the repository as a ZI
 You need:
 
 - Python 3.12 or newer
-- Codex CLI installed and authenticated
-- access to the selected GPT-5.6 model and Codex web search
+- An up-to-date Codex CLI installed and authenticated
+- access to GPT-6 Sol (or your selected override) and Codex web search
 
 ### 3. Set Up Python
 
@@ -142,49 +142,17 @@ Validated on Windows x64/Python 3.12, including a live review. Other platforms a
 live interruption recovery remain untested; recovery tests use mocked Codex.
 See [validation and local-package testing](docs/uv_validation.md).
 
-## ChatGPT Work Plugin (Skills Only)
-
-**One source of truth:** the plugin is generated from this repository's core
-Reviewer, not maintained as a separate fork. After core changes, run
-`python scripts/build_work_plugin.py`, test, and commit the generated snapshot
-alongside its sources. See [architecture and versioned releases](docs/plugin_maintenance.md)
-for the exact development, Git-tag installation and public-update workflow.
-
-**Public release preparation:** see the [submission checklist](docs/plugin_publication.md).
-CI builds a candidate packet from the canonical source; a tested version tag builds
-the release packet. OpenAI review and explicit publication are still required for
-each public update: pushing to GitHub does not instantly change installed plugins.
-
-For a file-attachment workflow, this repository also includes a self-contained
-**Economics Paper Reviewer** plugin. In a prepared ChatGPT Work environment, install
-it, attach a paper PDF, and select **Review this paper**. It uses native Work
-subagents, not nested Codex CLI processes or model API keys. Full preserves the
-existing coverage; Lite requests lower reasoning effort with the same audits and
-evidence standards. Lite quality and savings are unbenchmarked.
-
-The plugin delivers a PDF presentation of the complete report and retains the editor's
-Markdown source. The shared offline exporter adds no model calls or dependencies;
-the ordinary CLI still writes Markdown by default. See the
-[PDF export and delivery contract](docs/plugin_maintenance.md#pdf-presentation-and-host-delivery).
-
-Work/Codex usage limits still apply, and the plugin cannot guarantee sufficient
-included allowance or provision missing host capabilities. See the
-[private installation, testing, limitations and public-submission guide](docs/chatgpt_work_plugin.md).
-The existing CLI workflow and its quality defaults below are unchanged.
-
 ## Quality Defaults
 
-The recommended default uses `gpt-5.6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and reviewer-applicability routing use `high`. [OpenAI identifies Sol as its flagship model for complex professional work](https://developers.openai.com/api/docs/models/gpt-5.6-sol). The repository's evaluations found that it remains the strongest tested configuration, so the ordinary command keeps this default.
+The default is **GPT-6 Sol** (`gpt-6-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6-sol). Selected reviewers have been tested on three papers, but full-pipeline/editor quality and actual Codex quota usage remain unvalidated.
 
-Users who prefer another model may override the model and reasoning effort for one run. If you are not on one of Codex's higher-usage plans, consider a more cost-efficient model and/or lower reasoning effort so a full review is less likely to exhaust your allowance. [OpenAI similarly recommends switching to a smaller model when approaching usage limits](https://developers.openai.com/codex/pricing). One tested example uses [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) while retaining `xhigh` reasoning:
+For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
 ```powershell
-python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
-In a full-pipeline test on a 116-page applied microeconomics paper, including a large online appendix with many tables and figures, Terra/xhigh used about 23% fewer logged tokens than Sol/xhigh. Its report was useful but materially less exhaustive, so Terra/xhigh remains an optional override rather than a co-equal default.
-
-This comparison is not a quota or billing estimate. Shorter papers and smaller selected reviewer rosters can use substantially fewer tokens; paper structure, web verification, caching, and stochastic run length also matter. See [Model Overrides](docs/model_profiles.md) for the evidence and limitations.
+Luna produced useful but uneven coverage in small reviewer-only tests; do not assume Sol-equivalent coverage. Its full pipeline and editor remain unvalidated, and usage varies by paper and run. See [Model Overrides](docs/model_profiles.md) for the evidence, prerequisites, and limitations. Both options use the same workflow and authenticated Codex CLI.
 
 To deliberately use another combination:
 

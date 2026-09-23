@@ -29,3 +29,51 @@ Repeat the acceptance command with `--from "$root"` for the checkout. Use absolu
 source paths because the driver launches from an unrelated directory. It retains
 its synthetic paper, artifacts, mock report and `validation.json`; it refuses an
 existing evidence directory. Clean-install and legacy setup checks are separate.
+
+## Recorded validation - 2026-09-22
+
+Host: Windows x64, Python 3.12.10, uv 0.12.17. Automated model calls were mocked;
+deterministic PDF processing, routing checks, validation and report assembly were
+real. No manuscript or private logs are included in the package or this record.
+
+| Check | Result |
+| --- | --- |
+| Regression tests | 195 passed initially; final launcher suite 10 passed, including two additions: 197 distinct tests |
+| Local sdist-to-wheel build and clean installation | Passed; 44 canonical resources plus hash receipt; dependencies match `requirements.txt` |
+| Installed wheel, local-checkout uvx and local-wheel uvx | Passed from unrelated non-Git directories with spaces; 24 mocked executions per acceptance run |
+| Isolated `uv tool install` | Installed; help and mocked readiness passed |
+| Persistent artifacts after recreating uv's environment/cache | Preserved; mocked editor refresh reused retained inputs and reviews |
+| Interrupted selection/editor recovery | Passed with mocks; preflight reused, retained PDF usable after moving original |
+| Resource/input protection and missing Codex/login diagnostics | Passed; runtime mismatches and cache/install workspaces rejected |
+| Existing PowerShell setup and Python launch without uv | Fresh setup passed; full synthetic pipeline completed with 22 mocked calls |
+| Generated-resource drift and repository hygiene | Passed; generated resources unchanged |
+
+## Additional validation - 2026-09-23
+
+The GPT-6-default release passed all 200 offline tests, fresh source/wheel builds,
+clean installation, resource checks, and two local-wheel acceptance runs with 24
+mocked Codex calls each. Ordinary Python launch checks passed without uv. Ubuntu
+[CI passed](https://github.com/Ingar30/reviewer/actions/runs/35857500591), and an
+exact-commit Git-source uvx install and `--help` passed outside Git.
+
+## Limits and recovery
+
+- macOS, Linux, Windows ARM and other Python versions were not tested locally.
+  `setup.sh` is unchanged but was not executed on this Windows host.
+- Automated recovery tests use mocked stage failures. Reliable unattended
+  recovery, reboot, disk-full and concurrent same-paper runs
+  remain unvalidated. Do not launch a duplicate while an old review process is active.
+- Git-source installation/help passed for the recorded commit; this does not
+  validate every future Git revision. No PyPI publication is needed.
+- Resume with the same workspace, paper ID and exact runtime (retain the wheel or
+  pin the Git commit). `--resume-after-preflight` reuses valid preflight, then
+  reruns selection and substantive reviews; `--refresh-editor --paper-id ID
+  --run-editor` reuses completed reviews. A retained PDF can replace a moved original.
+- The runtime receipt does not lock the complete Python/transitive-dependency
+  environment. Back up persistent workspaces and avoid concurrent same-ID runs.
+- `--check` checks resources, imports and login, not model access, quota or scientific
+  quality. Actual reviews consume Codex usage and retain the existing data-disclosure
+  and sandbox/approval rules.
+
+Detailed development evidence remains local under ignored `output/uv-validation/`
+and the retained test workspaces. It is not part of the distributable package.

@@ -59,14 +59,29 @@ which made no new model calls. Six reviewers reported partial coverage; parser
 preflight had six warnings and no blockers. This was execution/integrity validation,
 not an independent scientific re-review or fresh verification of every citation.
 
+## Additional validation - 2026-09-23
+
+The GPT-6-default release passed all 200 offline tests, fresh source/wheel builds,
+clean installation, resource checks, and two local-wheel acceptance runs with 24
+mocked Codex calls each. Ordinary Python launch checks passed without uv. Ubuntu
+[CI passed](https://github.com/Ingar30/reviewer/actions/runs/35857500591), and an
+exact-commit Git-source uvx install and `--help` passed outside Git.
+
+Separately, both GPT-6 models completed the [71-page live comparison](model_profiles.md#recorded-full-pipeline-comparison---2026-09-23)
+using the tested local wheel. The source paper and existing results were preserved.
+Luna required manual continuation after laptop sleep and a wrapper timeout; this
+was not an unattended-recovery pass. No paper, report or private session log is published.
+
 ## Limits and recovery
 
 - macOS, Linux, Windows ARM and other Python versions were not tested locally.
   `setup.sh` is unchanged but was not executed on this Windows host.
-- Recovery tests use mocked stage failures, not live Ctrl+C, reboot, disk-full or
-  concurrent same-paper runs. The live review was a fresh run.
-- Git-source installation requires a separate post-push check. No PyPI publication
-  is needed for this optional method.
+- Automated recovery tests use mocked stage failures. The later live sleep/timeout
+  case required manual recovery and exposed incomplete Windows process-tree cleanup;
+  reliable unattended recovery, reboot, disk-full and concurrent same-paper runs
+  remain unvalidated. Do not launch a duplicate while an old review process is active.
+- Git-source installation/help passed for the recorded commit; this does not
+  validate every future Git revision. No PyPI publication is needed.
 - Resume with the same workspace, paper ID and exact runtime (retain the wheel or
   pin the Git commit). `--resume-after-preflight` reuses valid preflight, then
   reruns selection and substantive reviews; `--refresh-editor --paper-id ID

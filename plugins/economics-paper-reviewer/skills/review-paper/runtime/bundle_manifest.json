@@ -27,7 +27,7 @@
     "prompts/templates/source_consistency_audit.txt": "6040ccec15c1ed657c9bbc2d4ac0d8ed501e897cf0ded8a43b20a75902322e28",
     "prompts/templates/theory_logic_audit.txt": "f812258b93aed5e1c12c9426a885a1306612d505571a6ed8d7118a47717fd41b",
     "requirements.txt": "b12a58fdfd196647cc01e6aa7fdfec0ab261a194170ce7b739719001b337989f",
-    "reviewer-guidance/paper-reviewer.md": "037299f00fe957f17e353cb779cfa18ecb965020e33c8566fb78c77e7c7916f2",
+    "reviewer-guidance/paper-reviewer.md": "e14a7fbea606c5e5e36830d05d5c25d121149d872c56ed766d7e6e4c2ebcfb76",
     "schemas/reviewer_output.schema.json": "9399e39d1be1b6584bd452086bcb6f2f80a90b34826b8467658c3c88c8742641",
     "schemas/reviewer_selection.schema.json": "c59f8c5f9ba18c2f6e22ce3cdcc6376bbea49cc00686708c3a5c8fde288b8fbf",
     "scripts/build_editor_input.py": "ff201dce939a556f6a211f4d3336e934e558bdf3fb66ffaf1246d3ecf8cd4c3b",

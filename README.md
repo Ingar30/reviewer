@@ -138,13 +138,14 @@ Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recov
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
 Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
 
-Validated on Windows x64/Python 3.12, including a live review. Other platforms and
-live interruption recovery remain untested; recovery tests use mocked Codex.
-See [validation and local-package testing](docs/uv_validation.md).
+Tested on Windows x64/Python 3.12, including live reviews. A sleep-interrupted
+GPT-6 run required manual recovery; unattended recovery is not established.
+Other platforms have not had live-review validation here. See
+[validation and local-package testing](docs/uv_validation.md).
 
 ## Quality Defaults
 
-The default is **GPT-6 Sol** (`gpt-6-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6-sol). Selected reviewers have been tested on three papers, but full-pipeline/editor quality and actual Codex quota usage remain unvalidated.
+The default is **GPT-6 Sol** (`gpt-6-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6-sol). After selected-reviewer tests on three papers, both GPT-6 models completed a full-pipeline comparison on one 71-page paper. Sol retained more consequential corrections; this is limited evidence, not a general accuracy benchmark.
 
 For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
@@ -152,7 +153,7 @@ For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
-Luna produced useful but uneven coverage in small reviewer-only tests; do not assume Sol-equivalent coverage. Its full pipeline and editor remain unvalidated, and usage varies by paper and run. See [Model Overrides](docs/model_profiles.md) for the evidence, prerequisites, and limitations. Both options use the same workflow and authenticated Codex CLI.
+Luna was substantially cheaper in the recorded comparison but missed material corrections; do not assume Sol-equivalent coverage. It required manual continuation after a sleep-related timeout, and both reports needed human judgment. See [Model Overrides](docs/model_profiles.md) for measured tokens, estimated credits, and validation limits. Actual quota consumption was not measured. Both options use the same workflow and authenticated Codex CLI.
 
 To deliberately use another combination:
 

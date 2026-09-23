@@ -13,6 +13,7 @@ import fitz
 
 from tests import test_plugin_architecture as architecture
 from prepare_plugin_submission import DOCS, acceptance_cases, directory_errors, prepare
+from build_cloud_test_kit import PRIVATE_DOCS
 from build_work_plugin import PACKAGE_FILES, RUNTIME_PATH, runtime_payload
 
 REPO = Path(__file__).resolve().parents[1]
@@ -21,12 +22,21 @@ REPO = Path(__file__).resolve().parents[1]
 class SubmissionTests(unittest.TestCase):
     def setUp(self):
         architecture.PackagePropagationTests.setUp(self)
-        for relative in [*("docs/" + name for name in DOCS), "docs/chatgpt_work_plugin_acceptance.md",
-                         "scripts/prepare_plugin_submission.py", "scripts/build_cloud_test_kit.py",
+        for relative in ["scripts/prepare_plugin_submission.py", "scripts/build_cloud_test_kit.py",
                          "scripts/build_work_plugin.py"]:
             target = self.repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / relative, target)
+        # Public CI uses synthetic documents, never the maintainer's private notes.
+        self.docs = self.repo / PRIVATE_DOCS
+        self.docs.mkdir(parents=True)
+        for name in DOCS:
+            (self.docs / name).write_text(
+                "# Synthetic fixture\n[Maintenance](plugin_maintenance.md)\n[Privacy](plugin_privacy.md)\n",
+                encoding="utf-8")
+        (self.docs / "chatgpt_work_plugin_acceptance.md").write_text(
+            "\n".join(f"| {case} | Synthetic fixture | Full warning; synthetic only |"
+                      for case in ("P1", "P2", "P3", "P4", "P5", "N1", "N2", "N3")), encoding="utf-8")
         self.output = Path(self.temporary.name) / "submission"
         self.tag = "v" + json.loads((self.plugin / ".codex-plugin/plugin.json").read_text())["version"]
 
@@ -86,12 +96,13 @@ class SubmissionTests(unittest.TestCase):
         self.assertIsNone(listing["countries"])
         self.assertIsNone(listing["owner_policy_approval"])
         guide = (self.output / "plugin_publication.md").read_text(encoding="utf-8")
-        self.assertIn("https://github.com/Ingar30/reviewer/blob/main/docs/plugin_maintenance.md", guide)
+        self.assertIn("Maintenance (private maintainer documentation)", guide)
+        self.assertNotIn("/blob/main/docs/plugin_maintenance.md", guide)
         self.assertIn("](plugin_privacy.md)", guide)
 
     def test_listing_and_cases_follow_their_single_sources(self):
         self.edit_manifest(lambda m: m["interface"].update(shortDescription="Changed upstream description"))
-        path = self.repo / "docs/chatgpt_work_plugin_acceptance.md"
+        path = self.docs / "chatgpt_work_plugin_acceptance.md"
         path.write_text(path.read_text(encoding="utf-8").replace("Full warning;", "Upstream case change;"), encoding="utf-8")
         prepare(self.repo, self.output)
         self.assertEqual(json.loads((self.output / "listing.json").read_text())["shortDescription"], "Changed upstream description")
@@ -120,7 +131,7 @@ class SubmissionTests(unittest.TestCase):
             prepare(self.repo, self.output)
         self.assertFalse(self.output.exists())
         path.write_bytes(original)
-        (self.repo / "docs" / DOCS[0]).unlink()
+        (self.docs / DOCS[0]).unlink()
         with self.assertRaises(OSError):
             prepare(self.repo, self.output)
         self.assertFalse(self.output.exists())
@@ -129,20 +140,34 @@ class SubmissionTests(unittest.TestCase):
         return architecture.PackagePropagationTests.git_fixture(self, *args)
 
     def test_tagged_packet_keeps_existing_release_gate(self):
+        public_docs = self.repo / "docs"
+        shutil.copytree(self.docs, public_docs)
         with mock.patch("prepare_plugin_submission.git_output", side_effect=self.git_result), \
                 mock.patch("build_work_plugin.git_output", side_effect=self.git_result):
-            receipt = prepare(self.repo, self.output, release_tag=self.tag)
+            receipt = prepare(self.repo, self.output, release_tag=self.tag, docs_dir=public_docs)
             self.assertEqual(receipt["kind"], "tagged-source")
             self.assertEqual(receipt["source"]["commit"], "a" * 40)
             self.assertEqual(receipt["archive_sha256"], receipt["source"]["archive_sha256"])
             self.assertTrue((self.output / "release.json").is_file())
             with self.assertRaisesRegex(ValueError, "Release tag"):
-                prepare(self.repo, Path(self.temporary.name) / "wrong-tag", release_tag="v99.0.0")
+                prepare(self.repo, Path(self.temporary.name) / "wrong-tag", release_tag="v99.0.0", docs_dir=public_docs)
 
     def test_untracked_submission_sources_cannot_be_a_release(self):
+        public_docs = self.repo / "docs"
+        shutil.copytree(self.docs, public_docs)
         with mock.patch("prepare_plugin_submission.git_output", return_value=""):
             with self.assertRaisesRegex(ValueError, "Submission tooling and documents must be tracked"):
-                prepare(self.repo, self.output, release_tag=self.tag)
+                prepare(self.repo, self.output, release_tag=self.tag, docs_dir=public_docs)
+        self.assertFalse(self.output.exists())
+
+    def test_private_documents_cannot_be_tagged_as_a_public_packet(self):
+        with self.assertRaisesRegex(ValueError, "restored, tracked public documentation"):
+            prepare(self.repo, self.output, release_tag=self.tag)
+        self.assertFalse(self.output.exists())
+
+    def test_missing_private_directory_has_actionable_error_without_partial_output(self):
+        with self.assertRaisesRegex(ValueError, "--docs-dir"):
+            prepare(self.repo, self.output, docs_dir=self.repo / "absent")
         self.assertFalse(self.output.exists())
 
 

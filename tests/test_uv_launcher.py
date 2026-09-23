@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "src"))
 from build_cli_package import cli_payload
 from economics_paper_reviewer import cli
-from review_paper import codex_exec_command
+from review_paper import codex_exec_command, codex_project_defaults
 
 
 def fake_codex_environment(folder: Path, python: str = sys.executable) -> dict[str, str]:
@@ -109,7 +109,9 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str]) -> 
     calls = [json.loads(path.read_text()) for path in Path(env["REVIEWER_TEST_CALLS"]).glob("*.json")]
     executions = [call for call in calls if "exec" in call["args"]]
     assert len(executions) == 24, len(executions)  # preflight, failed selector, selector, 19, failed editor, editor
+    default_model = codex_project_defaults(REPO)["model"]
     for call in executions:
+        assert call["args"][call["args"].index("--model") + 1] == default_model
         assert "--skip-git-repo-check" in call["args"]
         assert Path(call["cwd"]) == workspace
         assert not any(flag in call["args"] for flag in (
@@ -199,12 +201,12 @@ class LauncherTests(unittest.TestCase):
             cli.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
         ) as run:
             self.assertEqual(cli.main(["--pdf", pdf.name, "--reviewers-config=" + config.name,
-                                       "--model", "explicit-model", "--reasoning-effort", "high"]), 0)
+                                       "--model", "gpt-6-luna", "--reasoning-effort", "high"]), 0)
         workspace = self.folder / "reviewer-workspace"
         command = run.call_args.args[0]
         self.assertEqual(run.call_args.kwargs["cwd"], workspace)
         self.assertEqual(command.count("--model"), 1)
-        self.assertIn("explicit-model", command)
+        self.assertIn("gpt-6-luna", command)
         self.assertIn("--reasoning-effort", command)
         saved_config = Path(command[command.index("--reviewers-config") + 1])
         self.assertTrue(saved_config.is_relative_to(workspace))

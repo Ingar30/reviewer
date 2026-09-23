@@ -17,12 +17,12 @@ from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
-from build_cloud_test_kit import write_fixture
+from build_cloud_test_kit import documentation_dir, write_fixture
 from build_work_plugin import (PLUGIN_NAME, build, build_release, check_bundle,
                                check_repo_marketplace, git_output, runtime_payload, source_bytes)
 
 DOCS = ("plugin_publication.md", "plugin_privacy.md", "plugin_terms.md", "plugin_submission_review_notes.md")
-ACCEPTANCE = "docs/chatgpt_work_plugin_acceptance.md"
+ACCEPTANCE = "chatgpt_work_plugin_acceptance.md"
 SUPPORT_URL = "https://github.com/Ingar30/reviewer/issues"
 THEORY = (
     ("A Synthetic Consumer Model", "Submission fixture - not real research"),
@@ -119,10 +119,10 @@ formats or executable SVG is unnecessary. No remote assets are downloaded.
     return errors
 
 
-def acceptance_cases(repo: Path) -> list[dict]:
+def acceptance_cases(repo: Path, *, docs_dir: Path | None = None) -> list[dict]:
     """Export the maintained tables, failing if their format/count changes."""
     cases = []
-    for line in source_bytes(repo / ACCEPTANCE).decode("utf-8").splitlines():
+    for line in source_bytes(documentation_dir(repo, docs_dir) / ACCEPTANCE).decode("utf-8").splitlines():
         if re.match(r"\| [PN][0-9]+ \|", line):
             cells = [cell.strip() for cell in line.strip("|").split("|")]
             if len(cells) != 3:
@@ -133,7 +133,8 @@ def acceptance_cases(repo: Path) -> list[dict]:
     return cases
 
 
-def prepare(repo: Path, destination: Path, *, release_tag: str | None = None) -> dict:
+def prepare(repo: Path, destination: Path, *, release_tag: str | None = None,
+            docs_dir: Path | None = None) -> dict:
     plugin = repo / "plugins" / PLUGIN_NAME
     destination = destination.absolute()
     if (destination.exists() or any(p.is_symlink() for p in (destination, *destination.parents))
@@ -143,11 +144,15 @@ def prepare(repo: Path, destination: Path, *, release_tag: str | None = None) ->
     failures = check_bundle(repo, plugin) + directory_errors(plugin)
     if failures:
         raise ValueError("\n".join(failures))
-    cases = acceptance_cases(repo)
-    docs = {name: source_bytes(repo / "docs" / name) for name in DOCS}
+    docs_root = documentation_dir(repo, docs_dir)
+    private_docs = docs_root.resolve() != (repo / "docs").resolve()
+    if release_tag and private_docs:
+        raise ValueError("Tagged submission requires restored, tracked public documentation; private notes cannot be published.")
+    cases = acceptance_cases(repo, docs_dir=docs_root)
+    docs = {name: source_bytes(docs_root / name) for name in DOCS}
     manifest = json.loads(source_bytes(plugin / ".codex-plugin/plugin.json"))
     if release_tag:
-        required = {"docs/" + name for name in DOCS} | {ACCEPTANCE, "scripts/prepare_plugin_submission.py",
+        required = {"docs/" + name for name in DOCS} | {"docs/" + ACCEPTANCE, "scripts/prepare_plugin_submission.py",
                     "scripts/build_cloud_test_kit.py", "scripts/build_work_plugin.py"}
         if required - set(git_output(repo, "ls-files").splitlines()):
             raise ValueError("Submission tooling and documents must be tracked at the release tag.")
@@ -172,14 +177,15 @@ def prepare(repo: Path, destination: Path, *, release_tag: str | None = None) ->
                 or any(e.file_size > 100 * 1024 * 1024 or len(e.filename.split("/")) > 20 for e in entries)):
             raise ValueError("Archive exceeds the documented public upload limits.")
     for name, data in docs.items():
-        # Keep the packet self-contained without copying the private development
-        # handoff/acceptance history. Unbundled guide links point to canonical GitHub.
+        # Never copy private development history or advertise removed public URLs.
         def document_link(match):
-            target, anchor = match.group(1), match.group(2) or ""
+            label, target, anchor = match.group(1), match.group(2), match.group(3) or ""
             if target in DOCS:
                 return match.group(0)
-            return f"]({manifest['repository']}/blob/{release_tag or 'main'}/docs/{target}{anchor})"
-        document = re.sub(r"\]\(([A-Za-z0-9_-]+\.md)(#[^\s)]*)?\)", document_link, data.decode("utf-8"))
+            if private_docs:
+                return f"{label} (private maintainer documentation)"
+            return f"[{label}]({manifest['repository']}/blob/{release_tag or 'main'}/docs/{target}{anchor})"
+        document = re.sub(r"\[([^\]]+)\]\(([A-Za-z0-9_-]+\.md)(#[^\s)]*)?\)", document_link, data.decode("utf-8"))
         (destination / name).write_text(document, encoding="utf-8")
     (destination / "fixtures").mkdir()
     write_fixture(destination / "fixtures/signed-estimate.pdf")
@@ -219,9 +225,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path, help="New packet directory; never overwrite an existing one.")
     parser.add_argument("--release-tag", help="Require a clean, tracked checkout at v<plugin version>.")
+    parser.add_argument("--docs-dir", type=Path, help="Private documentation directory; defaults to .private/plugin-docs/docs.")
     args = parser.parse_args()
     try:
-        receipt = prepare(Path(__file__).resolve().parents[1], args.output, release_tag=args.release_tag)
+        receipt = prepare(Path(__file__).resolve().parents[1], args.output,
+                          release_tag=args.release_tag, docs_dir=args.docs_dir)
     except (ValueError, OSError) as exc:
         print(f"Cannot prepare submission: {exc}")
         return 1

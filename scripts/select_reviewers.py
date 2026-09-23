@@ -30,7 +30,7 @@ def main() -> int:
         "--model",
         default=None,
         help=(
-            "Advanced testing override for the applicability router model. "
+            "Override the applicability router model. "
             "The supported quality default comes from .codex/config.toml."
         ),
     )

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "economics-paper-reviewer"
 version = "0.1.0rc1"
-description = "Optional local launcher for the Codex economics paper reviewer"
+description = "Optional local launcher for the economics paper reviewer"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

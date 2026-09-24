@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import shutil
 import sys
@@ -38,6 +39,9 @@ def missing_paths(root: Path) -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Check local Reviewer prerequisites without a review.")
+    parser.add_argument("--backend", choices=("codex", "claude"), default="codex")
+    args = parser.parse_args()
     root = repo_root()
     failures: list[str] = []
 
@@ -49,13 +53,19 @@ def main() -> int:
     if paths:
         failures.append("Missing project files: " + ", ".join(paths))
 
-    if shutil.which("codex") is None and shutil.which("codex.cmd") is None and shutil.which("codex.exe") is None:
+    if args.backend == "claude":
+        from claude_backend import check_claude
+        try:
+            check_claude(root)
+        except ValueError as exc:
+            failures.append(str(exc))
+    elif shutil.which("codex") is None and shutil.which("codex.cmd") is None and shutil.which("codex.exe") is None:
         failures.append("Codex CLI was not found on PATH")
 
     if failures:
         for failure in failures:
             print(f"[fail] {failure}", file=sys.stderr)
-        print("Run the setup steps in README.md and authenticate Codex before reviewing papers.", file=sys.stderr)
+        print("Run the setup steps in README.md and authenticate the selected CLI before reviewing papers.", file=sys.stderr)
         return 1
 
     print("OK: environment looks ready for the reviewer pipeline.")

@@ -112,6 +112,18 @@ def check_codex(cwd: Path) -> None:
         )
 
 
+def check_backend(backend: str, runtime: Path) -> None:
+    if backend == "codex":
+        check_codex(Path.cwd())
+        return
+    result = subprocess.run(
+        [sys.executable, str(runtime / "scripts/claude_backend.py"), "--check"],
+        cwd=Path.cwd(), stdin=subprocess.DEVNULL,
+    )
+    if result.returncode:
+        raise ValueError("Claude prerequisites failed; see the diagnostic above. No review was started.")
+
+
 def keep_input(source: Path, workspace: Path, category: str) -> Path:
     destination = workspace / "inputs" / category / sha256(source) / source.name
     if not destination.resolve().is_relative_to(workspace):
@@ -127,6 +139,7 @@ def keep_input(source: Path, workspace: Path, category: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--backend", choices=("codex", "claude"), default="codex")
     parser.add_argument("--workspace", default="reviewer-workspace")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--refresh-editor", action="store_true")
@@ -135,11 +148,13 @@ def main(argv: list[str] | None = None) -> int:
     args, forwarded = parser.parse_known_args(argv)
     runtime = bundled_runtime()
     script = "refresh_editor.py" if args.refresh_editor else "review_paper.py"
+    if args.backend != "codex":
+        forwarded.extend(["--backend", args.backend])
     if "--help" in forwarded or "-h" in forwarded:
         print(
             "Optional launcher: economics-paper-reviewer [--workspace DIR] [pipeline options]\n"
             "  --workspace DIR   Persistent local workspace (default: ./reviewer-workspace)\n"
-            "  --check           Check resources, dependencies and Codex login; no review\n"
+            "  --check           Check resources, dependencies and selected CLI login; no review\n"
             "  --refresh-editor  Use the existing editor-refresh helper and its options\n"
             "Relative input paths are resolved from your current directory.\n",
             flush=True,
@@ -152,8 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             for module in ("fitz", "pdfplumber", "pandas", "jsonschema", "tabulate"):
                 importlib.import_module(module)
-            check_codex(Path.cwd())
-            print(f"OK: bundled resources, Python dependencies and Codex login checked.\nWorkspace: {workspace}")
+            check_backend(args.backend, runtime)
+            print(f"OK: bundled resources, Python dependencies and {args.backend} login checked.\nWorkspace: {workspace}")
             print("No review run; model access, quota and live sandbox behavior were not tested.")
             return 0
         if not args.refresh_editor and not args.pdf:
@@ -165,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not source.is_file() or (option == "--pdf" and source.suffix.lower() != ".pdf"):
                     raise ValueError(f"Invalid input for {option}: {source}")
                 inputs[option] = source
-        check_codex(Path.cwd())
+        check_backend(args.backend, runtime)
         prepare_workspace(workspace, runtime)
         for option, source in inputs.items():
             saved = keep_input(source, workspace, "papers" if option == "--pdf" else "config")
@@ -173,9 +188,11 @@ def main(argv: list[str] | None = None) -> int:
         # An untrusted/non-Git workspace may not load project config in Codex.
         # Pass the canonical model explicitly, without changing permission settings.
         defaults = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
-        default_options = {"--model": defaults["model"]}
-        if args.refresh_editor:
-            default_options["--reasoning-effort"] = defaults["model_reasoning_effort"]
+        default_options = {}
+        if args.backend == "codex":
+            default_options["--model"] = defaults["model"]
+            if args.refresh_editor:
+                default_options["--reasoning-effort"] = defaults["model_reasoning_effort"]
         for option, value in default_options.items():
             if not any(item == option or item.startswith(option + "=") for item in forwarded):
                 forwarded.extend([option, value])

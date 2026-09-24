@@ -20,7 +20,7 @@ PLUGIN_NAME = "economics-paper-reviewer"
 # Entry points, not a second manually maintained dependency list. New local imports
 # under scripts/ follow these roots automatically, including function-local imports.
 RUNTIME_ENTRYPOINTS = ("preprocess_pdf.py", "work_plugin.py", "prepare_work_environment.py")
-EXCLUDED_SCRIPTS = {"review_paper.py", "select_reviewers.py", "refresh_editor.py", "build_work_plugin.py"}
+EXCLUDED_SCRIPTS = {"review_paper.py", "select_reviewers.py", "refresh_editor.py", "build_work_plugin.py", "claude_backend.py"}
 CANONICAL_SKILL = ".agents/skills/paper-reviewer"
 CANONICAL_GUIDANCE = "reviewer-guidance/paper-reviewer.md"
 REPO_MARKETPLACE = ".agents/plugins/marketplace.json"

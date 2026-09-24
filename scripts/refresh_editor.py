@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
-from review_paper import enforce_preflight_gate
+from review_paper import enforce_preflight_gate, agent_exec_command, run_required, codex_project_defaults
+from claude_backend import DEFAULT_MODEL, EFFORTS, check_claude, require_same_backend, save_claude_output
 from reviewer_config import load_reviewers_config
 
 
@@ -44,7 +45,8 @@ def codex_exec_command(
 
 
 def mark_run_manifest_complete(
-    manifest_path: Path, report: Path, repo: Path, reviewer_names: list[str]
+    manifest_path: Path, report: Path, repo: Path, reviewer_names: list[str],
+    editor_settings: dict | None = None,
 ) -> None:
     if not manifest_path.exists():
         return
@@ -62,6 +64,8 @@ def mark_run_manifest_complete(
             "report": str(report.relative_to(repo)),
         }
     )
+    if editor_settings:
+        manifest["refreshed_editor"] = editor_settings
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -71,18 +75,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate existing reviews, rebuild the normalized bundle, and refresh editor output."
     )
+    parser.add_argument("--backend", choices=("codex", "claude"), default="codex",
+                        help="Execution CLI; repeat the original backend when refreshing a run.")
     parser.add_argument("--paper-id", required=True)
     parser.add_argument(
         "--run-editor",
         action="store_true",
-        help="Run Codex editor and final report check. By default only rerenders prompts and rebuilds editor input.",
+        help="Run the selected CLI editor and final report check. By default only rerenders prompts and rebuilds editor input.",
     )
     parser.add_argument(
         "--model",
         default=None,
         help=(
             "Override the editor model when --run-editor is used. "
-            "The supported quality default comes from .codex/config.toml."
+            "Codex defaults come from .codex/config.toml; Claude reuses saved run settings."
         ),
     )
     parser.add_argument(
@@ -91,13 +97,25 @@ def main() -> int:
         default=None,
         help=(
             "Override editor reasoning when --run-editor is used. "
-            "The supported quality default comes from .codex/config.toml."
+            "Codex defaults come from .codex/config.toml; Claude reuses saved run settings."
         ),
     )
     args = parser.parse_args()
 
     repo = repo_root()
     paths = paper_run_paths(repo, args.paper_id)
+    prior_manifest = None
+    if paths.run_manifest_path.exists():
+        prior_manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
+    require_same_backend(args.backend, prior_manifest)
+    if args.backend == "claude":
+        prior = prior_manifest or {}
+        args.model = args.model or prior.get("model") or DEFAULT_MODEL
+        args.reasoning_effort = args.reasoning_effort or prior.get("reviewer_editor_reasoning_effort") or "xhigh"
+        if args.reasoning_effort not in EFFORTS:
+            raise ValueError("Claude does not support reasoning effort none; choose low through max.")
+        if args.run_editor:
+            check_claude(repo)
     parsed_dir = paths.parsed_dir
     reviews_dir = paths.reviews_dir
     prompts_dir = paths.prompts_dir
@@ -204,16 +222,25 @@ def main() -> int:
 
     if args.run_editor:
         editor_text = editor_input.read_text(encoding="utf-8")
-        run_command(
-            [
-                *codex_exec_command(args.model, args.reasoning_effort),
-                "--output-last-message",
-                str(report.relative_to(repo)),
-                "-",
-            ],
-            repo,
-            input_text=editor_text,
-        )
+        if args.backend == "claude":
+            result = run_required(
+                "editor-refresh",
+                agent_exec_command(backend="claude", model=args.model,
+                                   reasoning_effort=args.reasoning_effort, output_path=report),
+                repo, paths.log_dir, input_text=editor_text, timeout_seconds=45 * 60,
+            )
+            save_claude_output(result.stdout_path, report)
+        else:
+            run_command(
+                [
+                    *codex_exec_command(args.model, args.reasoning_effort),
+                    "--output-last-message",
+                    str(report.relative_to(repo)),
+                    "-",
+                ],
+                repo,
+                input_text=editor_text,
+            )
         run_command(
             [
                 sys.executable,
@@ -230,6 +257,9 @@ def main() -> int:
             report,
             repo,
             [reviewer.name for reviewer in review_stage],
+            {"backend": args.backend,
+             "model": args.model or codex_project_defaults(repo).get("model"),
+             "reasoning_effort": args.reasoning_effort or codex_project_defaults(repo).get("model_reasoning_effort")},
         )
 
     print(f"editor input refreshed: {editor_input.relative_to(repo)}")

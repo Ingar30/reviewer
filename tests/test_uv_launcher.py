@@ -51,7 +51,7 @@ def synthetic_pdf(path: Path) -> None:
         doc.save(path)
 
 
-def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str]) -> dict:
+def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, backend: str = "codex") -> dict:
     """Also usable against a locally installed wheel or uvx checkout invocation."""
     caller = folder / "unrelated directory with spaces"
     caller.mkdir(parents=True)
@@ -60,7 +60,8 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str]) -> 
     workspace = caller / "persistent workspace"
 
     def run(args, *, expected=0, extra=None):
-        result = subprocess.run(command + args, cwd=caller, env={**env, **(extra or {})},
+        backend_args = ["--backend", backend] if backend != "codex" else []
+        result = subprocess.run(command + backend_args + args, cwd=caller, env={**env, **(extra or {})},
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
         if (result.returncode == 0) != (expected == 0):
             raise AssertionError(result.stdout + "\n" + result.stderr)
@@ -73,10 +74,10 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str]) -> 
     run(["--check"])
     assert not workspace.exists()
     args = ["--pdf", pdf.name, "--workspace", workspace.name]
-    run(args, expected=1, extra={"REVIEWER_TEST_STOP": "selection"})
+    interrupted = run(args, expected=1, extra={"REVIEWER_TEST_STOP": "selection"})
     paper_work = workspace / "work/paper-with-spaces"
     preflight = paper_work / "reviews/parser_quality_auditor.json"
-    assert preflight.is_file()
+    assert preflight.is_file(), interrupted.stdout + interrupted.stderr
     preflight_bytes, preflight_time = preflight.read_bytes(), preflight.stat().st_mtime_ns
     parsed = paper_work / "parsed/manifest.json"
     parsed_bytes, parsed_time = parsed.read_bytes(), parsed.stat().st_mtime_ns
@@ -107,12 +108,17 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str]) -> 
     # A new process can still check/use the workspace after completion.
     run(["--workspace", str(workspace), "--check"])
     calls = [json.loads(path.read_text()) for path in Path(env["REVIEWER_TEST_CALLS"]).glob("*.json")]
-    executions = [call for call in calls if "exec" in call["args"]]
+    executions = [call for call in calls if ("exec" if backend == "codex" else "--print") in call["args"]]
     assert len(executions) == 24, len(executions)  # preflight, failed selector, selector, 19, failed editor, editor
-    default_model = codex_project_defaults(REPO)["model"]
+    default_model = codex_project_defaults(REPO)["model"] if backend == "codex" else "claude-opus-5-5"
     for call in executions:
         assert call["args"][call["args"].index("--model") + 1] == default_model
-        assert "--skip-git-repo-check" in call["args"]
+        if backend == "codex":
+            assert "--skip-git-repo-check" in call["args"]
+        else:
+            assert call["args"][call["args"].index("--permission-mode") + 1] == "dontAsk"
+            assert "--strict-mcp-config" in call["args"]
+            assert "--dangerously-skip-permissions" not in call["args"]
         assert Path(call["cwd"]) == workspace
         assert not any(flag in call["args"] for flag in (
             "--dangerously-bypass-approvals-and-sandbox", "--full-auto", "--ignore-rules", "--ignore-user-config",

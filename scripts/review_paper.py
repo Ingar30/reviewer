@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
+from claude_backend import (
+    DEFAULT_MODEL as CLAUDE_DEFAULT_MODEL, EFFORTS as CLAUDE_EFFORTS,
+    check_claude, claude_exec_command, require_same_backend, save_claude_output,
+)
 from check_final_report import (
     DEFAULT_REQUIRED_HEADINGS as EDITOR_REPORT_REQUIRED_HEADINGS,
     MIN_REPORT_CHARS as MIN_EDITOR_REPORT_CHARS,
@@ -167,6 +171,24 @@ def run_command(
     return RunResult(label, returncode, stdout_path, stderr_path)
 
 
+def agent_exec_command(
+    *, backend: str = "codex", model: str | None = None,
+    reasoning_effort: str | None = None, search: bool = False,
+    output_path: Path, schema_path: Path | None = None,
+) -> list[str]:
+    if backend == "claude":
+        return claude_exec_command(
+            model=model, reasoning_effort=reasoning_effort, search=search, schema_path=schema_path,
+        )
+    if backend != "codex":
+        raise ValueError(f"Unknown backend: {backend}")
+    command = codex_exec_command(model=model, reasoning_effort=reasoning_effort, search=search)
+    if schema_path:
+        command.extend(["--output-schema", str(schema_path)])
+    command.extend(["--output-last-message", str(output_path), "-"])
+    return command
+
+
 def run_required(
     label: str,
     command: list[str],
@@ -197,6 +219,7 @@ def start_reviewer(
     log_dir: Path,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    backend: str = "codex",
 ) -> tuple[ReviewerConfig, subprocess.Popen[str], Path, Path, float]:
     prompt_path = prompts_dir / reviewer.prompt
     output_path = reviews_dir / reviewer.output
@@ -204,17 +227,10 @@ def start_reviewer(
     stderr_path = log_dir / f"{reviewer.name}.stderr.log"
     prompt_text = prompt_path.read_text(encoding="utf-8")
 
-    command = codex_exec_command(
-        model=model, reasoning_effort=reasoning_effort, search=reviewer.search
-    )
-    command.extend(
-        [
-            "--output-schema",
-            str(schema_path),
-            "--output-last-message",
-            str(output_path),
-            "-",
-        ]
+    command = agent_exec_command(
+        backend=backend, model=model, reasoning_effort=reasoning_effort, search=reviewer.search,
+        schema_path=(repo / schema_path) if backend == "claude" else schema_path,
+        output_path=output_path,
     )
 
     stdout_handle = stdout_path.open("w", encoding="utf-8")
@@ -235,6 +251,8 @@ def start_reviewer(
     process.stdin.close()
     process._reviewer_stdout_handle = stdout_handle  # type: ignore[attr-defined]
     process._reviewer_stderr_handle = stderr_handle  # type: ignore[attr-defined]
+    if backend == "claude":
+        process._claude_output = (output_path, repo / schema_path)  # type: ignore[attr-defined]
     return reviewer, process, stdout_path, stderr_path, time.monotonic()
 
 
@@ -259,6 +277,13 @@ def wait_reviewer(
             handle.write(f"\nTimed out after {timeout_seconds:.0f} seconds.\n")
     process._reviewer_stdout_handle.close()  # type: ignore[attr-defined]
     process._reviewer_stderr_handle.close()  # type: ignore[attr-defined]
+    if returncode == 0 and hasattr(process, "_claude_output"):
+        try:
+            save_claude_output(stdout_path, *process._claude_output)
+        except (ValueError, OSError) as exc:
+            with stderr_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"\n{exc}\n")
+            returncode = 1
     if returncode == 0:
         print(f"[ok] {reviewer.name}")
     else:
@@ -364,6 +389,7 @@ def run_reviewer_selector(
     model: str | None = None,
     reasoning_effort: str | None = None,
     timeout_seconds: float | None = None,
+    backend: str = "codex",
 ) -> tuple[dict, float]:
     selection_dir.mkdir(parents=True, exist_ok=True)
     output_path = selection_dir / SELECTOR_OUTPUT
@@ -375,21 +401,20 @@ def run_reviewer_selector(
         selection_schema_path,
     )
     started_at = time.time() - 1.0
-    run_required(
+    result = run_required(
         "reviewer-selector",
-        [
-            *codex_exec_command(model=model, reasoning_effort=reasoning_effort),
-            "--output-schema",
-            str(selection_schema_path.relative_to(repo)),
-            "--output-last-message",
-            str(output_path.relative_to(repo)),
-            "-",
-        ],
+        agent_exec_command(
+            backend=backend, model=model, reasoning_effort=reasoning_effort,
+            schema_path=selection_schema_path if backend == "claude" else selection_schema_path.relative_to(repo),
+            output_path=output_path.relative_to(repo),
+        ),
         repo,
         log_dir,
         input_text=prompt_text,
         timeout_seconds=timeout_seconds,
     )
+    if backend == "claude":
+        save_claude_output(result.stdout_path, output_path, selection_schema_path)
     require_fresh_file(output_path, started_at, "reviewer selector output")
     return json.loads(output_path.read_text(encoding="utf-8")), started_at
 
@@ -409,6 +434,7 @@ def run_reviewer_batch(
     reasoning_effort: str | None = None,
     max_parallel: int = 4,
     timeout_seconds: float | None = None,
+    backend: str = "codex",
 ) -> float:
     if not reviewers:
         return time.time() - 1.0
@@ -425,6 +451,7 @@ def run_reviewer_batch(
                 log_dir,
                 model,
                 reasoning_effort,
+                backend,
             )
             for reviewer in batch
         ]
@@ -513,6 +540,8 @@ def main() -> int:
         if callable(reconfigure):
             reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description="Run the full paper-review pipeline for one PDF.")
+    parser.add_argument("--backend", choices=("codex", "claude"), default="codex",
+                        help="Execution CLI. Default: codex; claude is an experimental opt-in.")
     parser.add_argument("--pdf", required=True, help="Path to source PDF, usually under inputs/")
     parser.add_argument("--paper-id", default=None, help="Optional paper id; defaults to the PDF filename stem")
     parser.add_argument(
@@ -533,8 +562,8 @@ def main() -> int:
         "--model",
         default=None,
         help=(
-            "Override the Codex model used by all agents. "
-            "The default model comes from .codex/config.toml."
+            "Override the model used by all agents. Codex defaults come from "
+            ".codex/config.toml; --backend claude defaults to claude-opus-5-5."
         ),
     )
     parser.add_argument(
@@ -613,6 +642,12 @@ def main() -> int:
     selected_reviewers_config_path = paths.selected_reviewers_config_path
 
     project_defaults = codex_project_defaults(repo)
+    if args.backend == "claude":
+        args.model = args.model or CLAUDE_DEFAULT_MODEL
+        if any(effort not in CLAUDE_EFFORTS for effort in (
+            args.reasoning_effort, args.preflight_reasoning_effort, args.selector_reasoning_effort,
+        )):
+            raise ValueError("Claude does not support reasoning effort none; choose low through max.")
     effective_model = args.model or project_defaults.get("model")
     effective_reasoning = args.reasoning_effort or project_defaults.get("model_reasoning_effort")
     source_pdf_sha256 = file_sha256(pdf_path)
@@ -622,6 +657,7 @@ def main() -> int:
             prior_manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             prior_manifest = None
+    require_same_backend(args.backend, prior_manifest)
     if args.resume_after_preflight:
         if not prior_manifest:
             raise RuntimeError("--resume-after-preflight requires an existing valid run_manifest.json")
@@ -646,6 +682,7 @@ def main() -> int:
             raise RuntimeError(
                 "Cannot resume: parsed artifacts do not record the current source PDF hash"
             )
+    claude_version = check_claude(repo) if args.backend == "claude" else None
     run_started = time.time()
     run_manifest: dict[str, object] = {
         "paper_id": paper_id,
@@ -654,6 +691,7 @@ def main() -> int:
         "source_pdf": str(pdf_path.relative_to(repo) if repo in pdf_path.parents else pdf_path),
         "source_pdf_sha256": source_pdf_sha256,
         "model": effective_model,
+        "backend": args.backend,
         "reviewer_editor_reasoning_effort": effective_reasoning,
         "preflight_reasoning_effort": args.preflight_reasoning_effort,
         "selector_reasoning_effort": args.selector_reasoning_effort,
@@ -666,6 +704,14 @@ def main() -> int:
         "python": sys.version,
         "git": git_metadata(repo),
     }
+    if claude_version:
+        run_manifest["backend_version"] = claude_version
+        run_manifest["backend_permissions"] = "read-only tools; search roles also WebSearch/WebFetch; dontAsk"
+    if args.resume_after_preflight:
+        run_manifest["reused_preflight"] = prior_manifest.get("reused_preflight") or {
+            "backend": prior_manifest.get("backend", "codex"), "model": prior_manifest.get("model"),
+            "reasoning_effort": prior_manifest.get("preflight_reasoning_effort"),
+        }
     write_run_manifest(paths.run_manifest_path, run_manifest)
 
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -674,6 +720,8 @@ def main() -> int:
     print(f"[paper] {paper_id}")
     print(f"[pdf] {pdf_path}")
     print(f"[model] {effective_model or 'Codex default'}")
+    if args.backend != "codex":
+        print(f"[backend] {args.backend} (experimental)")
     print(f"[reasoning] preflight={args.preflight_reasoning_effort}, selector={args.selector_reasoning_effort}, reviewers/editor={effective_reasoning or 'Codex default'}")
 
     if not args.resume_after_preflight:
@@ -740,6 +788,7 @@ def main() -> int:
             args.preflight_reasoning_effort,
             args.max_parallel_reviewers,
             args.agent_timeout_minutes * 60,
+            args.backend,
         )
         preflight_errors = validate_reviewer_batch(
             preflight_reviewers,
@@ -766,6 +815,7 @@ def main() -> int:
         args.model,
         args.selector_reasoning_effort,
         args.selector_timeout_minutes * 60,
+        args.backend,
     )
     selection_errors = validate_selection_output(
         selection,
@@ -825,6 +875,7 @@ def main() -> int:
         args.reasoning_effort,
         args.max_parallel_reviewers,
         args.agent_timeout_minutes * 60,
+        args.backend,
     )
     validation_errors = validate_reviewer_batch(
         standard_reviewers,
@@ -884,17 +935,17 @@ def main() -> int:
     editor_input = editor_input_path.read_text(encoding="utf-8")
     editor_result = run_required(
         "editor",
-        [
-            *codex_exec_command(model=args.model, reasoning_effort=args.reasoning_effort),
-            "--output-last-message",
-            str(report_path.relative_to(repo)),
-            "-",
-        ],
+        agent_exec_command(
+            backend=args.backend, model=args.model, reasoning_effort=args.reasoning_effort,
+            output_path=report_path.relative_to(repo),
+        ),
         repo,
         log_dir,
         input_text=editor_input,
         timeout_seconds=args.agent_timeout_minutes * 60,
     )
+    if args.backend == "claude":
+        save_claude_output(editor_result.stdout_path, report_path)
     require_fresh_file(report_path, editor_started_at, "final report")
     recover_editor_report_if_needed(report_path, editor_result.stderr_path)
 

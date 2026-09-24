@@ -16,7 +16,7 @@ For each paper, the wrapper:
 
 The PDF parser is deterministic and local. It does not use an external document service, hosted OCR, or an LLM repair layer, and it never invents missing signs, values, labels, cells, or formulas. Unsafe artifacts are flagged so reviewers can use page images or return `cannot_verify`.
 
-The review itself is not fully local: parsed manuscript text is sent to OpenAI through the authenticated Codex CLI. Search-enabled reviewers may also send manuscript-derived queries to web search. Do not review a confidential paper unless its disclosure terms permit those transmissions.
+The review itself is not fully local: parsed manuscript text is sent to OpenAI through the authenticated Codex CLI by default, or to Anthropic when you explicitly choose the optional Claude Code backend. Search-enabled reviewers may also send manuscript-derived queries to web search. Do not review a confidential paper unless its disclosure terms permit those transmissions.
 
 ## Quick Start
 
@@ -142,6 +142,30 @@ Tested on Windows x64/Python 3.12, including live reviews. A sleep-interrupted
 GPT-6 run required manual recovery; unattended recovery is not established.
 Other platforms have not had live-review validation here. See
 [validation and local-package testing](docs/uv_validation.md).
+
+## Optional: Run with Claude Code (experimental)
+
+Codex remains the default. An optional `--backend claude` uses the **same pipeline,
+review prompts and validators**, through Claude Code subscription login (no API key).
+It defaults to Opus 5.5 (`claude-opus-5-5`); install Claude Code 2.1.280+ and sign in
+with `claude auth login`. Check prerequisites without a review:
+
+```powershell
+python scripts/check_environment.py --backend claude
+```
+
+Add `--backend claude` to the ordinary review command, or use the optional uv launcher:
+
+```text
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf" --workspace "claude-review" --max-parallel-reviewers 1
+```
+
+Use a new workspace and repeat the backend flag on resume. **Experimental: partial
+live Windows testing only; a complete live Claude pipeline is not yet validated.**
+Claude receives manuscript content and consumes your subscription allowance; a long
+review can exhaust a session. Leave Usage credits / Extra usage OFF to avoid paid
+overage. Ordinary resume reruns substantive reviewers, not just unfinished ones.
+See [setup, recovery limitations and tester feedback](docs/claude_code.md).
 
 ## Quality Defaults
 

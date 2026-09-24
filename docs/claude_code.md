@@ -30,29 +30,31 @@ From the repository, this check makes **no model request**:
 After subscription/model access is ready, this command **consumes Claude usage**:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --max-parallel-reviewers 1
+.\.venv\Scripts\python.exe scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude"
 ```
 
 For the optional Git-backed uv launcher, Python 3.12+, Git and uv must also be
-installed. Codex is not required for a Claude-only run. From the folder containing
-the PDF, use a new persistent workspace:
+installed. Codex is not required for a Claude-only run. Run from the folder containing
+the PDF:
 
 ```text
-uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf" --workspace "claude-review" --max-parallel-reviewers 1
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf"
 ```
 
 For development, test **local changes** with the absolute checkout path or a locally
 built wheel in `--from`, rather than the GitHub version:
 
 ```powershell
-uvx --from "C:/path/to/reviewer" economics-paper-reviewer --backend claude --pdf "paper with spaces.pdf" --workspace "claude trial" --max-parallel-reviewers 1
+uvx --from "C:/path/to/reviewer" economics-paper-reviewer --backend claude --pdf "paper with spaces.pdf"
 ```
 
 Replace the PDF/run options with `--check` for a no-review prerequisite check. A
 locally built wheel can also be supplied to `--from`. The launcher resolves input
 paths from the caller's directory and retains resources, papers, logs and reports
-in the named workspace, outside installation/cache directories. Existing workspaces
-remain tied to their original runtime: use a **new workspace** for this experiment.
+in `./reviewer-workspace/`, outside installation/cache directories. Optionally use
+`--workspace DIR` to choose another folder; its name does not select a backend.
+Use a separate workspace for Codex/Claude comparisons. Existing workspaces remain
+tied to their original runtime and are not silently upgraded.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
 
@@ -85,8 +87,8 @@ keep the same revision, workspace, paper ID and model when resuming.
   See [Anthropic's usage-credit controls](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans).
 - Manuscript content goes to Anthropic; search roles can transmit derived queries.
   Subscription limits, model access and any enabled extra usage are account-specific.
-  No cost/quality parity with Sol or Luna has been measured. Start with one reviewer
-  at a time; this does not reduce the eventual reviewer roster.
+  No cost/quality parity with Sol or Luna has been measured. Reviewers use the
+  existing default of up to four running concurrently.
 
 ## Resume and editor refresh
 
@@ -161,7 +163,6 @@ for subscription-only testing and retain the workspace when a limit is reached.
 Start with `--backend claude --check` using the uv launcher; it makes no model
 request and does not verify remaining quota or server acceptance of saved login.
 Then try a paper you are permitted to send to Anthropic, keeping the computer awake.
-One reviewer at a time limits concurrency, not the total work or quota required.
 Higher subscription limits may help, but completion in one session is not guaranteed.
 
 Useful feedback: OS, Python/Claude versions, Git revision, model/effort, approximate

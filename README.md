@@ -157,11 +157,13 @@ python scripts/check_environment.py --backend claude
 Add `--backend claude` to the ordinary review command, or use the optional uv launcher:
 
 ```text
-uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf" --workspace "claude-review" --max-parallel-reviewers 1
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf"
 ```
 
-Use a new workspace and repeat the backend flag on resume. **Experimental: partial
-live Windows testing only; a complete live Claude pipeline is not yet validated.**
+Results persist in `./reviewer-workspace/`; `--workspace DIR` is optional. Use a
+separate workspace for backend comparisons and repeat the backend flag on resume.
+**Experimental: partial live Windows testing only; a complete live Claude pipeline
+is not yet validated.**
 Claude receives manuscript content and consumes your subscription allowance; a long
 review can exhaust a session. Leave Usage credits / Extra usage OFF to avoid paid
 overage. Ordinary resume reruns substantive reviewers, not just unfinished ones.

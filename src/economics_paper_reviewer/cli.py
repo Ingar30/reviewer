@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,15 @@ RECEIPT = ".reviewer-workspace.json"
 
 def bundled_runtime() -> Path:
     return Path(__file__).resolve().parent / "runtime"
+
+
+def backend_settings(runtime: Path):
+    # Load the same canonical helper as the checkout pipeline, after validating
+    # the bundled runtime. Do not maintain a second backend-selection policy.
+    spec = importlib.util.spec_from_file_location("reviewer_backend_settings", runtime / "scripts/backend_settings.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def sha256(path: Path) -> str:
@@ -139,21 +149,23 @@ def keep_input(source: Path, workspace: Path, category: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    parser.add_argument("--backend", choices=("codex", "claude"), default="codex")
+    parser.add_argument("--backend", choices=("codex", "claude"), default=None)
     parser.add_argument("--workspace", default="reviewer-workspace")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--refresh-editor", action="store_true")
     parser.add_argument("--pdf")
+    parser.add_argument("--paper-id")
     parser.add_argument("--reviewers-config")
     args, forwarded = parser.parse_known_args(argv)
     runtime = bundled_runtime()
     script = "refresh_editor.py" if args.refresh_editor else "review_paper.py"
-    if args.backend != "codex":
-        forwarded.extend(["--backend", args.backend])
+    if args.paper_id is not None:
+        forwarded.extend(["--paper-id", args.paper_id])
     if "--help" in forwarded or "-h" in forwarded:
         print(
             "Optional launcher: economics-paper-reviewer [--workspace DIR] [pipeline options]\n"
             "  --workspace DIR   Persistent local workspace (default: ./reviewer-workspace)\n"
+            "  --backend NAME    codex or claude; otherwise saved run/workspace, then codex\n"
             "  --check           Check resources, dependencies and selected CLI login; no review\n"
             "  --refresh-editor  Use the existing editor-refresh helper and its options\n"
             "Relative input paths are resolved from your current directory.\n",
@@ -164,11 +176,26 @@ def main(argv: list[str] | None = None) -> int:
         workspace = Path(args.workspace).expanduser().resolve()
         validate_workspace_location(workspace, runtime)
         runtime_files(runtime)
+        settings = backend_settings(runtime)
+        paper_id = args.paper_id
+        if not args.refresh_editor and (args.paper_id or args.pdf):
+            paper_id = settings.slugify(args.paper_id or Path(args.pdf).stem)
+        manifest = None
+        if paper_id:
+            manifest_path = workspace / "work" / paper_id / "run_manifest.json"
+            if not manifest_path.resolve().is_relative_to((workspace / "work").resolve()):
+                raise ValueError("Paper ID escapes the workspace.")
+            manifest = settings.read_run_manifest(manifest_path)
+        backend, backend_source = settings.resolve_backend(workspace, args.backend, manifest)
+        # Pin the checked provider for the child, even if another concurrent
+        # paper changes the workspace preference before the child starts.
+        forwarded.extend(["--backend", backend])
         if args.check:
             for module in ("fitz", "pdfplumber", "pandas", "jsonschema", "tabulate"):
                 importlib.import_module(module)
-            check_backend(args.backend, runtime)
-            print(f"OK: bundled resources, Python dependencies and {args.backend} login checked.\nWorkspace: {workspace}")
+            check_backend(backend, runtime)
+            print(f"[backend] {backend} ({backend_source})")
+            print(f"OK: bundled resources, Python dependencies and {backend} login checked.\nWorkspace: {workspace}")
             print("No review run; model access, quota and live sandbox behavior were not tested.")
             return 0
         if not args.refresh_editor and not args.pdf:
@@ -180,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not source.is_file() or (option == "--pdf" and source.suffix.lower() != ".pdf"):
                     raise ValueError(f"Invalid input for {option}: {source}")
                 inputs[option] = source
-        check_backend(args.backend, runtime)
+        check_backend(backend, runtime)
         prepare_workspace(workspace, runtime)
         for option, source in inputs.items():
             saved = keep_input(source, workspace, "papers" if option == "--pdf" else "config")
@@ -189,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         # Pass the canonical model explicitly, without changing permission settings.
         defaults = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
         default_options = {}
-        if args.backend == "codex":
+        if backend == "codex":
             default_options["--model"] = defaults["model"]
             if args.refresh_editor:
                 default_options["--reasoning-effort"] = defaults["model_reasoning_effort"]
@@ -198,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
                 forwarded.extend([option, value])
         env = os.environ.copy()
         env["ECONOMICS_REVIEWER_NON_GIT"] = "1"
+        if args.backend is None:
+            env["ECONOMICS_REVIEWER_PRESERVE_BACKEND_PREFERENCE"] = "1"
+        else:
+            env.pop("ECONOMICS_REVIEWER_PRESERVE_BACKEND_PREFERENCE", None)
         print(f"[workspace] {workspace}", flush=True)
         print(f"[outputs] {workspace / 'outputs'}", flush=True)
         return subprocess.run(

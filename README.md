@@ -1,6 +1,6 @@
 # Reviewer
 
-A reproducible multi-agent reviewer for academic economics papers. The repository contains the preprocessing, reviewer prompts, validation, normalization, editor assembly, tests, and Codex project instructions. Papers and generated reports remain local and are not included.
+A reproducible multi-agent reviewer for academic economics papers, using Codex or Claude Code. The repository contains the preprocessing, reviewer prompts, validation, normalization, editor assembly, and tests. Papers and generated reports remain local and are not included.
 
 ## What It Does
 
@@ -16,7 +16,7 @@ For each paper, the wrapper:
 
 The PDF parser is deterministic and local. It does not use an external document service, hosted OCR, or an LLM repair layer, and it never invents missing signs, values, labels, cells, or formulas. Unsafe artifacts are flagged so reviewers can use page images or return `cannot_verify`.
 
-The review itself is not fully local: parsed manuscript text is sent to OpenAI through the authenticated Codex CLI by default, or to Anthropic when you explicitly choose the optional Claude Code backend. Search-enabled reviewers may also send manuscript-derived queries to web search. Do not review a confidential paper unless its disclosure terms permit those transmissions.
+The review itself is not fully local: parsed manuscript text is sent to OpenAI when using Codex, or to Anthropic when using Claude Code. Search-enabled reviewers may also send manuscript-derived queries to web search. Do not review a confidential paper unless its disclosure terms permit those transmissions.
 
 ## Quick Start
 
@@ -34,8 +34,16 @@ Git is convenient but not required. You can also download the repository as a ZI
 You need:
 
 - Python 3.12 or newer
-- An up-to-date Codex CLI installed and authenticated
-- access to GPT-6 Sol (or your selected override) and Codex web search
+- One authenticated CLI: **Codex or Claude Code** (you do not need both)
+- Access to your chosen model and the CLI's web-search tools
+
+| Backend | Sign in | Default model |
+| --- | --- | --- |
+| Codex | `codex login` | GPT-6.1 Sol |
+| Claude Code (experimental) | `claude auth login` | Opus 5.5 |
+
+Use an up-to-date CLI. See [model options](docs/model_profiles.md) and
+[Claude setup](docs/claude_code.md) for version requirements and lower-cost choices.
 
 ### 3. Set Up Python
 
@@ -69,6 +77,9 @@ macOS/Linux:
 ./.venv/bin/python scripts/check_environment.py
 ```
 
+For Claude, add `--backend claude` to the environment-check command. These checks
+do not save a preference; choose your backend when starting your first review.
+
 ### 5. Add a Paper Locally
 
 Put the source PDF in `inputs/`. The directory is ignored by Git.
@@ -79,17 +90,26 @@ inputs/my-paper.pdf
 
 ### 6. Run the Review
 
-Windows PowerShell:
+Choose one command, using the Python environment activated above.
+
+**Codex:**
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\review_paper.py --pdf "inputs\my-paper.pdf"
+python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf"
 ```
 
-macOS/Linux:
+**Claude Code:**
 
-```bash
-./.venv/bin/python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
+```powershell
+python scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf"
 ```
+
+The backend choice is remembered for new papers in this workspace (the repository
+folder for this workflow). You can omit `--backend` next time, or choose explicitly
+for another new paper. Existing papers keep their original backend when resumed.
+Commands with no saved choice still use Codex, so existing scripts keep working.
+The selected backend and model are printed at startup; Reviewer never switches
+providers automatically. `--help` and prerequisite checks do not change your preference.
 
 The final report is written to:
 
@@ -113,14 +133,18 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom
 
 The Quick Start above remains the primary workflow; **uv is optional**. With
 [uv installed](https://docs.astral.sh/uv/getting-started/installation/), Python
-3.12+, Git, and Codex CLI on PATH authenticated through `codex login`, run from
-the directory containing your PDF:
+3.12+, Git, and your chosen CLI installed and authenticated, run one of these
+from the directory containing your PDF:
 
 ```text
-uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --pdf "paper.pdf"
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend codex --pdf "paper.pdf"
 ```
 
-This uses the same review pipeline and Codex account, consumes normal review
+```text
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf"
+```
+
+This uses the same review pipeline and your chosen CLI account, consumes normal review
 quota, and needs no new API key. Replace `--pdf "paper.pdf"` with `--help` or
 `--check` for checks without a review; `--check` does not verify model access or
 remaining quota. The manuscript-transmission notice above still applies.
@@ -130,6 +154,9 @@ Papers, intermediates and reports persist in `./reviewer-workspace/`, outside uv
 cache; choose another location with `--workspace "D:/Review work"`. The report is
 at `outputs/<paper_id>/report.md` inside that workspace. Back it up; use distinct
 paper IDs or workspaces for papers with the same filename stem.
+The backend choice is remembered in that workspace, so later commands can omit
+`--backend`. The original command without this flag still works and uses Codex
+when no choice has been saved.
 
 Existing review flags still work. Resume with the same workspace, paper ID and
 runtime: new runs support `--resume-incomplete` to reuse validated completed
@@ -144,10 +171,10 @@ GPT-6 run required manual recovery; unattended recovery is not established.
 Other platforms have not had live-review validation here. See
 [validation and local-package testing](docs/uv_validation.md).
 
-## Optional: Run with Claude Code (experimental)
+## Claude Code setup (experimental)
 
-Codex remains the default. An optional `--backend claude` uses the **same pipeline,
-review prompts and validators**, through Claude Code subscription login (no API key).
+`--backend claude` uses the **same pipeline, review prompts and validators**,
+through Claude Code subscription login (no API key).
 It defaults to Opus 5.5 (`claude-opus-5-5`); install Claude Code 2.1.280+ and sign in
 with `claude auth login`. Check prerequisites without a review:
 
@@ -161,8 +188,8 @@ Add `--backend claude` to the ordinary review command, or use the optional uv la
 uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf"
 ```
 
-Results persist in `./reviewer-workspace/`; `--workspace DIR` is optional. Use a
-separate workspace for backend comparisons and repeat the backend flag on resume.
+With uv, results persist in `./reviewer-workspace/`; `--workspace DIR` is optional.
+Use a new paper ID or workspace for backend comparisons. Resumes reuse the saved backend.
 
 For a lower-cost Claude option, choose **Sonnet 5.5** with `--model`:
 
@@ -177,12 +204,12 @@ See [model choices, setup and resuming a review](docs/claude_code.md).
 
 ## Quality Defaults
 
-The default is **GPT-6.1 Sol** (`gpt-6.1-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6.1 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6.1-sol). A complete 71-page review and targeted source checks support this practical default; they do not establish general accuracy or superiority on every paper. The live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
+Each backend has its own default: **GPT-6.1 Sol** (`gpt-6.1-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) describe the available comparisons. The GPT-6.1 Sol live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
 
 For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
 ```powershell
-python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
+python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
 Luna was substantially cheaper in the earlier **GPT-6 Sol/Luna** comparison but missed material corrections; do not assume GPT-6.1 Sol-equivalent coverage. It required manual continuation after a sleep-related timeout, and both reports needed human judgment. See [Model Overrides](docs/model_profiles.md) for measured tokens, estimated costs, and validation limits. Both options use the same workflow and authenticated Codex CLI.
@@ -208,7 +235,7 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper"
 
 Keep the original runtime, PDF, model, effort settings and workspace. Changed
 inputs or accepted outputs are refused; this does not upgrade older checkpoints.
-Repeat `--backend claude` for Claude runs. There is no automatic quota retry or
+The backend is recovered from the saved run. There is no automatic quota retry or
 paid fallback. If preflight itself did not finish, repeat the original command.
 
 If a run stops after a valid parser-quality preflight, resume without rerunning that stage:

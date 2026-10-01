@@ -1,11 +1,11 @@
 # Model Overrides
 
-## Recommended default
+## Codex model default
 
-The normal command uses `gpt-6.1-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
+The Codex backend uses `gpt-6.1-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`. Claude has its own [default and model choices](claude_code.md#choose-a-model). Choose a backend on your first review; the workspace remembers it for new papers, and existing papers retain their original backend.
 
 ```powershell
-python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
+python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf"
 ```
 
 [GPT-6.1 Sol supports the retained reasoning settings](https://developers.openai.com/api/docs/models/gpt-6.1-sol). One complete long-paper run and targeted source checks support this practical default, not a general accuracy ranking. No new API-key requirement is introduced; reviews still use authenticated Codex CLI.
@@ -51,7 +51,7 @@ reliably converted from these estimates; inspect each account's usage dashboard.
 ## Optional budget override: GPT-6 Luna
 
 ```powershell
-python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
+python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
 GPT-6 Luna has [lower published Codex credit rates](https://learn.chatgpt.com/docs/pricing#token-rates) than Sol. Selected-reviewer tests and the full-pipeline comparison found useful but uneven coverage. It remains an explicit budget choice, not a replacement default or a promise of Sol-equivalent results.
@@ -120,7 +120,7 @@ matter, so these scenarios are neither quotes nor cost caps.
 The earlier GPT-5.6 Terra/Sol comparison is retained as historical evidence, not a benchmark or cost comparison against GPT-6 Sol. To explicitly select the older Terra configuration:
 
 ```powershell
-python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
+python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
 ```
 
 In a historical full-pipeline test on a 116-page applied microeconomics paper, including a large online appendix with many tables and figures, GPT-5.6 Terra/xhigh used about 23% fewer aggregate logged tokens than GPT-5.6 Sol/xhigh.

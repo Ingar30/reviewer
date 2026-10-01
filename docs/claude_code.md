@@ -1,12 +1,9 @@
 # Optional Claude Code backend (experimental)
 
-This experimental option adds `--backend claude`; Codex remains the default.
-It uses Claude Code's subscription-authenticated CLI, not an API SDK or a second
-review pipeline. Prompts, schemas, preprocessing, reviewer selection, validators,
-normalization and report checks are unchanged. A **complete tiny-paper pipeline
-passed live Windows testing**, and a 71-page paper reached a complete report after
-quota-related recovery. These establish bounded workflow evidence, not reliable
-review quality or completion within one subscription session.
+Use your Claude subscription to run the reviewer by adding `--backend claude`.
+It follows the same review pipeline as Codex, with no API key required. Codex
+remains the default; Claude support is experimental. Start with Opus 5.5, or
+choose Sonnet for a lower-cost option.
 
 ## Prerequisites and first test
 
@@ -62,6 +59,24 @@ Keep Windows workspace paths reasonably short: a deeply nested trial failed
 during PDF copying, while a shorter path containing spaces passed.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
+
+## Choose a model
+
+The reviewer defaults to **Opus 5.5**. For a lower-cost option, select **Sonnet 5.5**:
+
+```powershell
+python scripts/review_paper.py --backend claude --model claude-sonnet-5-5 --pdf "inputs/my-paper.pdf"
+```
+
+The same `--model claude-sonnet-5-5` flag works with the uv launcher. Sonnet 5.5
+requires Claude Code **2.1.284+**; run `claude update` if needed. See Anthropic's
+[model configuration](https://code.claude.com/docs/en/model-config).
+
+Sonnet generally uses less of your subscription allowance than Opus; see
+[Anthropic's usage guide](https://support.claude.com/en/articles/14552983-models-usage-and-limits-in-claude-code).
+Its paper-review quality has not yet been benchmarked here. The model choice applies
+to the whole review and does not change your default. Keep the same model when
+resuming; use a new paper ID or workspace to compare models.
 
 ## Behavior and limitations
 

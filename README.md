@@ -163,14 +163,17 @@ uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer 
 
 Results persist in `./reviewer-workspace/`; `--workspace DIR` is optional. Use a
 separate workspace for backend comparisons and repeat the backend flag on resume.
-**Experimental: live Windows evidence includes a complete tiny-paper pipeline
-and a long report completed through quota recovery—not guaranteed review accuracy
-or completion in one subscription session.**
-Claude receives manuscript content and consumes your subscription allowance; a long
-review can exhaust a session. Leave Usage credits / Extra usage OFF to avoid paid
-overage. New runs support `--resume-incomplete` to retain validated completed
-reviewers; keep the original package revision and workspace when resuming.
-See [setup, recovery limitations and tester feedback](docs/claude_code.md).
+
+For a lower-cost Claude option, choose **Sonnet 5.5** with `--model`:
+
+```text
+uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --model claude-sonnet-5-5 --pdf "paper.pdf"
+```
+
+Sonnet 5.5 needs Claude Code **2.1.284+**; run `claude update` if needed.
+Reviews send your paper to Claude and use your subscription allowance. Keep
+Usage credits / Extra usage off to stay within your subscription.
+See [model choices, setup and resuming a review](docs/claude_code.md).
 
 ## Quality Defaults
 

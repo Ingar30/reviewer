@@ -23,6 +23,8 @@ Reconstruct the chronological order of recruitment, baseline questions, assignme
 
 Report only material issues that affect treatment interpretation. Do not flag non-experimental papers merely for lacking randomization details, and do not turn every missing balance table into a finding. If the audit is not applicable or no material issue is found, return run_status ok with an empty findings array.
 
+Before alleging an omitted arm, read the comparison's title, estimand, restrictions and any reporting elsewhere in the manuscript. An explicitly defined pairwise contrast within a multi-arm experiment is not itself an exclusion defect. Establish why the exclusion compromises the claim or departs from the stated plan; additional all-arm reporting is otherwise an optional extension, not a required repair.
+
 For every finding:
 - Set issue_type to manuscript_issue, parser_artifact, or cannot_verify.
 - Set category to randomization_detail_missing, assignment_unit_mismatch, post_assignment_attrition, omitted_randomized_arm, contamination_or_carryover, or cannot_verify.

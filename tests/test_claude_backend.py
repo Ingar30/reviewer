@@ -1,5 +1,7 @@
 """Claude transport tests are offline: no real Claude/Codex request is allowed."""
 import json
+import contextlib
+import io
 import os
 from pathlib import Path
 import shutil
@@ -13,7 +15,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 from build_cli_package import cli_payload
 import claude_backend as backend
-from review_paper import agent_exec_command
+from review_paper import agent_exec_command, run_command, start_reviewer, wait_reviewer
+from reviewer_config import ReviewerConfig
 from tests.test_uv_launcher import exercise_pipeline
 
 
@@ -69,6 +72,23 @@ class ClaudeBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No API key is required"):
                 backend.check_claude(self.folder)
 
+    def test_usage_and_auth_errors_are_actionable_without_echoing_provider_text(self):
+        path = self.folder / "provider.stdout.log"
+        for message, expected in (
+            ("You've hit your session limit · resets 1:50pm (Europe/Oslo) SECRET", "usage limit"),
+            ("401 OAuth access token invalid SECRET", "claude auth login"),
+            ("Maximum turn limit reached SECRET", "unsuccessful call"),
+            ("Unexpected provider failure SECRET", "unsuccessful call"),
+        ):
+            path.write_text(json.dumps({"type": "result", "subtype": "success",
+                                        "is_error": True, "result": message}), encoding="utf-8")
+            hint = backend.claude_failure_hint(path)
+            self.assertIn(expected, hint)
+            self.assertIn(str(path), hint)
+            self.assertNotIn("SECRET", hint)
+        path.write_text("not JSON", encoding="utf-8")
+        self.assertIsNone(backend.claude_failure_hint(path))
+
     def check_status(self, account, *, version="2.1.280", status=0):
         responses = [subprocess.CompletedProcess([], 0, version, ""),
                      subprocess.CompletedProcess([], status, json.dumps(account), "SECRET")]
@@ -78,6 +98,44 @@ class ClaudeBackendTests(unittest.TestCase):
             self.assertEqual(len(run.call_args_list), 2)
             self.assertEqual(run.call_args_list[1].args[0], ["claude", "auth", "status", "--json"])
             return result
+
+    def test_router_and_editor_nonzero_exit_explain_stdout_quota_error(self):
+        envelope = {"type": "result", "subtype": "success", "is_error": True,
+                    "result": "You've hit your session limit SECRET"}
+        code = "import json, sys; print(json.dumps(" + repr(envelope) + ")); sys.exit(1)"
+        for label in ("reviewer-selector", "editor"):
+            terminal = io.StringIO()
+            with contextlib.redirect_stdout(terminal):
+                result = run_command(label, [sys.executable, "-c", code], self.folder, self.folder)
+            self.assertEqual(result.returncode, 1)
+            for text in (terminal.getvalue(), result.stderr_path.read_text(encoding="utf-8")):
+                self.assertIn("usage limit", text)
+                self.assertIn(str(result.stdout_path), text)
+                self.assertNotIn("SECRET", text)
+            self.assertEqual(json.loads(result.stdout_path.read_text()), envelope)
+
+    def test_reviewer_exit_or_error_envelope_preserves_output_and_explains_quota(self):
+        reviewer = ReviewerConfig("offline", "prompt.txt", "review.json", "OFF", False,
+                                  True, "manuscript", "review", "mandatory")
+        (self.folder / reviewer.prompt).write_text("offline prompt", encoding="utf-8")
+        output = self.folder / reviewer.output
+        output.write_text("previous accepted review", encoding="utf-8")
+        envelope = {"type": "result", "subtype": "success", "is_error": True,
+                    "result": "You've hit your session limit SECRET"}
+        for exit_code in (0, 1):
+            code = ("import json, sys; sys.stdin.read(); print(json.dumps(" + repr(envelope)
+                    + ")); sys.exit(" + str(exit_code) + ")")
+            terminal = io.StringIO()
+            with mock.patch("review_paper.agent_exec_command", return_value=[sys.executable, "-c", code]), \
+                    contextlib.redirect_stdout(terminal):
+                job = start_reviewer(reviewer, self.folder, self.folder, self.folder,
+                                     REPO / "schemas/reviewer_output.schema.json", self.folder, backend="claude")
+                result = wait_reviewer(*job, timeout_seconds=30)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(output.read_text(), "previous accepted review")
+            for text in (terminal.getvalue(), result.stderr_path.read_text(encoding="utf-8")):
+                self.assertIn("usage limit", text)
+                self.assertNotIn("SECRET", text)
 
     def test_subscription_auth_without_key(self):
         with mock.patch.dict(os.environ, {}, clear=True):

@@ -73,6 +73,21 @@ class ReportPDFTests(unittest.TestCase):
         for value in ("a|b", "c|d", "EXTRA"):
             self.assertIn(value, text)
 
+    def test_mixed_short_records_and_oversized_cell_keep_all_evidence(self):
+        # Real reports combine many uneven rows with multi-page prose. Keep the
+        # fixture synthetic; no private paper/report content belongs in tests.
+        source = "# Pagination regression\n\n## Findings\n\n| Area | Evidence | Revision |\n| --- | --- | --- |\n"
+        for i in range(170):
+            source += f"| ISSUE-{i:03d} | " + (f"Unique evidence {i}, value -0.219 (0.102). " * (1 + i % 9)) + " | Retain denominator and scope. |\n"
+        source += "| LONG-CELL | " + "Long but necessary evidence with its qualification. " * 220 + " | END-LONG-CELL |\n"
+        source += "\n## Final section\n\nFINAL-UNIQUE-MARKER\n"
+        result, text = self.render(source)
+        for i in range(170):
+            self.assertEqual(text.count(f"ISSUE-{i:03d}"), 1)
+        self.assertIn("END-LONG-CELL", text)
+        self.assertIn("FINAL-UNIQUE-MARKER", text)
+        self.assertGreater(result["pages"], 10)
+
     def test_html_images_and_unsafe_links_are_not_loaded(self):
         rendered = inline('<img src="file:///private.png"> [run](javascript:alert)')
         self.assertNotIn("<img", rendered)

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "repeats": 2,
+  "schedule_seed": 20260924,
+  "timeout_minutes": 45,
+  "profiles": [
+    {"id": "sol", "backend": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"},
+    {"id": "luna", "backend": "codex", "model": "gpt-6-luna", "effort": "xhigh"},
+    {"id": "opus", "backend": "claude", "model": "claude-opus-5-5", "effort": "xhigh"}
+  ],
+  "cases": [
+    {
+      "id": "paper-a",
+      "workspace": "../reviewer-workspace",
+      "paper_id": "my-paper",
+      "pdf": "../inputs/my-paper.pdf",
+      "roles": ["numerical_auditor", "claim_evidence_auditor", "reference_auditor"]
+    }
+  ]
+}

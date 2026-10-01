@@ -41,6 +41,9 @@ def main():
                        for r in config if r.get("selection_policy") == "optional" and r.get("enabled", True)
                    ], "skipped_optional_reviewers": [], "notes": ["MOCK; no scholarly validation."]}
     elif role != "editor":
+        if os.environ.get("REVIEWER_TEST_STOP") == role:
+            print("MOCK quota stop", file=sys.stderr)
+            return 75
         payload = {"reviewer": role, "paper_id": paper, "run_status": "ok",
                    "summary": "MOCK audit for launch testing only.", "findings": [], "notes": []}
     else:

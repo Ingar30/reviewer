@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -15,14 +16,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
+from resume_review import ReviewCheckpoint, run_lease
 from claude_backend import (
     DEFAULT_MODEL as CLAUDE_DEFAULT_MODEL, EFFORTS as CLAUDE_EFFORTS,
-    check_claude, claude_exec_command, require_same_backend, save_claude_output,
+    check_claude, claude_exec_command, claude_failure_hint, require_same_backend, save_claude_output,
 )
 from check_final_report import (
     DEFAULT_REQUIRED_HEADINGS as EDITOR_REPORT_REQUIRED_HEADINGS,
-    MIN_REPORT_CHARS as MIN_EDITOR_REPORT_CHARS,
     REVIEW_SCOPE_HEADINGS as EDITOR_REPORT_SCOPE_HEADINGS,
+    report_min_chars,
 )
 from render_prompts import SELECTOR_TEMPLATE, render_selection_prompt
 from reviewer_config import ReviewerConfig, load_reviewers_config, split_reviewers, write_reviewers_config
@@ -143,32 +145,53 @@ def run_command(
     stderr_path = log_dir / f"{safe_label}.stderr.log"
 
     print(f"[run] {label}")
-    try:
-        completed = subprocess.run(
+    with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
+        process = subprocess.Popen(
             command,
-            input=input_text,
+            stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
             text=True,
             encoding="utf-8",
             errors="replace",
             cwd=cwd,
-            capture_output=True,
-            timeout=timeout_seconds,
+            start_new_session=os.name != "nt",
         )
-        stdout = completed.stdout
-        stderr = completed.stderr
-        returncode = completed.returncode
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        stderr += f"\nTimed out after {timeout_seconds:.0f} seconds.\n"
-        returncode = 124
-    stdout_path.write_text(stdout, encoding="utf-8")
-    stderr_path.write_text(stderr, encoding="utf-8")
+        try:
+            process.communicate(input=input_text, timeout=timeout_seconds)
+            returncode = process.returncode
+        except subprocess.TimeoutExpired:
+            stop_process(process)
+            stderr.write(f"\nTimed out after {timeout_seconds:.0f} seconds.\n")
+            returncode = 124
+        finally:
+            stop_process(process)
     if returncode != 0:
+        if hint := claude_failure_hint(stdout_path):
+            with stderr_path.open("a", encoding="utf-8") as handle:
+                handle.write("\n" + hint + "\n")
+            print(f"[error] {hint}")
         print(f"[fail] {label} exited {returncode}; see {stderr_path}")
     else:
         print(f"[ok] {label}")
     return RunResult(label, returncode, stdout_path, stderr_path)
+
+
+def stop_process(process) -> None:
+    """Stop only a process tree started by this wrapper, preserving its log files."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if process.poll() is None:
+        process.kill()
+    process.wait()
 
 
 def agent_exec_command(
@@ -236,19 +259,22 @@ def start_reviewer(
     stdout_handle = stdout_path.open("w", encoding="utf-8")
     stderr_handle = stderr_path.open("w", encoding="utf-8")
     print(f"[start] {reviewer.name}")
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=stdout_handle,
-        stderr=stderr_handle,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=repo,
-    )
-    assert process.stdin is not None
-    process.stdin.write(prompt_text)
-    process.stdin.close()
+    process = None
+    try:
+        process = subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=stdout_handle, stderr=stderr_handle,
+            text=True, encoding="utf-8", errors="replace", cwd=repo,
+            start_new_session=os.name != "nt",
+        )
+        assert process.stdin is not None
+        process.stdin.write(prompt_text)
+        process.stdin.close()
+    except BaseException:
+        if process is not None:
+            stop_process(process)
+        stdout_handle.close()
+        stderr_handle.close()
+        raise
     process._reviewer_stdout_handle = stdout_handle  # type: ignore[attr-defined]
     process._reviewer_stderr_handle = stderr_handle  # type: ignore[attr-defined]
     if backend == "claude":
@@ -270,8 +296,7 @@ def wait_reviewer(
     try:
         returncode = process.wait(timeout=remaining)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+        stop_process(process)
         returncode = 124
         with stderr_path.open("a", encoding="utf-8") as handle:
             handle.write(f"\nTimed out after {timeout_seconds:.0f} seconds.\n")
@@ -287,6 +312,10 @@ def wait_reviewer(
     if returncode == 0:
         print(f"[ok] {reviewer.name}")
     else:
+        if hasattr(process, "_claude_output") and (hint := claude_failure_hint(stdout_path)):
+            with stderr_path.open("a", encoding="utf-8") as handle:
+                handle.write("\n" + hint + "\n")
+            print(f"[error] {hint}")
         print(f"[fail] {reviewer.name} exited {returncode}; see {stderr_path}")
     return RunResult(reviewer.name, returncode, stdout_path, stderr_path)
 
@@ -298,9 +327,9 @@ def require_fresh_file(path: Path, started_at: float, label: str) -> None:
         raise RuntimeError(f"{label} is stale and was not regenerated in this run: {path}")
 
 
-def plausible_editor_report(text: str) -> bool:
+def plausible_editor_report(text: str, *, bundle: dict | None = None) -> bool:
     stripped = text.strip()
-    if len(stripped) < MIN_EDITOR_REPORT_CHARS:
+    if len(stripped) < report_min_chars(bundle):
         return False
     if not stripped.startswith("# Multi-Agent Paper Review Report"):
         return False
@@ -309,7 +338,7 @@ def plausible_editor_report(text: str) -> bool:
     )
 
 
-def extract_editor_report_from_transcript(text: str) -> str | None:
+def extract_editor_report_from_transcript(text: str, *, bundle: dict | None = None) -> str | None:
     starts = [match.start() for match in re.finditer(r"(?m)^# Multi-Agent Paper Review Report\s*$", text)]
     for start in reversed(starts):
         candidate = text[start:]
@@ -317,18 +346,19 @@ def extract_editor_report_from_transcript(text: str) -> str | None:
         if end_match:
             candidate = candidate[: end_match.start()]
         candidate = candidate.strip()
-        if plausible_editor_report(candidate):
+        if plausible_editor_report(candidate, bundle=bundle):
             return candidate + "\n"
     return None
 
 
-def recover_editor_report_if_needed(report_path: Path, editor_stderr_path: Path) -> None:
+def recover_editor_report_if_needed(report_path: Path, editor_stderr_path: Path,
+                                   *, bundle: dict | None = None) -> None:
     current = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
-    if plausible_editor_report(current):
+    if plausible_editor_report(current, bundle=bundle):
         return
 
     transcript = editor_stderr_path.read_text(encoding="utf-8") if editor_stderr_path.exists() else ""
-    recovered = extract_editor_report_from_transcript(transcript)
+    recovered = extract_editor_report_from_transcript(transcript, bundle=bundle)
     if recovered is None:
         raise RuntimeError(
             f"editor produced an invalid final report and no recoverable report was found in {editor_stderr_path}"
@@ -435,27 +465,35 @@ def run_reviewer_batch(
     max_parallel: int = 4,
     timeout_seconds: float | None = None,
     backend: str = "codex",
+    on_result=None,
 ) -> float:
     if not reviewers:
         return time.time() - 1.0
     reviewer_started_at = time.time() - 1.0
     for start in range(0, len(reviewers), max_parallel):
         batch = reviewers[start : start + max_parallel]
-        running = [
-            start_reviewer(
-                reviewer,
-                repo,
-                prompts_dir,
-                reviews_dir,
-                schema_path.relative_to(repo),
-                log_dir,
-                model,
-                reasoning_effort,
-                backend,
-            )
-            for reviewer in batch
-        ]
-        reviewer_results = [wait_reviewer(*item, timeout_seconds=timeout_seconds) for item in running]
+        running, reviewer_results = [], []
+        try:
+            for reviewer in batch:
+                running.append(start_reviewer(
+                    reviewer, repo, prompts_dir, reviews_dir,
+                    schema_path.relative_to(repo), log_dir, model, reasoning_effort, backend,
+                ))
+            for item in running:
+                result = wait_reviewer(*item, timeout_seconds=timeout_seconds)
+                reviewer_results.append(result)
+                if on_result:
+                    on_result(item[0], result, reviewer_started_at)
+        finally:
+            finished = {result.label for result in reviewer_results}
+            for item in running:
+                reviewer, process = item[:2]
+                if reviewer.name in finished:
+                    continue
+                stop_process(process)
+                result = wait_reviewer(*item)
+                if on_result:
+                    on_result(reviewer, result, reviewer_started_at)
         failed_reviewers = [result for result in reviewer_results if result.returncode != 0]
         if failed_reviewers:
             failures = ", ".join(
@@ -551,6 +589,10 @@ def main() -> int:
     )
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
     parser.add_argument(
+        "--resume-incomplete", action="store_true",
+        help="Reuse validated completed reviewers with identical PDF, settings and runtime; retry only unfinished stages.",
+    )
+    parser.add_argument(
         "--resume-after-preflight",
         action="store_true",
         help=(
@@ -607,6 +649,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.resume_incomplete and args.resume_after_preflight:
+        parser.error("Choose --resume-incomplete or --resume-after-preflight, not both.")
+
     if args.max_parallel_reviewers < 1:
         raise ValueError("--max-parallel-reviewers must be at least 1")
     if args.agent_timeout_minutes <= 0 or args.selector_timeout_minutes <= 0:
@@ -623,6 +668,11 @@ def main() -> int:
         raise ValueError(f"Expected a PDF file, got: {pdf_path.name}")
 
     paper_id = slugify(args.paper_id or pdf_path.stem)
+    with run_lease(repo / "work" / paper_id):
+        return execute_pipeline(args, repo, pdf_path, paper_id)
+
+
+def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
     paths = paper_run_paths(repo, paper_id)
     parsed_dir = paths.parsed_dir
     prompts_dir = paths.prompts_dir
@@ -658,6 +708,16 @@ def main() -> int:
         except json.JSONDecodeError:
             prior_manifest = None
     require_same_backend(args.backend, prior_manifest)
+    checkpoint_settings = {
+        "paper_id": paper_id, "source_pdf_sha256": source_pdf_sha256,
+        "backend": args.backend, "model": effective_model,
+        "reasoning_effort": effective_reasoning,
+        "preflight_reasoning_effort": args.preflight_reasoning_effort,
+        "selector_reasoning_effort": args.selector_reasoning_effort,
+        "reviewers_config": args.reviewers_config,
+    }
+    if args.resume_incomplete:
+        return resume_incomplete(args, repo, paths, checkpoint_settings)
     if args.resume_after_preflight:
         if not prior_manifest:
             raise RuntimeError("--resume-after-preflight requires an existing valid run_manifest.json")
@@ -864,6 +924,8 @@ def main() -> int:
         log_dir,
     )
 
+    checkpoint = ReviewCheckpoint(repo, paths, checkpoint_settings)
+    checkpoint.create()
     reviewer_started_at = run_reviewer_batch(
         standard_reviewers,
         repo,
@@ -876,6 +938,7 @@ def main() -> int:
         args.max_parallel_reviewers,
         args.agent_timeout_minutes * 60,
         args.backend,
+        on_result=checkpoint.accept,
     )
     validation_errors = validate_reviewer_batch(
         standard_reviewers,
@@ -890,6 +953,64 @@ def main() -> int:
     )
     if validation_errors:
         raise RuntimeError("Reviewer validation failed: " + "; ".join(validation_errors))
+
+    finish_review(args, repo, paths, log_dir)
+    run_manifest.update(
+        {
+            "status": "complete", "completed_at_utc": utc_now(),
+            "duration_seconds": round(time.time() - run_started, 3),
+            "selected_reviewers": [reviewer.name for reviewer in standard_reviewers],
+            "report": str(report_path.relative_to(repo)),
+        }
+    )
+    write_run_manifest(paths.run_manifest_path, run_manifest)
+    checkpoint.complete()
+    print(f"[done] report: {report_path.relative_to(repo)}")
+    print(f"[logs] {log_dir.relative_to(repo)}")
+    return 0
+
+
+def resume_incomplete(args, repo, paths, settings) -> int:
+    checkpoint = ReviewCheckpoint(repo, paths, settings)
+    checkpoint.load()  # Fail closed before changing saved artifacts or calling a model.
+    if checkpoint.data.get("report_sha256"):
+        print(f"[done] completed report retained: {paths.report_path.relative_to(repo)}")
+        return 0
+    if args.backend == "claude":
+        check_claude(repo)
+    for reviewer in checkpoint.reviewers:
+        if reviewer.stage == "preflight":
+            enforce_preflight_gate(reviewer, paths.reviews_dir / reviewer.output)
+    missing = [r for r in checkpoint.reviewers
+               if r.stage == "review" and r.name not in checkpoint.data["accepted"]]
+    log_dir = checkpoint.attempt_dir()
+    print(f"[resume] retained {len(checkpoint.data['accepted'])} reviewers; {len(missing)} unfinished")
+    run_reviewer_batch(
+        missing, repo, paths.prompts_dir, paths.reviews_dir,
+        repo / "schemas/reviewer_output.schema.json", log_dir,
+        settings["model"], args.reasoning_effort, args.max_parallel_reviewers,
+        args.agent_timeout_minutes * 60, args.backend, on_result=checkpoint.accept,
+    )
+    if any(r.name not in checkpoint.data["accepted"] for r in missing):
+        raise RuntimeError("Unfinished reviewers failed validation; see retained attempt logs.")
+    finish_review(args, repo, paths, log_dir)
+    checkpoint.complete()
+    manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
+    manifest.update(status="complete", completed_at_utc=utc_now(),
+                    resumed_incomplete=True, report=str(paths.report_path.relative_to(repo)),
+                    selected_reviewers=[r.name for r in checkpoint.reviewers if r.stage == "review"])
+    write_run_manifest(paths.run_manifest_path, manifest)
+    print(f"[done] report: {paths.report_path.relative_to(repo)}")
+    print(f"[logs] {log_dir.relative_to(repo)}")
+    return 0
+
+
+def finish_review(args, repo, paths, log_dir):
+    """Shared deterministic assembly and editor path for fresh and selective-resume runs."""
+    paper_id = slugify(args.paper_id or Path(args.pdf).stem)
+    reviews_dir, prompts_dir = paths.reviews_dir, paths.prompts_dir
+    bundle_path, editor_input_path, report_path = paths.bundle_path, paths.editor_input_path, paths.report_path
+    active_reviewers_config = str(paths.selected_reviewers_config_path.relative_to(repo))
 
     run_required(
         "normalize",
@@ -947,7 +1068,10 @@ def main() -> int:
     if args.backend == "claude":
         save_claude_output(editor_result.stdout_path, report_path)
     require_fresh_file(report_path, editor_started_at, "final report")
-    recover_editor_report_if_needed(report_path, editor_result.stderr_path)
+    recover_editor_report_if_needed(
+        report_path, editor_result.stderr_path,
+        bundle=json.loads(bundle_path.read_text(encoding="utf-8")),
+    )
 
     check_result = run_required(
         "check-final-report",
@@ -962,19 +1086,6 @@ def main() -> int:
         repo,
         log_dir,
     )
-    run_manifest.update(
-        {
-            "status": "complete",
-            "completed_at_utc": utc_now(),
-            "duration_seconds": round(time.time() - run_started, 3),
-            "selected_reviewers": [reviewer.name for reviewer in standard_reviewers],
-            "report": str(report_path.relative_to(repo)),
-        }
-    )
-    write_run_manifest(paths.run_manifest_path, run_manifest)
-    print(f"[done] report: {report_path.relative_to(repo)}")
-    print(f"[logs] {log_dir.relative_to(repo)}")
-    return 0
 
 
 if __name__ == "__main__":

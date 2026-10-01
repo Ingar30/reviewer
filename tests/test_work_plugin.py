@@ -527,6 +527,36 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.assertTrue(report_failures(synthetic_report(bundle), bundle=nonempty))
         self.assertTrue(report_failures(synthetic_report(bundle), bundle={}))
 
+    def test_large_editor_bundle_is_file_backed_sealed_and_restorable(self):
+        self.route()
+        while True:
+            jobs = self.run.next_tasks(3)["jobs"]
+            if jobs[0]["kind"] == "editor":
+                break
+            for job in jobs:
+                data = empty_review(self.run, job["task"])
+                if job["task"] == "claim_evidence_auditor":
+                    reviewer = next(r for r in self.run.reviewers if r.name == job["task"])
+                    data["findings"] = [finding(self.run, reviewer.id_prefix)]
+                    data["notes"] = [f"Note {i}: " + "Preserved audit context. " * 50 for i in range(1000)]
+                save_candidate(job, data)
+                self.assertEqual(self.run.accept(job["task"])["status"], "accepted")
+        document = self.run.paths.editor_input_path.read_text(encoding="utf-8")
+        self.assertIn("read ALL", document)
+        self.assertNotIn(str(self.root), document)
+        self.assertIn(self.run.rel(self.run.paths.bundle_path), self.run.state["sealed"])
+        archive = self.folder / "large-editor-checkpoint.zip"
+        self.run.checkpoint(archive)
+        restored_root = self.folder / "restored-large-editor"
+        restore(archive, restored_root, SOURCE)
+        restored = ReviewRun(restored_root, SOURCE)
+        self.assertEqual(restored.paths.bundle_path.read_bytes(), self.run.paths.bundle_path.read_bytes())
+        self.assertEqual(restored.paths.editor_input_path.read_text(encoding="utf-8"), document)
+        restored.paths.bundle_path.write_text("{}", encoding="utf-8")
+        with self.assertRaises(WorkError) as caught:
+            restored.verify()
+        self.assertEqual(caught.exception.code, "artifact_changed")
+
 
 class WorkJsonTests(unittest.TestCase):
     def test_strict_decoder_rejects_ambiguous_or_unserializable_values(self):

@@ -1,10 +1,5 @@
 # Optional Claude Code backend (experimental)
 
-This experimental option adds `--backend claude`; Codex/GPT-6 Sol remains the default.
-It uses Claude Code's subscription-authenticated CLI, not an API SDK or a second
-review pipeline. Prompts, schemas, preprocessing, reviewer selection, validators,
-normalization and report checks are unchanged. It has **not completed a full live Claude pipeline**; the limited live checks below are not a quality benchmark.
-
 ## Prerequisites and first test
 
 Use the existing Python environment. Install the native Claude Code CLI separately
@@ -55,6 +50,8 @@ in `./reviewer-workspace/`, outside installation/cache directories. Optionally u
 `--workspace DIR` to choose another folder; its name does not select a backend.
 Use a separate workspace for Codex/Claude comparisons. Existing workspaces remain
 tied to their original runtime and are not silently upgraded.
+Keep Windows workspace paths reasonably short: a deeply nested trial failed
+during PDF copying, while a shorter path containing spaces passed.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
 
@@ -107,13 +104,33 @@ editor command with `--refresh-editor --backend claude --paper-id ID --run-edito
 Claude's own session resume is not used; recovery follows the pipeline artifacts.
 
 **Quota interruption:** keep the workspace and wait for the reset shown by Claude.
-There is currently no public skip-completed-reviewers resume option. Retrying with
-`--resume-after-preflight` spends allowance again on substantive reviewers and can
-overwrite their earlier outputs/logs; copy the workspace first if retaining that
-attempt matters. Use editor-only refresh only when all selected reviews are present.
+Quota/authentication errors identify the retained stdout log containing provider
+details; a saved login check does not establish available quota. If preflight
+itself failed, rerun the original command after resolving the limit/login.
+For runs started with this version, repeat the original command with
+`--resume-incomplete`. After preflight and routing have completed, it reuses
+validated successful reviewers and retries only unfinished reviewers and the
+editor. It requires the same PDF, backend, model, effort settings, configuration,
+parsed artifacts and runtime. Changed accepted reviews are refused, and new
+attempt logs are retained separately. A completed checkpoint makes no model call.
+
+```powershell
+python scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-incomplete
+```
+
+With uv, append that flag to the original pinned launcher command and keep the
+same workspace. Do not upgrade an interrupted workspace in place. Older runs
+without a selective-resume checkpoint retain the existing recovery methods:
+`--resume-after-preflight` reruns routing and **all substantive reviewers**;
+`--refresh-editor` needs all selected reviews and reruns only assembly/editor.
+Do not combine the two resume flags. Selective resume is not Claude session resume.
+
 A failed run can leave the manifest marked `running`; this is not proof that a
 process is still active or that a complete report exists. The wrapper does not
-change your billing settings or automatically switch to an API key.
+change billing settings, poll for quota resets, retry automatically or switch to
+an API key. Keep the computer awake during live calls. The wrapper now holds a
+per-paper run lock and terminates its owned process tree on timeout/interruption;
+power loss and laptop sleep can still leave the latest stage incomplete.
 
 ## Feedback from experimental testers
 

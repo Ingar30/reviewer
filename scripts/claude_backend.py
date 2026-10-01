@@ -117,6 +117,27 @@ def claude_exec_command(
     return command
 
 
+def claude_failure_hint(stdout_path: Path) -> str | None:
+    """Explain known failures without echoing untrusted/account-bearing CLI text."""
+    try:
+        response = json.loads(stdout_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(response, dict) or response.get("type") != "result" or response.get("is_error") is not True:
+        return None
+    message = str(response.get("result", "")).lower()
+    if (any(marker in message for marker in ("session limit", "weekly limit", "usage limit", "quota", "hit your limit"))
+            and any(word in message for word in ("hit", "reached", "exceeded"))):
+        return (f"Claude reported a usage limit; see {stdout_path} for the reset time. "
+                "Keep the workspace and wait for the reset. Use --resume-incomplete if a checkpoint exists; "
+                "otherwise use --resume-after-preflight only if preflight completed, or rerun the original command. "
+                "No paid fallback was used.")
+    if any(marker in message for marker in ("oauth", "authentication", "unauthorized", "401")):
+        return (f"Claude subscription login was rejected; run `claude auth login` and retry. "
+                f"Keep the workspace. Provider details are retained in {stdout_path}; no API-key fallback was used.")
+    return f"Claude reported an unsuccessful call; provider details are retained in {stdout_path}."
+
+
 def save_claude_output(stdout_path: Path, output_path: Path, schema_path: Path | None = None) -> None:
     """Publish only successful, complete envelopes; keep raw metadata in the log."""
     try:
@@ -125,7 +146,7 @@ def save_claude_output(stdout_path: Path, output_path: Path, schema_path: Path |
         raise ValueError(f"Invalid Claude response; see {stdout_path}") from exc
     if (not isinstance(response, dict) or response.get("type") != "result"
             or response.get("subtype") != "success" or response.get("is_error") is not False):
-        raise ValueError(f"Claude did not complete successfully; see {stdout_path}")
+        raise ValueError(claude_failure_hint(stdout_path) or f"Claude did not complete successfully; see {stdout_path}")
     if response.get("permission_denials"):
         raise ValueError(
             f"Claude reported denied tool access; output was not accepted. See {stdout_path}. "

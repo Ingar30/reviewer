@@ -2,15 +2,51 @@
 
 ## Recommended default
 
-The normal command uses `gpt-6-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
+The normal command uses `gpt-6.1-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`.
 
 ```powershell
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf"
 ```
 
-[GPT-6 Sol supports the retained reasoning settings](https://developers.openai.com/api/docs/models/gpt-6-sol). Selected reviewers have been tested on three papers, followed by the limited full-pipeline comparison below; this does not establish general accuracy. No new API-key requirement is introduced; reviews still use authenticated Codex CLI.
+[GPT-6.1 Sol supports the retained reasoning settings](https://developers.openai.com/api/docs/models/gpt-6.1-sol). One complete long-paper run and targeted source checks support this practical default, not a general accuracy ranking. No new API-key requirement is introduced; reviews still use authenticated Codex CLI.
 
-Use an up-to-date Codex CLI and an account with access to the selected model. These GPT-6 tests used Codex CLI 0.156.1; an older 0.153 client rejected GPT-6 Sol in this environment. If a model is unavailable, update Codex and check account access rather than silently substituting another model.
+Use an up-to-date Codex CLI and an account with model access. The GPT-6.1 Sol run used CLI 0.159.0; 0.158.0 rejected its access probe here. If a model is unavailable, update Codex and check account access rather than silently substituting another model. To retain the previous default explicitly, use `--model gpt-6-sol`. Existing packaged workspaces retain their original runtime/defaults; use a new workspace for the new version.
+
+## GPT-6.1 Sol and optional Opus 5.5: bounded evidence
+
+As of 1 October 2026, both models produced complete reports on the same 71-page
+development paper on Windows. GPT-6.1 Sol used a frozen runtime with interrupted
+reviewers resumed; Opus 5.5 required quota-related continuations and an updated
+editor handoff. These were not matched uninterrupted runs of identical software.
+The [Claude Code backend](claude_code.md) remains experimental and opt-in.
+
+Source checks found useful corrections and limitations in both reports. Sol
+retained important qualifications but missed a conditional numerical-consistency
+concern; Opus added coverage but also propagated source-version errors and lost
+qualifications. A later three-role Sol check used common parsed/preflight inputs,
+not another full pipeline or an independent held-out sample. This is not evidence
+of error-free review, general superiority or guaranteed semantic completeness.
+
+| Successful stages only | Uncached input | Cached input | Output incl. reasoning | Cost estimate |
+| --- | ---: | ---: | ---: | --- |
+| GPT-6.1 Sol, 22 stages | 3,780,655 | 37,683,968 | 466,924 | 399.97 Standard credits; $16–18 API-equivalent tokens, excluding separately billed tools |
+| Opus 5.5 workflow, 22 stages | Different CLI cache accounting | Includes cache writes/reads | Includes helper model usage | $83.69 CLI API-equivalent, including recorded helper/search usage |
+
+Sol's four interrupted attempts add 44.72 Standard credits; Claude's other
+17 attempts add $38.07 API-equivalent. Do not erase failed-attempt usage or
+compare credits directly with dollars. These are estimates, **not subscription
+charges or weekly-quota percentages**. Fresh runs depend on caching, source/tool
+work, reasoning and retries; the historical runs below are not controlled savings
+comparisons against 6.1 Sol.
+
+[Codex Standard rates](https://learn.chatgpt.com/docs/pricing#token-rates), checked
+1 October: 50 / 2.5 / 250 credits per million uncached / cached / output tokens.
+[API rates](https://developers.openai.com/api/docs/pricing) are separate: $2 input,
+$0.10 cached, $2.50 cache writes and $10 output per million at Standard short-context
+rates. Retained Sol requests were below the 272K long-context threshold; missing
+cache-write counters account for the dollar range. Claude values come from its
+CLI cost metadata, not a billed API experiment. Included allowances cannot be
+reliably converted from these estimates; inspect each account's usage dashboard.
 
 ## Optional budget override: GPT-6 Luna
 
@@ -20,7 +56,7 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --
 
 GPT-6 Luna has [lower published Codex credit rates](https://learn.chatgpt.com/docs/pricing#token-rates) than Sol. Selected-reviewer tests and the full-pipeline comparison found useful but uneven coverage. It remains an explicit budget choice, not a replacement default or a promise of Sol-equivalent results.
 
-## Recorded full-pipeline comparison - 2026-09-23
+## Historical GPT-6 Sol/Luna full-pipeline comparison - 2026-09-23
 
 One 71-page paper (about 34,000 extracted words) was reviewed with both models in
 parallel on Windows x64/Python 3.12, using CLI 0.156.1 and a locally built wheel
@@ -47,9 +83,10 @@ accuracy score; the paper, reports and session logs remain private.
 
 Credits are **Standard-rate equivalents, not actual charges or measured subscription
 quota**. [Official rates](https://learn.chatgpt.com/docs/pricing#token-rates), checked
-2026-09-23, per million uncached/cached/output tokens: Sol 6 = 50/5/250;
-Luna 6 = 2.5/0.25/12.5; Sol 5.6 = 100/10/500. Fast mode would cost 2.5 times
-these GPT-6 equivalents; the sessions did not record an effective billing tier.
+2026-10-01, per million uncached/cached/output tokens: Sol 6 = 50/5/250;
+Luna 6 = 2.5/0.25/12.5; Sol 5.6 = 100/10/500. Current Fast mode uses 2 times
+the Standard purchased-credit rate, but 2.5 times included subscription usage
+where available; the sessions did not record an effective billing tier.
 Reasoning is included in output, not added again. Comparison/assessment work is excluded.
 
 Luna was about 18 times cheaper in this case, not equivalently thorough. The older
@@ -68,9 +105,11 @@ matter, so these scenarios are neither quotes nor cost caps.
   Luna required manual continuation after a timeout. Its original delayed audit
   was validated and retained, then only unstarted stages ran; no reviewer was repeated.
   This is not a clean uninterrupted or unattended-recovery pass, nor a speed benchmark.
-- Windows timeout cleanup can leave a Codex child running after the wrapper exits.
-  Keep the machine awake for long runs; do not start a replacement while its old
-  review process is still active. Process-tree cleanup remains an engineering follow-up.
+- That historical wrapper could leave a Codex child running after a Windows
+  timeout. The current wrapper terminates its owned process tree and offers
+  `--resume-incomplete` for new checkpointed runs. Keep the machine awake for long
+  runs; these changes do not retrospectively turn the historical trial into an
+  uninterrupted run or validate laptop-sleep recovery.
 - Report-body coverage needs stronger checking: a traceability ID alone does not
   prove that its finding survived editing. Human source checks remain necessary.
 - This adds one full-paper comparison per model, not live Linux/macOS validation
@@ -101,3 +140,9 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model MODEL_ID --re
 `EFFORT` may be `none`, `low`, `medium`, `high`, `xhigh`, or `max`. The `--model` flag applies to every model-backed stage. Preflight and applicability effort can be changed separately with `--preflight-reasoning-effort` and `--selector-reasoning-effort`.
 
 Overrides do not change the project default. The effective settings are recorded in `work/<paper_id>/run_manifest.json`; combinations not evaluated on representative papers should be treated as unbenchmarked.
+
+## Systematic comparisons
+
+Use the optional [benchmark exercise](model_benchmark.md) for fixed-input, repeated,
+label-blinded comparisons of explicit model profiles. It separates source-checked
+quality from usage and failures; previous case studies are not ground truth.

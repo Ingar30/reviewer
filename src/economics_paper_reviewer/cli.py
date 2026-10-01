@@ -208,5 +208,5 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[error] {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\nInterrupted. Workspace retained; see --resume-after-preflight or --refresh-editor.", file=sys.stderr)
+        print("\nInterrupted. Workspace retained; see --resume-incomplete, --resume-after-preflight or --refresh-editor.", file=sys.stderr)
         return 130

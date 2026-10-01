@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 from collections import Counter
 from pathlib import Path
@@ -459,8 +460,10 @@ def editor_brief_markdown(
     ]
     chunks.append("\n## Required Body Coverage Audit\n\n")
     chunks.append(
-        "Before finalizing, silently confirm that every row below is addressed substantively outside "
-        "the traceability map. One discussion may cover several genuinely related rows. Parser, routine "
+        "Before finalizing, silently confirm that every supported row below is addressed substantively outside "
+        "the traceability map. If source evidence refutes an allegation, explain the evidence-based disposition "
+        "in its traceability row instead of inventing an author correction. Uncertainty alone does not justify "
+        "dropping a material cannot-verify item. One discussion may cover several genuinely related rows. Parser, routine "
         "bibliography-maintenance, and copyediting findings are excluded here and may be covered only in "
         "their technical appendices.\n\n"
     )
@@ -546,6 +549,7 @@ def editor_input_document(
     review_json_by_name: dict[str, Any],
     selection_json: dict[str, Any] | None,
     compact_bundle: bool,
+    bundle_read_plan: str | None = None,
 ) -> str:
     bundle_text = json.dumps(
         bundle_json,
@@ -564,9 +568,11 @@ def editor_input_document(
             paper_id, bundle_json, reviewers, review_json_by_name, selection_json
         )
     )
-    chunks.append("\n\n# Normalized Editor Bundle\n\n```json\n")
-    chunks.append(bundle_text)
-    chunks.append("\n```\n")
+    chunks.append("\n\n# Normalized Editor Bundle\n\n")
+    if bundle_read_plan is None:
+        chunks.extend(["```json\n", bundle_text, "\n```\n"])
+    else:
+        chunks.append(bundle_read_plan)
     chunks.append("\n\n# Validated Reviewer Output Provenance\n\n")
     chunks.append(
         "The files below were identity-, schema-, semantic-, and provenance-validated before "
@@ -579,8 +585,45 @@ def editor_input_document(
     return "".join(chunks)
 
 
+def bundle_read_plan(bundle_path: Path, bundle_json: dict[str, Any], text: str) -> str:
+    """Index every line of the retained bundle, without another evidence copy.
+
+    The caller supplies the actual file contents: offsets must describe the file
+    the editor can read, not an independently serialized approximation of it.
+    """
+    if json.dumps(json.loads(text), sort_keys=True, ensure_ascii=False) != json.dumps(
+        bundle_json, sort_keys=True, ensure_ascii=False
+    ):
+        raise ValueError("The retained editor bundle differs from the validated bundle.")
+    rows = []
+    start, size = 1, 0
+    # Tool line offsets count LF/CRLF, not Unicode separators inside JSON strings.
+    lines = io.StringIO(text).readlines()
+    for number, line in enumerate(lines, start=1):
+        line_size = len(line.encode("utf-8"))
+        if size and (size + line_size > 48_000 or number - start >= 800):
+            rows.append([start, number - 1, size])
+            start, size = number, 0
+        size += line_size
+    if lines:
+        rows.append([start, len(lines), size])
+    return (
+        f"The complete lossless bundle is retained at `{bundle_path.as_posix()}`. "
+        "It exceeds the inline input budget; no evidence has been removed or summarized. "
+        "Before drafting, read ALL of this file using the consecutive ranges below "
+        "(1-based, inclusive lines). Use your file-read tool's offset/limit or range "
+        "parameters; use smaller ranges if the tool truncates a response. These are "
+        "parts of one JSON document, not standalone JSON objects. The brief and "
+        "provenance index are not substitutes for the complete bundle. Revisit the "
+        "relevant ranges when verifying claims and traceability. If any range cannot "
+        "be read completely, report the failure instead of claiming a complete review.\n\n"
+        + markdown_table(["First line", "Last line", "UTF-8 bytes"], rows)
+    )
+
+
 def bounded_editor_input(
-    document_args: dict[str, Any], max_bytes: int = MAX_EDITOR_INPUT_BYTES
+    document_args: dict[str, Any], max_bytes: int = MAX_EDITOR_INPUT_BYTES,
+    *, bundle_file_text: str | None = None,
 ) -> tuple[str, str, int]:
     editor_input = editor_input_document(**document_args, compact_bundle=False)
     serialization = "pretty"
@@ -590,8 +633,18 @@ def bounded_editor_input(
         serialization = "minified"
         byte_count = len(editor_input.encode("utf-8"))
     if byte_count > max_bytes:
+        if bundle_file_text is not None:
+            plan = bundle_read_plan(
+                document_args["bundle_path"], document_args["bundle_json"], bundle_file_text
+            )
+            editor_input = editor_input_document(
+                **document_args, compact_bundle=True, bundle_read_plan=plan
+            )
+            serialization = "file-backed"
+            byte_count = len(editor_input.encode("utf-8"))
+    if byte_count > max_bytes:
         raise ValueError(
-            f"Editor input is {byte_count:,} UTF-8 bytes after lossless minification, "
+            f"Editor input is {byte_count:,} UTF-8 bytes after lossless size reduction, "
             f"exceeding the {max_bytes:,}-byte safety budget. "
             "The builder will not truncate evidence."
         )
@@ -647,7 +700,9 @@ def main() -> int:
         "review_json_by_name": review_json_by_name,
         "selection_json": selection_json,
     }
-    editor_input, serialization, byte_count = bounded_editor_input(document_args)
+    editor_input, serialization, byte_count = bounded_editor_input(
+        document_args, bundle_file_text=read(bundle)
+    )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(editor_input, encoding="utf-8")

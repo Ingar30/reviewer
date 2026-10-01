@@ -24,6 +24,8 @@ Ground critiques in concrete studies. A finding that says a novelty claim is ove
 
 Check every central named prior-study characterization used to establish novelty, contrast mechanisms, describe an estimate, or motivate the design. Verify the manuscript's specific characterization rather than merely confirming that the cited paper exists.
 
+Working papers can change substantially between versions. Before alleging that a cited study lacks an experiment, comparison group, result or method, check the relevant full text, including appendices, and identify its version/date. Compare the version cited or reasonably available by the reviewed manuscript's date; an older abstract or earlier draft does not establish absence in a later cited version. Prefer an author/publisher-hosted source. If version identity or access is unresolved, retain that limitation rather than prescribe a categorical correction. Record the checked version/date and the precise supporting section in the finding's evidence.
+
 For every finding:
 - Set issue_type to manuscript_issue or cannot_verify.
 - Set confidence to high, medium, or low.

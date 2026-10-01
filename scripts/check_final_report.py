@@ -135,8 +135,26 @@ def traceability_failures(text: str, bundle: dict) -> list[str]:
     return failures
 
 
-def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = MIN_REPORT_CHARS) -> list[str]:
+def successful_empty_bundle(bundle: dict | None) -> bool:
+    """Only waive report padding for a validated, successful no-findings run."""
+    if not bundle or bundle.get("canonical_findings") != []:
+        return False
+    sources = bundle.get("source_reviewer_outputs")
+    return isinstance(sources, list) and bool(sources) and all(
+        isinstance(source, dict) and source.get("run_status") == "ok"
+        and source.get("finding_count") == 0 for source in sources
+    )
+
+
+def report_min_chars(bundle: dict | None = None, override: int | None = None) -> int:
+    if override is not None:
+        return override
+    return 0 if successful_empty_bundle(bundle) else MIN_REPORT_CHARS
+
+
+def report_failures(text: str, *, bundle: dict | None = None, min_chars: int | None = None) -> list[str]:
     failures = []
+    min_chars = report_min_chars(bundle, min_chars)
     if len(text.strip()) < min_chars:
         failures.append(f"report is too short: {len(text.strip())} chars < {min_chars}")
     if META_NOTE_RE.search(text):
@@ -149,6 +167,19 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int = M
             "missing review-scope heading: expected Appendix: Review Scope and Limitations "
             "or legacy Review Configuration"
         )
+    if successful_empty_bundle(bundle):
+        if not text.lstrip().startswith("# Multi-Agent Paper Review Report"):
+            failures.append("missing report title")
+        # An empty finding roster justifies brevity, not a headings-only stub.
+        content_headings = [*DEFAULT_REQUIRED_HEADINGS, TRACEABILITY_APPENDIX_HEADING,
+                            *(heading for heading in REVIEW_SCOPE_HEADINGS if heading in text)]
+        for heading in content_headings:
+            section = heading_section_text(text, heading)
+            if section and not any(
+                line.strip() and not re.match(r"^\s*#{1,6}(?:\s|$)", line)
+                for line in section[len(heading):].splitlines()
+            ):
+                failures.append(f"empty report section: {heading}")
     # A genuinely empty validated bundle has no identifiers to cite. Do not force
     # an editor to invent a finding merely to satisfy the smoke check.
     expects_identifiers = bundle is None or bundle.get("canonical_findings") != []
@@ -178,7 +209,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check that an editor output is a real report.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--bundle", default=None, help="Optional normalized bundle for traceability coverage checks.")
-    parser.add_argument("--min-chars", type=int, default=MIN_REPORT_CHARS)
+    parser.add_argument("--min-chars", type=int, default=None,
+                        help="Override length floor; default 2000 except successful no-findings bundles.")
     args = parser.parse_args()
 
     path = Path(args.input)

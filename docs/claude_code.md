@@ -1,9 +1,12 @@
 # Optional Claude Code backend (experimental)
 
-This experimental option adds `--backend claude`; Codex/GPT-6 Sol remains the default.
+This experimental option adds `--backend claude`; Codex remains the default.
 It uses Claude Code's subscription-authenticated CLI, not an API SDK or a second
 review pipeline. Prompts, schemas, preprocessing, reviewer selection, validators,
-normalization and report checks are unchanged. It has **not completed a full live Claude pipeline**; the limited live checks below are not a quality benchmark.
+normalization and report checks are unchanged. A **complete tiny-paper pipeline
+passed live Windows testing**, and a 71-page paper reached a complete report after
+quota-related recovery. These establish bounded workflow evidence, not reliable
+review quality or completion within one subscription session.
 
 ## Prerequisites and first test
 
@@ -55,6 +58,8 @@ in `./reviewer-workspace/`, outside installation/cache directories. Optionally u
 `--workspace DIR` to choose another folder; its name does not select a backend.
 Use a separate workspace for Codex/Claude comparisons. Existing workspaces remain
 tied to their original runtime and are not silently upgraded.
+Keep Windows workspace paths reasonably short: a deeply nested trial failed
+during PDF copying, while a shorter path containing spaces passed.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
 
@@ -107,13 +112,33 @@ editor command with `--refresh-editor --backend claude --paper-id ID --run-edito
 Claude's own session resume is not used; recovery follows the pipeline artifacts.
 
 **Quota interruption:** keep the workspace and wait for the reset shown by Claude.
-There is currently no public skip-completed-reviewers resume option. Retrying with
-`--resume-after-preflight` spends allowance again on substantive reviewers and can
-overwrite their earlier outputs/logs; copy the workspace first if retaining that
-attempt matters. Use editor-only refresh only when all selected reviews are present.
+Quota/authentication errors identify the retained stdout log containing provider
+details; a saved login check does not establish available quota. If preflight
+itself failed, rerun the original command after resolving the limit/login.
+For runs started with this version, repeat the original command with
+`--resume-incomplete`. After preflight and routing have completed, it reuses
+validated successful reviewers and retries only unfinished reviewers and the
+editor. It requires the same PDF, backend, model, effort settings, configuration,
+parsed artifacts and runtime. Changed accepted reviews are refused, and new
+attempt logs are retained separately. A completed checkpoint makes no model call.
+
+```powershell
+python scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-incomplete
+```
+
+With uv, append that flag to the original pinned launcher command and keep the
+same workspace. Do not upgrade an interrupted workspace in place. Older runs
+without a selective-resume checkpoint retain the existing recovery methods:
+`--resume-after-preflight` reruns routing and **all substantive reviewers**;
+`--refresh-editor` needs all selected reviews and reruns only assembly/editor.
+Do not combine the two resume flags. Selective resume is not Claude session resume.
+
 A failed run can leave the manifest marked `running`; this is not proof that a
 process is still active or that a complete report exists. The wrapper does not
-change your billing settings or automatically switch to an API key.
+change billing settings, poll for quota resets, retry automatically or switch to
+an API key. Keep the computer awake during live calls. The wrapper now holds a
+per-paper run lock and terminates its owned process tree on timeout/interruption;
+power loss and laptop sleep can still leave the latest stage incomplete.
 
 ## Validation status
 
@@ -121,7 +146,7 @@ Offline tests use synthetic PDFs and fake Claude/Codex processes; they are not
 end-to-end model or quality validation:
 
 ```powershell
-python -m unittest tests.test_claude_backend tests.test_uv_launcher
+python -m unittest tests.test_claude_backend tests.test_uv_launcher tests.test_resume_incomplete
 ```
 
 They exercise schema transport, failure/permission handling, prerequisites,
@@ -132,31 +157,34 @@ permissions, long-paper quality and actual usage remain live-test gates. The lim
 live checks below do not establish compatibility on other platforms;
 macOS/Linux/WSL have not had live-Claude validation here.
 
-Local Windows validation (2026-09-24): 148 targeted offline tests passed. A newly
-built wheel installed into a clean environment passed both backends' mocked
-resume/editor-refresh acceptance, plus a fresh complete Claude pipeline. All 45
-bundled runtime resources matched canonical sources. A deeply nested Windows
-workspace initially failed during PDF copying; the shorter path with spaces passed,
-so keep trial workspace paths short. Builds were staged outside Dropbox to avoid
-file locks. These offline results alone do not establish live Claude compatibility or quality.
+### Live evidence and remaining limits
 
-Live Windows checks (2026-09-24, Claude Code 2.1.281): after refreshing an expired
-subscription login, Opus 5.5 passed a tiny text/image/structured-output test and
-one canonical numerical reviewer on an existing 71-page paper. The latter reused
-validated historical parsed artifacts/preflight, completed in 383 seconds, and
-passed the canonical schema/provenance checks without changing evidence. Combined
-reported API-equivalent usage was about $2.00, not measured billing. Local-wheel
-`uvx --check` also passed with real subscription login. Preliminary source checks
-found both useful findings and overstatements/omissions; no accuracy or full-report
-completeness claim follows. A subsequent fresh local-wheel run passed preprocessing,
-Claude preflight/routing, and two substantive reviewers with schema/provenance
-validation, then stopped at the subscription session limit. Completed artifacts
-persisted; no paid fallback or automatic retry was used. This trial did not fit a
-complete xhigh pipeline into one session window (earlier tests also consumed usage).
-Partial source checks against saved Sol results showed complementary catches and
-some overstatements, not an overall winner. Live web roles, editor, continuation
-and the complete end-to-end pipeline remain unvalidated. Keep Usage credits OFF
-for subscription-only testing and retain the workspace when a limit is reached.
+Windows / Claude Code 2.1.281 / Opus 5.5:
+
+| Check | Result |
+| --- | --- |
+| Subscription login, text/image reads and structured reviewer output | Passed after refreshing an expired login |
+| One-line synthetic PDF | All 22 live stages completed; zero findings and the final report validated. This tests workflow, not substantive review quality |
+| 71-page qualitative-interviews paper | All 20 audits, including preflight, and the final editor completed across session-limit continuations; final structural checks passed on 30 September 2026. This was mixed-runtime recovery, not a clean single-version run |
+| Additional single-version local-wheel trial, 1 October | Preflight, routing and three substantive reviewers completed before a subscription limit. Outputs/checkpoint were retained; the extra run was stopped, not counted as another complete pipeline |
+| Source-grounded quality | The completed report contains useful corrections but also source-version errors and lost qualifications. Structural success does not establish semantic completeness, accuracy or cross-model equivalence |
+| Clean local-wheel installation, spaces/non-Git paths and persistence | Mocked acceptance passed; these checks do not consume model usage or establish model quality |
+
+The **30 September** long-paper continuation reused hash-checked accepted audits through a private
+validation helper. This is **not** the public resume command and does not establish
+unattended interruption recovery. Accepted workspaces keep their original runtime;
+the large-editor continuation explicitly uses a newer builder/prompt. It is a
+recovery validation, not a clean single-version full run or matched model benchmark.
+
+The completed web-enabled audits used both Opus and a reported Haiku helper in
+Claude Code's usage metadata. Comparisons therefore measure the CLI workflow,
+not an isolated base model. The large editor handoff has completed once. The new
+public selective resume passes mocked clean-wheel tests, including successful
+sibling retention and changed-input rejection; full live selective continuation
+has not been validated. Reliable report-body fidelity and a fresh single-version
+completed long run remain limitations of this experimental release, not claims
+established by the completed reports. macOS/Linux/WSL remain untested here. Keep Usage
+credits OFF and retain outputs if a session limit is hit.
 
 ## Feedback from experimental testers
 

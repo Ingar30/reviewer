@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "case": "paper-a",
+      "issue_key": "a-001",
+      "roles": ["numerical_auditor", "claim_evidence_auditor"],
+      "weight": 3,
+      "status": "provisional",
+      "statement": "Replace with a source-checked material issue, not a previous model's assertion.",
+      "source": "Replace with physical PDF page, table/figure and exact supporting evidence."
+    }
+  ]
+}

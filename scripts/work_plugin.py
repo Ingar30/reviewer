@@ -515,7 +515,9 @@ class ReviewRun:
             "review_json_by_name": review_data,
             "selection_json": read_json(self.paths.selection_dir / "reviewer_selection.json")}
         try:
-            document, _, _ = bounded_editor_input(document_args)
+            document, _, _ = bounded_editor_input(
+                document_args, bundle_file_text=self.paths.bundle_path.read_text(encoding="utf-8")
+            )
         except ValueError as exc:
             self.state["paused"] = {"code": "editor_input_too_large",
                                     "message": "The full editor evidence exceeds the lossless input limit. "

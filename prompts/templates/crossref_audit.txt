@@ -22,6 +22,7 @@ Classification rule:
 - Set issue_type = "parser_artifact" for extraction/caption/OCR/false-positive issues.
 - Set issue_type = "manuscript_issue" and category = "manuscript_crossref_issue" only for genuine broken or inconsistent paper references.
 - Prioritize genuine manuscript_crossref_issue findings over parser_artifact findings.
+- A missing entry in a section/table/figure inventory is not proof that the manuscript target is absent. Before reporting a missing target, search the full text and inspect the relevant retained page text or image; headings split across lines or captured inside images may be missing from the inventory. If the target exists in the source but not the inventory, classify the discrepancy as a parser artifact. If source coverage is insufficient, use cannot_verify rather than assert absence.
 
 For every finding:
 - Set confidence to high, medium, or low.

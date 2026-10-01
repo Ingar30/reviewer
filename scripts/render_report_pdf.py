@@ -16,11 +16,12 @@ import json
 from pathlib import Path
 import re
 import unicodedata
+import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit
 
 import fitz
 
-RENDERER_VERSION = 1
+RENDERER_VERSION = 2
 MAX_REPORT_BYTES = 5_000_000
 MAX_PAGES = 250
 PAGE = fitz.Rect(0, 0, 595, 842)
@@ -199,6 +200,69 @@ def normalized(text: str) -> str:
     return "".join(c for c in text if not c.isspace() and c not in "\u200b\u00ad")
 
 
+def layout_document(document_html: str) -> fitz.Document:
+    """Lay out bounded blocks; continuous Story pagination can omit table rows.
+
+    Keep a short table record together, with no scaling. Oversized records split
+    into their labelled cells; a single long paragraph uses its own paginated
+    Story. The caller still requires complete visible-text equality.
+    """
+    css = CSS + "\nbody,p,h1,h2,h3,h4,h5,h6,.cell,.row-start { margin: 0; padding: 0; }"
+    body = ET.fromstring(document_html.replace("<hr>", "<hr />")).find("body")
+    groups = []
+    for element in body:
+        cls = element.attrib.get("class", "")
+        if "cell" in cls and "row-start" not in cls and groups and groups[-1][0] == "table-row":
+            groups[-1][1].append(element)
+        else:
+            groups.append(("table-row" if "row-start" in cls else element.tag, [element]))
+
+    def measured(kind, elements):
+        fragment = "<html><body>" + "".join(ET.tostring(e, encoding="unicode") for e in elements) + "</body></html>"
+        story = fitz.Story(html=fragment, user_css=css, em=10)
+        more, filled = story.place(fitz.Rect(0, 0, BODY.width, BODY.height + 10))
+        height = max(5, float(filled[3]) + 3)
+        if (more or height > BODY.height) and len(elements) > 1:
+            return [block for element in elements for block in measured(element.tag, [element])]
+        return [(kind, fragment, height, bool(more or height > BODY.height))]
+
+    blocks = [block for kind, elements in groups for block in measured(kind, elements)]
+    document = fitz.open()
+    try:
+        page, y = None, BODY.y0
+        for index, (kind, fragment, height, long) in enumerate(blocks):
+            if long:
+                story = fitz.Story(html=fragment, user_css=css, em=10)
+
+                def rectangle(number, filled):
+                    if len(document) + number >= MAX_PAGES:
+                        raise PDFExportError("PDF layout exceeded its page limit; no truncated PDF was saved.")
+                    return PAGE, BODY, None
+
+                with story.write_with_links(rectangle) as part:
+                    document.insert_pdf(part)
+                page, y = None, BODY.y0
+                continue
+            gap = 12 if kind.startswith("h") else 8 if kind == "table-row" else 6
+            following = blocks[index + 1] if index + 1 < len(blocks) else None
+            needed = height + (following[2] + 6 if kind.startswith("h") and following and not following[3] else 0)
+            if page is None or y + gap + needed > BODY.y1:
+                if len(document) >= MAX_PAGES:
+                    raise PDFExportError("PDF layout exceeded its page limit; no truncated PDF was saved.")
+                page = document.new_page(width=PAGE.width, height=PAGE.height)
+                y = BODY.y0
+            else:
+                y += gap
+            spare, scale = page.insert_htmlbox(fitz.Rect(BODY.x0, y, BODY.x1, y + height), fragment, css=css, scale_low=1)
+            if spare < 0 or scale != 1:
+                raise PDFExportError("PDF block did not fit without scaling; no truncated PDF was saved.")
+            y += height
+        return document
+    except BaseException:
+        document.close()
+        raise
+
+
 def render_report_pdf(markdown_path: Path, output_path: Path) -> dict:
     markdown_path, output_path = Path(markdown_path), Path(output_path)
     if output_path.exists() or output_path.is_symlink():
@@ -214,15 +278,8 @@ def render_report_pdf(markdown_path: Path, output_path: Path) -> dict:
     document_html = report_html(text)
     expected = VisibleText()
     expected.feed(document_html)
-    story = fitz.Story(html=document_html, user_css=CSS, em=10)
-
-    def rectangle(number, filled):
-        if number >= MAX_PAGES:
-            raise PDFExportError("PDF layout exceeded its page limit; no truncated PDF was saved.")
-        return PAGE, BODY, None
-
-    with story.write_with_links(rectangle) as document:
-        actual = "".join(page.get_text(clip=BODY) for page in document)
+    with layout_document(document_html) as document:
+        actual = "".join(page.get_text(clip=BODY + (-2, -2, 2, 2)) for page in document)
         if normalized("".join(expected.parts)) != normalized(actual):
             raise PDFExportError("PDF text verification failed; deliver the unchanged Markdown and retry only export.")
         for page in document:
@@ -245,6 +302,8 @@ def render_report_pdf(markdown_path: Path, output_path: Path) -> dict:
     with fitz.open(stream=result, filetype="pdf") as check:
         if check.page_count != pages or check.embfile_get("report.md") != source:
             raise PDFExportError("The generated PDF could not be verified; the Markdown is unchanged.")
+        if normalized("".join(page.get_text(clip=BODY + (-2, -2, 2, 2)) for page in check)) != normalized("".join(expected.parts)):
+            raise PDFExportError("Saved PDF text verification failed; the Markdown is unchanged.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("xb") as stream:
         stream.write(result)

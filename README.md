@@ -132,7 +132,8 @@ at `outputs/<paper_id>/report.md` inside that workspace. Back it up; use distinc
 paper IDs or workspaces for papers with the same filename stem.
 
 Existing review flags still work. Resume with the same workspace, paper ID and
-runtime: `--resume-after-preflight` reuses preflight but reruns substantive reviews;
+runtime: new runs support `--resume-incomplete` to reuse validated completed
+reviewers after preflight/routing; `--resume-after-preflight` reuses preflight but reruns substantive reviews;
 `--refresh-editor --paper-id paper --run-editor` reuses completed reviewer outputs.
 Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recovery.
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
@@ -162,16 +163,18 @@ uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer 
 
 Results persist in `./reviewer-workspace/`; `--workspace DIR` is optional. Use a
 separate workspace for backend comparisons and repeat the backend flag on resume.
-**Experimental: partial live Windows testing only; a complete live Claude pipeline
-is not yet validated.**
+**Experimental: live Windows evidence includes a complete tiny-paper pipeline
+and a long report completed through quota recovery—not guaranteed review accuracy
+or completion in one subscription session.**
 Claude receives manuscript content and consumes your subscription allowance; a long
 review can exhaust a session. Leave Usage credits / Extra usage OFF to avoid paid
-overage. Ordinary resume reruns substantive reviewers, not just unfinished ones.
+overage. New runs support `--resume-incomplete` to retain validated completed
+reviewers; keep the original package revision and workspace when resuming.
 See [setup, recovery limitations and tester feedback](docs/claude_code.md).
 
 ## Quality Defaults
 
-The default is **GPT-6 Sol** (`gpt-6-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6-sol). After selected-reviewer tests on three papers, both GPT-6 models completed a full-pipeline comparison on one 71-page paper. Sol retained more consequential corrections; this is limited evidence, not a general accuracy benchmark.
+The default is **GPT-6.1 Sol** (`gpt-6.1-sol`), with `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. [GPT-6.1 Sol supports these reasoning settings](https://developers.openai.com/api/docs/models/gpt-6.1-sol). A complete 71-page review and targeted source checks support this practical default; they do not establish general accuracy or superiority on every paper. The live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
 
 For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
@@ -179,7 +182,7 @@ For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
-Luna was substantially cheaper in the recorded comparison but missed material corrections; do not assume Sol-equivalent coverage. It required manual continuation after a sleep-related timeout, and both reports needed human judgment. See [Model Overrides](docs/model_profiles.md) for measured tokens, estimated credits, and validation limits. Actual quota consumption was not measured. Both options use the same workflow and authenticated Codex CLI.
+Luna was substantially cheaper in the earlier **GPT-6 Sol/Luna** comparison but missed material corrections; do not assume GPT-6.1 Sol-equivalent coverage. It required manual continuation after a sleep-related timeout, and both reports needed human judgment. See [Model Overrides](docs/model_profiles.md) for measured tokens, estimated costs, and validation limits. Both options use the same workflow and authenticated Codex CLI.
 
 To deliberately use another combination:
 
@@ -192,6 +195,18 @@ Supported effort values are `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
 The wrapper runs up to four reviewer agents concurrently and records the PDF hash, effective model, reasoning settings, active roster, Git state, and elapsed time in `work/<paper_id>/run_manifest.json`.
 
 ## Resume a Run
+
+For a run started with this version that completed preflight and routing, reuse
+validated completed reviewers and retry only unfinished stages:
+
+```powershell
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper" --resume-incomplete
+```
+
+Keep the original runtime, PDF, model, effort settings and workspace. Changed
+inputs or accepted outputs are refused; this does not upgrade older checkpoints.
+Repeat `--backend claude` for Claude runs. There is no automatic quota retry or
+paid fallback. If preflight itself did not finish, repeat the original command.
 
 If a run stops after a valid parser-quality preflight, resume without rerunning that stage:
 
@@ -265,6 +280,8 @@ git diff --check
 ```
 
 See `CONTRIBUTING.md` and `docs/extension_guide.md`.
+
+For optional, source-adjudicated model comparisons, see the [benchmark exercise](docs/model_benchmark.md). Preparation and scoring are offline; model runs require explicit opt-in.
 
 ## License
 

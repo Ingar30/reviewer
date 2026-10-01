@@ -36,6 +36,9 @@ def main():
         }
     elif output.suffix == ".json":
         reviewer = next(r for r in config if r["output"] == output.name)
+        if os.environ.get("REVIEWER_TEST_STOP") == reviewer["name"]:
+            print("MOCK quota stop", file=sys.stderr)
+            return 75
         payload = {"reviewer": reviewer["name"], "paper_id": paper_id, "run_status": "ok",
                    "summary": "MOCK audit for launch testing only.", "findings": [], "notes": []}
     else:

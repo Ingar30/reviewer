@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
+from backend_settings import read_run_manifest, remember_backend, resolve_backend, slugify
 from resume_review import ReviewCheckpoint, run_lease
 from claude_backend import (
     DEFAULT_MODEL as CLAUDE_DEFAULT_MODEL, EFFORTS as CLAUDE_EFFORTS,
@@ -49,13 +50,6 @@ class RunResult:
     returncode: int
     stdout_path: Path
     stderr_path: Path
-
-
-def slugify(value: str) -> str:
-    value = value.strip().lower()
-    value = re.sub(r"[^a-z0-9]+", "-", value)
-    value = re.sub(r"-+", "-", value).strip("-")
-    return value or "paper"
 
 
 def repo_root() -> Path:
@@ -578,8 +572,8 @@ def main() -> int:
         if callable(reconfigure):
             reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description="Run the full paper-review pipeline for one PDF.")
-    parser.add_argument("--backend", choices=("codex", "claude"), default="codex",
-                        help="Execution CLI. Default: codex; claude is an experimental opt-in.")
+    parser.add_argument("--backend", choices=("codex", "claude"), default=None,
+                        help="Execution CLI; remembers explicit choices for new reviews. Otherwise uses the saved run/workspace, then codex.")
     parser.add_argument("--pdf", required=True, help="Path to source PDF, usually under inputs/")
     parser.add_argument("--paper-id", default=None, help="Optional paper id; defaults to the PDF filename stem")
     parser.add_argument(
@@ -691,6 +685,12 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
     standard_reviewers = [reviewer for reviewer in reviewers if reviewer.stage == "review"]
     selected_reviewers_config_path = paths.selected_reviewers_config_path
 
+    prior_manifest = read_run_manifest(paths.run_manifest_path)
+    explicit_backend = args.backend
+    args.backend, backend_source = resolve_backend(repo, explicit_backend, prior_manifest)
+    preserve_preference = os.environ.get("ECONOMICS_REVIEWER_PRESERVE_BACKEND_PREFERENCE") == "1"
+    if preserve_preference:
+        backend_source = "launcher selection"
     project_defaults = codex_project_defaults(repo)
     if args.backend == "claude":
         args.model = args.model or CLAUDE_DEFAULT_MODEL
@@ -701,13 +701,9 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
     effective_model = args.model or project_defaults.get("model")
     effective_reasoning = args.reasoning_effort or project_defaults.get("model_reasoning_effort")
     source_pdf_sha256 = file_sha256(pdf_path)
-    prior_manifest = None
-    if paths.run_manifest_path.exists():
-        try:
-            prior_manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            prior_manifest = None
     require_same_backend(args.backend, prior_manifest)
+    print(f"[backend] {args.backend} ({backend_source})")
+    print(f"[model] {effective_model or 'Codex default'}")
     checkpoint_settings = {
         "paper_id": paper_id, "source_pdf_sha256": source_pdf_sha256,
         "backend": args.backend, "model": effective_model,
@@ -743,6 +739,8 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
                 "Cannot resume: parsed artifacts do not record the current source PDF hash"
             )
     claude_version = check_claude(repo) if args.backend == "claude" else None
+    if explicit_backend is not None and not args.resume_after_preflight and not preserve_preference:
+        remember_backend(repo, args.backend)
     run_started = time.time()
     run_manifest: dict[str, object] = {
         "paper_id": paper_id,
@@ -752,6 +750,7 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         "source_pdf_sha256": source_pdf_sha256,
         "model": effective_model,
         "backend": args.backend,
+        "backend_source": backend_source,
         "reviewer_editor_reasoning_effort": effective_reasoning,
         "preflight_reasoning_effort": args.preflight_reasoning_effort,
         "selector_reasoning_effort": args.selector_reasoning_effort,
@@ -779,9 +778,6 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
 
     print(f"[paper] {paper_id}")
     print(f"[pdf] {pdf_path}")
-    print(f"[model] {effective_model or 'Codex default'}")
-    if args.backend != "codex":
-        print(f"[backend] {args.backend} (experimental)")
     print(f"[reasoning] preflight={args.preflight_reasoning_effort}, selector={args.selector_reasoning_effort}, reviewers/editor={effective_reasoning or 'Codex default'}")
 
     if not args.resume_after_preflight:

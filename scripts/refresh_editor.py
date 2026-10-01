@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline_paths import paper_run_paths
+from backend_settings import read_run_manifest, resolve_backend
 from review_paper import enforce_preflight_gate, agent_exec_command, run_required, codex_project_defaults
 from claude_backend import DEFAULT_MODEL, EFFORTS, check_claude, require_same_backend, save_claude_output
 from reviewer_config import load_reviewers_config
@@ -75,8 +76,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate existing reviews, rebuild the normalized bundle, and refresh editor output."
     )
-    parser.add_argument("--backend", choices=("codex", "claude"), default="codex",
-                        help="Execution CLI; repeat the original backend when refreshing a run.")
+    parser.add_argument("--backend", choices=("codex", "claude"), default=None,
+                        help="Execution CLI; defaults to the saved run/workspace, then codex.")
     parser.add_argument("--paper-id", required=True)
     parser.add_argument(
         "--run-editor",
@@ -104,10 +105,10 @@ def main() -> int:
 
     repo = repo_root()
     paths = paper_run_paths(repo, args.paper_id)
-    prior_manifest = None
-    if paths.run_manifest_path.exists():
-        prior_manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
+    prior_manifest = read_run_manifest(paths.run_manifest_path)
+    args.backend, backend_source = resolve_backend(repo, args.backend, prior_manifest)
     require_same_backend(args.backend, prior_manifest)
+    print(f"[backend] {args.backend} ({backend_source})")
     if args.backend == "claude":
         prior = prior_manifest or {}
         args.model = args.model or prior.get("model") or DEFAULT_MODEL
@@ -116,6 +117,7 @@ def main() -> int:
             raise ValueError("Claude does not support reasoning effort none; choose low through max.")
         if args.run_editor:
             check_claude(repo)
+    print(f"[model] {args.model or codex_project_defaults(repo).get('model') or 'Codex default'}")
     parsed_dir = paths.parsed_dir
     reviews_dir = paths.reviews_dir
     prompts_dir = paths.prompts_dir

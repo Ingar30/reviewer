@@ -11,6 +11,7 @@ from tests.test_uv_launcher import REPO, cli, cli_payload, fake_codex_environmen
 from tests.test_claude_backend import fake_claude_environment
 from resume_review import run_lease
 from review_paper import run_command
+from backend_settings import SETTINGS_FILE, remember_backend
 
 
 def exercise_selective_resume(folder, backend, command=None, runtime=None):
@@ -45,6 +46,13 @@ def exercise_selective_resume(folder, backend, command=None, runtime=None):
     config = json.loads((REPO / "config/reviewers.json").read_text())["reviewers"]
     first = next(r["name"] for r in config if r.get("stage", "review") == "review" and r.get("enabled", True))
     run(stop=first, success=False)
+    assert json.loads((workspace / SETTINGS_FILE).read_text())["backend"] == backend
+    # Remember the initial explicit choice, then recover without a backend flag.
+    # Even if another paper changed the workspace preference, this run stays put.
+    index = args.index("--backend")
+    del args[index:index + 2]
+    other_backend = "codex" if backend == "claude" else "claude"
+    remember_backend(workspace, other_backend)
     work = workspace / "work/paper-with-spaces"
     checkpoint = work / "resume_checkpoint.json"
     data = json.loads(checkpoint.read_text())
@@ -76,6 +84,7 @@ def exercise_selective_resume(folder, backend, command=None, runtime=None):
     run(["--resume-incomplete"])
     assert len(executions()) == before  # A completed checkpoint costs no call.
     assert all(p.read_bytes() == content for p, content in saved.items())
+    assert json.loads((workspace / SETTINGS_FILE).read_text())["backend"] == other_backend
     return {"backend": backend, "model_calls": before, "retained_siblings": 3,
             "workspace": str(workspace), "validation": "mocked only"}
 

@@ -1,8 +1,8 @@
 # Optional Claude Code backend (experimental)
 
 Use your Claude subscription to run the reviewer by adding `--backend claude`.
-It follows the same review pipeline as Codex, with no API key required. Codex
-remains the default; Claude support is experimental. Start with Opus 5.5, or
+It follows the same review pipeline as Codex, with no API key required. Your first
+review remembers the backend for this workspace. Start with Opus 5.5, or
 choose Sonnet for a lower-cost option.
 
 ## Prerequisites and first test
@@ -112,18 +112,19 @@ resuming; use a new paper ID or workspace to compare models.
 
 ## Resume and editor refresh
 
-Repeat `--backend claude` with the same paper ID, PDF and runtime:
+Keep the same paper ID, PDF and runtime. The saved run supplies the backend, so
+you do not need to repeat `--backend claude`:
 
 ```powershell
-python scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-after-preflight
-python scripts/refresh_editor.py --backend claude --paper-id "my-paper-claude" --run-editor
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-after-preflight
+python scripts/refresh_editor.py --paper-id "my-paper-claude" --run-editor
 ```
 
 Resume reuses parsed artifacts and validated preflight, then reruns routing and
 substantive reviewers. Editor refresh reuses completed reviewer outputs. Both may
 consume usage. A saved backend mismatch is rejected: use separate IDs/workspaces
 for Codex/Claude comparisons. With uv, use the same workspace and replace the
-editor command with `--refresh-editor --backend claude --paper-id ID --run-editor`.
+editor command with `--refresh-editor --paper-id ID --run-editor`.
 Claude's own session resume is not used; recovery follows the pipeline artifacts.
 
 **Quota interruption:** keep the workspace and wait for the reset shown by Claude.
@@ -138,7 +139,7 @@ parsed artifacts and runtime. Changed accepted reviews are refused, and new
 attempt logs are retained separately. A completed checkpoint makes no model call.
 
 ```powershell
-python scripts/review_paper.py --backend claude --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-incomplete
+python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper-claude" --resume-incomplete
 ```
 
 With uv, append that flag to the original pinned launcher command and keep the
@@ -147,6 +148,11 @@ without a selective-resume checkpoint retain the existing recovery methods:
 `--resume-after-preflight` reruns routing and **all substantive reviewers**;
 `--refresh-editor` needs all selected reviews and reruns only assembly/editor.
 Do not combine the two resume flags. Selective resume is not Claude session resume.
+
+Backend preferences apply to new papers, not to an existing paper's provenance.
+Changing the workspace preference cannot switch a saved Claude run to Codex.
+Older frozen runtimes keep their original behavior; repeat `--backend claude`
+when using a version from before remembered backend choices were added.
 
 A failed run can leave the manifest marked `running`; this is not proof that a
 process is still active or that a complete report exists. The wrapper does not

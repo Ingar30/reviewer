@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO / "src"))
 from build_cli_package import cli_payload
 from economics_paper_reviewer import cli
 from review_paper import codex_exec_command, codex_project_defaults
+from backend_settings import SETTINGS_FILE, remember_backend
 
 
 def fake_codex_environment(folder: Path, python: str = sys.executable) -> dict[str, str]:
@@ -32,11 +33,19 @@ def fake_codex_environment(folder: Path, python: str = sys.executable) -> dict[s
         command = bin_dir / "codex"
         command.write_text(f"#!/bin/sh\nexec {shlex.quote(python)} {shlex.quote(str(script))} \"$@\"\n")
         command.chmod(0o755)
+    # A backend-selection regression must never reach an installed real Claude.
+    # On Windows an invalid native-executable stub fails before authentication;
+    # on POSIX the stub exits immediately. Neither can make a model request.
+    blocked_claude = bin_dir / ("claude.exe" if os.name == "nt" else "claude")
+    blocked_claude.write_text("Real Claude forbidden in offline test\n" if os.name == "nt"
+                              else "#!/bin/sh\nexit 99\n")
+    blocked_claude.chmod(0o755)
     env = os.environ.copy()
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     env["REVIEWER_TEST_CALLS"] = str(folder / "mock calls")
     # If the double fails to resolve, abort the test instead of contacting real Codex.
     assert Path(shutil.which("codex.cmd" if os.name == "nt" else "codex", path=env["PATH"])).parent == bin_dir
+    assert Path(shutil.which(blocked_claude.name, path=env["PATH"])) == blocked_claude
     return env
 
 
@@ -59,8 +68,8 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
     synthetic_pdf(pdf)
     workspace = caller / "persistent workspace"
 
-    def run(args, *, expected=0, extra=None):
-        backend_args = ["--backend", backend] if backend != "codex" else []
+    def run(args, *, expected=0, extra=None, choose_backend=False):
+        backend_args = ["--backend", backend] if choose_backend else []
         result = subprocess.run(command + backend_args + args, cwd=caller, env={**env, **(extra or {})},
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
         if (result.returncode == 0) != (expected == 0):
@@ -71,10 +80,19 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
 
     run(["--help"])
     assert not workspace.exists()
-    run(["--check"])
+    run(["--check"], choose_backend=True)
     assert not workspace.exists()
     args = ["--pdf", pdf.name, "--workspace", workspace.name]
-    interrupted = run(args, expected=1, extra={"REVIEWER_TEST_STOP": "selection"})
+    interrupted = run(args, expected=1, extra={"REVIEWER_TEST_STOP": "selection"}, choose_backend=backend != "codex")
+    if backend == "claude":
+        assert json.loads((workspace / SETTINGS_FILE).read_text())["backend"] == backend
+    else:
+        assert not (workspace / SETTINGS_FILE).exists()  # Legacy implicit Codex stays unchanged.
+    # New-paper preferences must never switch an existing paper's provider.
+    other_backend = "codex" if backend == "claude" else "claude"
+    remember_backend(workspace, other_backend)
+    refused = run(args + ["--backend", other_backend, "--resume-after-preflight"], expected=1)
+    assert "Saved run uses --backend" in refused.stdout + refused.stderr
     paper_work = workspace / "work/paper-with-spaces"
     preflight = paper_work / "reviews/parser_quality_auditor.json"
     assert preflight.is_file(), interrupted.stdout + interrupted.stderr
@@ -106,7 +124,8 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
     assert json.loads((paper_work / "run_manifest.json").read_text())["status"] == "complete"
     assert review_hashes == {p.name: cli.sha256(p) for p in (paper_work / "reviews").glob("*.json")}
     # A new process can still check/use the workspace after completion.
-    run(["--workspace", str(workspace), "--check"])
+    run(["--workspace", str(workspace), "--paper-id", "paper-with-spaces", "--check"])
+    assert json.loads((workspace / SETTINGS_FILE).read_text())["backend"] == other_backend
     calls = [json.loads(path.read_text()) for path in Path(env["REVIEWER_TEST_CALLS"]).glob("*.json")]
     executions = [call for call in calls if ("exec" if backend == "codex" else "--print") in call["args"]]
     assert len(executions) == 24, len(executions)  # preflight, failed selector, selector, 19, failed editor, editor
@@ -196,6 +215,13 @@ class LauncherTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch("review_paper.codex_command", return_value="codex"):
             self.assertEqual(codex_exec_command(), ["codex", "exec"])
 
+    def test_codex_double_blocks_real_claude(self):
+        env = fake_codex_environment(self.folder)
+        result = subprocess.run([sys.executable, str(REPO / "scripts/claude_backend.py"), "--check"],
+                                cwd=self.folder, env=env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(Path(env["REVIEWER_TEST_CALLS"]).exists())
+
     def test_default_workspace_and_caller_relative_config(self):
         pdf = self.folder / "paper with spaces.pdf"
         synthetic_pdf(pdf)
@@ -214,6 +240,8 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(command.count("--model"), 1)
         self.assertIn("gpt-6-luna", command)
         self.assertIn("--reasoning-effort", command)
+        self.assertEqual(command[command.index("--backend") + 1], "codex")
+        self.assertEqual(run.call_args.kwargs["env"]["ECONOMICS_REVIEWER_PRESERVE_BACKEND_PREFERENCE"], "1")
         saved_config = Path(command[command.index("--reviewers-config") + 1])
         self.assertTrue(saved_config.is_relative_to(workspace))
         self.assertEqual(saved_config.read_bytes(), config.read_bytes())
@@ -227,6 +255,58 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(cli.main(["--refresh-editor", "--paper-id", "paper", "--run-editor"]), 0)
         command = run.call_args.args[0]
         self.assertEqual(command[command.index("--reasoning-effort") + 1], "xhigh")
+
+    def test_remembered_launcher_check_is_read_only_and_never_falls_back(self):
+        workspace = self.folder / "reviewer-workspace"
+        cli.prepare_workspace(workspace, self.runtime)
+        remember_backend(workspace, "claude")
+        before = (workspace / SETTINGS_FILE).read_bytes()
+        with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), chdir(self.folder), \
+                mock.patch.object(cli, "check_backend", side_effect=ValueError("Claude login missing")) as check:
+            self.assertEqual(cli.main(["--check"]), 1)
+        check.assert_called_once_with("claude", self.runtime)
+        with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), chdir(self.folder), \
+                mock.patch.object(cli, "check_backend") as check:
+            self.assertEqual(cli.main(["--check", "--backend", "codex"]), 0)
+        check.assert_called_once_with("codex", self.runtime)
+        self.assertEqual((workspace / SETTINGS_FILE).read_bytes(), before)
+
+    def test_launcher_legacy_run_wins_over_workspace_preference_before_authentication(self):
+        workspace = self.folder / "reviewer-workspace"
+        cli.prepare_workspace(workspace, self.runtime)
+        remember_backend(workspace, "claude")
+        manifest = workspace / "work/legacy/run_manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('{}')
+        with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), chdir(self.folder), \
+                mock.patch.object(cli, "check_backend") as check:
+            self.assertEqual(cli.main(["--check", "--paper-id", "legacy"]), 0)
+            check.assert_called_once_with("codex", self.runtime)
+            check.reset_mock()
+            self.assertEqual(cli.main(["--check", "--paper-id", "legacy", "--backend", "claude"]), 1)
+            check.assert_not_called()
+
+    def test_new_paper_uses_remembered_backend_and_pins_it_before_child_launch(self):
+        workspace = self.folder / "reviewer-workspace"
+        cli.prepare_workspace(workspace, self.runtime)
+        remember_backend(workspace, "claude")
+        pdf = self.folder / "new paper.pdf"
+        synthetic_pdf(pdf)
+
+        def check(backend, runtime):
+            self.assertEqual(backend, "claude")
+            # Simulate another paper changing the default after this check.
+            remember_backend(workspace, "codex")
+
+        with mock.patch.object(cli, "bundled_runtime", return_value=self.runtime), chdir(self.folder), \
+                mock.patch.object(cli, "check_backend", side_effect=check), \
+                mock.patch.object(cli.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(cli.main(["--pdf", pdf.name]), 0)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--backend") + 1], "claude")
+        self.assertNotIn("--model", command)  # No Codex model injected into Claude.
+        self.assertEqual(run.call_args.kwargs["env"]["ECONOMICS_REVIEWER_PRESERVE_BACKEND_PREFERENCE"], "1")
+        self.assertEqual(json.loads((workspace / SETTINGS_FILE).read_text())["backend"], "codex")
 
     def test_pipeline_resume_and_persistence_with_only_codex_mocked(self):
         package = self.runtime.parent

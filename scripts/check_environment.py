@@ -5,6 +5,7 @@ import importlib.util
 import shutil
 import sys
 from pathlib import Path
+from backend_settings import resolve_backend
 
 
 REQUIRED_MODULES = [
@@ -40,9 +41,16 @@ def missing_paths(root: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check local Reviewer prerequisites without a review.")
-    parser.add_argument("--backend", choices=("codex", "claude"), default="codex")
+    parser.add_argument("--backend", choices=("codex", "claude"), default=None,
+                        help="Check this backend, or the workspace preference (otherwise codex); does not save a preference.")
     args = parser.parse_args()
     root = repo_root()
+    try:
+        args.backend, source = resolve_backend(root, args.backend)
+    except ValueError as exc:
+        print(f"[fail] {exc}", file=sys.stderr)
+        return 1
+    print(f"[backend] {args.backend} ({source})")
     failures: list[str] = []
 
     modules = missing_modules()

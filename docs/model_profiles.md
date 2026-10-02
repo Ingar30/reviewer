@@ -11,6 +11,10 @@ python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --mod
 ```
 
 ```powershell
+python scripts/review_paper.py --backend codex --model gpt-6.1-sol --reasoning-effort high --pdf "inputs/my-paper.pdf"
+```
+
+```powershell
 python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-5.6-terra --reasoning-effort xhigh
 ```
 

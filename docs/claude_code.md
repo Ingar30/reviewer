@@ -1,4 +1,4 @@
-# Optional Claude Code backend (experimental)
+# Reviewing with Claude Code
 
 Use your Claude subscription to run the reviewer by adding `--backend claude`.
 It follows the same review pipeline as Codex, with no API key required. Your first
@@ -95,7 +95,7 @@ resuming; use a new paper ID or workspace to compare models.
   actions; existing deny/ask rules still apply. No permission bypass, API-only
   `--bare` mode or sandbox downgrade is used. Existing trusted Claude settings/hooks
   still apply; tool restrictions are **not filesystem isolation**.
-- Native Windows has no Claude Bash sandbox. The prototype therefore does not
+- Native Windows has no Claude Bash sandbox. The adapter therefore does not
   offer arbitrary shell/Python calculations to Claude. Image reading has passed
   limited live checks; web evidence, numerical-audit coverage and large editor
   inputs still need broader live validation. See
@@ -161,7 +161,7 @@ an API key. Keep the computer awake during live calls. The wrapper now holds a
 per-paper run lock and terminates its owned process tree on timeout/interruption;
 power loss and laptop sleep can still leave the latest stage incomplete.
 
-## Feedback from experimental testers
+## Feedback
 
 Start with `--backend claude --check` using the uv launcher; it makes no model
 request and does not verify remaining quota or server acceptance of saved login.

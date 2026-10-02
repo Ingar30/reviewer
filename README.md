@@ -37,10 +37,10 @@ You need:
 - One authenticated CLI: **Codex or Claude Code** (you do not need both)
 - Access to your chosen model and the CLI's web-search tools
 
-| Backend | Sign in | Default model |
-| --- | --- | --- |
-| Codex | `codex login` | GPT-6.1 Sol |
-| Claude Code (experimental) | `claude auth login` | Opus 5.5 |
+| Backend | Sign in | Default model | Lower-cost option |
+| --- | --- | --- | --- |
+| Codex | `codex login` | GPT-6.1 Sol | GPT-6 Luna |
+| Claude Code | `claude auth login` | Opus 5.5 | Sonnet 5.5 |
 
 Use an up-to-date CLI. See [model options](docs/model_profiles.md) and
 [Claude setup](docs/claude_code.md) for version requirements and lower-cost choices.
@@ -166,7 +166,7 @@ Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recov
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
 Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
 
-## Claude Code setup (experimental)
+## Claude Code setup
 
 `--backend claude` uses the **same pipeline, review prompts and validators**,
 through Claude Code subscription login (no API key).
@@ -188,11 +188,19 @@ Use a new paper ID or workspace for backend comparisons. Resumes reuse the saved
 
 For a lower-cost Claude option, choose **Sonnet 5.5** with `--model`:
 
+```powershell
+python scripts/review_paper.py --backend claude --model claude-sonnet-5-5 --pdf "inputs/my-paper.pdf"
+```
+
+Or with the optional uv launcher:
+
 ```text
 uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --model claude-sonnet-5-5 --pdf "paper.pdf"
 ```
 
 Sonnet 5.5 needs Claude Code **2.1.284+**; run `claude update` if needed.
+It generally uses less subscription allowance than Opus, but its review quality has not yet
+been benchmarked here. Opus remains the default.
 Reviews send your paper to Claude and use your subscription allowance. Keep
 Usage credits / Extra usage off to stay within your subscription.
 See [model choices, setup and resuming a review](docs/claude_code.md).
@@ -201,12 +209,11 @@ See [model choices, setup and resuming a review](docs/claude_code.md).
 
 Each backend has its own default: **GPT-6.1 Sol** (`gpt-6.1-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) describe the available comparisons. The GPT-6.1 Sol live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
 
-For a lower-cost option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
+For a lower-cost Codex option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
 ```powershell
 python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
-
 
 To deliberately use another combination:
 

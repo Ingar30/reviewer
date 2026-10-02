@@ -113,4 +113,6 @@ If no external sources are named as evidence in the report body, omit the append
 The Traceability Map appendix must be the only place where canonical and source IDs are printed. Include every canonical finding in the normalized bundle, even if the finding is otherwise summarized briefly. Use this markdown table:
 | Report section | Finding | Canonical ID | Source finding IDs |
 
+Use exactly one row per canonical finding and exactly one canonical ID in that row. Copy its complete source-ID mapping from the deterministic brief's Traceability Map Rows: repeat the reviewer prefix for every source ID, never abbreviate it, and never combine mappings from different canonical findings. Related findings may share a discussion in the report body, but their traceability rows must remain separate.
+
 Use the deterministic editor brief first for organization. Use the normalized editor bundle at `{editor_bundle_path}` as the authoritative source for canonical IDs, per-source-finding details, grouped evidence, quotations, and context. The reviewer-file index is provenance, not a third evidence copy.

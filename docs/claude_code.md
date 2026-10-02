@@ -78,6 +78,10 @@ Its paper-review quality has not yet been benchmarked here. The model choice app
 to the whole review and does not change your default. Keep the same model when
 resuming; use a new paper ID or workspace to compare models.
 
+Haiku 4.5 (`--model claude-haiku-4-5-20251001`) is cheaper still, but is currently
+a testing option: a short-paper trial needed retries for review metadata and
+report traceability before passing. Sonnet remains the suggested budget option.
+
 ## Behavior and limitations
 
 - All stages use Claude only when selected. Default efforts remain `high` for
@@ -149,6 +153,11 @@ without a selective-resume checkpoint retain the existing recovery methods:
 `--refresh-editor` needs all selected reviews and reruns only assembly/editor.
 Do not combine the two resume flags. Selective resume is not Claude session resume.
 
+On Windows, saving a checkpoint briefly retries file locks without making extra
+model calls. If a lock persists, the previous checkpoint and pending update are
+retained. Close any application holding the file, then resume with the same
+runtime and settings; do not edit checkpoint files to bypass validation.
+
 Backend preferences apply to new papers, not to an existing paper's provenance.
 Changing the workspace preference cannot switch a saved Claude run to Codex.
 Older frozen runtimes keep their original behavior; repeat `--backend claude`
@@ -156,7 +165,7 @@ when using a version from before remembered backend choices were added.
 
 A failed run can leave the manifest marked `running`; this is not proof that a
 process is still active or that a complete report exists. The wrapper does not
-change billing settings, poll for quota resets, retry automatically or switch to
+change billing settings, poll for quota resets, retry model calls automatically or switch to
 an API key. Keep the computer awake during live calls. The wrapper now holds a
 per-paper run lock and terminates its owned process tree on timeout/interruption;
 power loss and laptop sleep can still leave the latest stage incomplete.
@@ -167,7 +176,7 @@ Offline tests use synthetic PDFs and fake Claude/Codex processes; they are not
 end-to-end model or quality validation:
 
 ```powershell
-python -m unittest tests.test_claude_backend tests.test_uv_launcher tests.test_resume_incomplete
+python -m unittest tests.test_claude_backend tests.test_uv_launcher tests.test_resume_incomplete tests.test_checkpoint_writes
 ```
 
 They exercise schema transport, failure/permission handling, prerequisites,
@@ -201,8 +210,13 @@ The completed web-enabled audits used both Opus and a reported Haiku helper in
 Claude Code's usage metadata. Comparisons therefore measure the CLI workflow,
 not an isolated base model. The large editor handoff has completed once. The new
 public selective resume passes mocked clean-wheel tests, including successful
-sibling retention and changed-input rejection; full live selective continuation
-has not been validated. Reliable report-body fidelity and a fresh single-version
+sibling retention and changed-input rejection. A two-page Haiku 4.5 trial on
+2 October also completed all 19 substantive reviews and the editor through live
+selective continuations after explicit runtime migrations. Sixteen original
+valid reviews were retained unchanged; metadata and traceability errors were
+resolved by model reruns, not manual repairs or weaker validation. This was
+recovery evidence, not a clean first-pass run or a quality benchmark.
+Reliable unattended long-paper recovery, report-body fidelity and a fresh single-version
 completed long run remain validation gaps, not claims
 established by the completed reports. macOS/Linux/WSL remain untested here. Keep Usage
 credits OFF and retain outputs if a session limit is hit.

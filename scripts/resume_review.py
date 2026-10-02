@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import time
 from uuid import uuid4
 
 from reviewer_config import load_reviewers_config
@@ -80,7 +81,26 @@ class ReviewCheckpoint:
     def save(self):
         pending = self.path.with_suffix(".pending")
         pending.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8")
-        pending.replace(self.path)
+        # Windows readers (including sync/indexing software) can briefly deny
+        # replacement. Keep the previous checkpoint intact: never truncate it,
+        # remove it first, or treat an uncommitted pending file as accepted work.
+        for attempt in range(6):
+            try:
+                pending.replace(self.path)
+                return
+            except PermissionError as exc:
+                if getattr(exc, "winerror", None) not in (5, 32, 33):
+                    raise
+                if attempt == 5:
+                    raise RuntimeError(
+                        f"Windows kept checkpoint {self.path} locked after bounded retries. "
+                        f"The previous checkpoint is unchanged; the pending update is at {pending}. "
+                        "Close applications holding the file and retry with --resume-incomplete "
+                        "if a checkpoint exists, otherwise repeat the original command."
+                    ) from exc
+                if attempt == 0:
+                    print("[checkpoint] Windows file lock; retrying the atomic save.")
+                time.sleep(0.1 * 2 ** attempt)
 
     def create(self):
         self.data = {"format": 1, "settings": self.settings, "files": self.files(), "accepted": {}}

@@ -131,18 +131,42 @@ python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-custom
 
 ## Optional: Run with uv
 
-The Quick Start above remains the primary workflow; **uv is optional**. With
-[uv installed](https://docs.astral.sh/uv/getting-started/installation/), Python
-3.12+, Git, and your chosen CLI installed and authenticated, run one of these
-from the directory containing your PDF:
+The Quick Start above remains the primary workflow; **uv is optional**. `uvx`
+comes with uv and sets up Reviewer and its Python dependencies in an isolated
+environment, so you do not need to clone this repository or create a virtual
+environment yourself.
+
+**One-time setup:** you still need Git, Python 3.12+, and your chosen CLI installed
+and authenticated (see [prerequisites](#2-install-prerequisites)). Install uv on
+Windows using PowerShell:
+
+```powershell
+winget install --id astral-sh.uv -e
+```
+
+For macOS/Linux or other installation methods, see the
+[uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+Open a new terminal after installation and run `uvx --version` to check that it
+is available.
+
+**Start a review:** open a terminal in the folder containing `paper.pdf` and
+choose one command below. Replace `"paper.pdf"` with your PDF's filename or its
+full quoted path; the folder does not need to contain the Reviewer repository.
+
+**Codex:**
 
 ```text
 uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend codex --pdf "paper.pdf"
 ```
 
+**Claude Code:**
+
 ```text
 uvx --from git+https://github.com/Ingar30/reviewer.git economics-paper-reviewer --backend claude --pdf "paper.pdf"
 ```
+
+For lower-cost models, see [model options](docs/model_profiles.md) or
+[Claude model choices](docs/claude_code.md#choose-a-model).
 
 This uses the same review pipeline and your chosen CLI account, consumes normal review
 quota, and needs no new API key. Replace `--pdf "paper.pdf"` with `--help` or

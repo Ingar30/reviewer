@@ -55,8 +55,7 @@ in `./reviewer-workspace/`, outside installation/cache directories. Optionally u
 `--workspace DIR` to choose another folder; its name does not select a backend.
 Use a separate workspace for Codex/Claude comparisons. Existing workspaces remain
 tied to their original runtime and are not silently upgraded.
-Keep Windows workspace paths reasonably short: a deeply nested trial failed
-during PDF copying, while a shorter path containing spaces passed.
+Keep Windows workspace paths reasonably short to avoid path-length limits.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
 
@@ -77,6 +76,10 @@ Sonnet generally uses less of your subscription allowance than Opus; see
 Its paper-review quality has not yet been benchmarked here. The model choice applies
 to the whole review and does not change your default. Keep the same model when
 resuming; use a new paper ID or workspace to compare models.
+
+Haiku 4.5 (`--model claude-haiku-4-5-20251001`) is cheaper still, but is currently
+a testing option without a general quality-equivalence claim. Sonnet remains
+the suggested budget option.
 
 ## Behavior and limitations
 
@@ -149,6 +152,11 @@ without a selective-resume checkpoint retain the existing recovery methods:
 `--refresh-editor` needs all selected reviews and reruns only assembly/editor.
 Do not combine the two resume flags. Selective resume is not Claude session resume.
 
+On Windows, saving a checkpoint briefly retries file locks without making extra
+model calls. If a lock persists, the previous checkpoint and pending update are
+retained. Close any application holding the file, then resume with the same
+runtime and settings; do not edit checkpoint files to bypass validation.
+
 Backend preferences apply to new papers, not to an existing paper's provenance.
 Changing the workspace preference cannot switch a saved Claude run to Codex.
 Older frozen runtimes keep their original behavior; repeat `--backend claude`
@@ -156,10 +164,36 @@ when using a version from before remembered backend choices were added.
 
 A failed run can leave the manifest marked `running`; this is not proof that a
 process is still active or that a complete report exists. The wrapper does not
-change billing settings, poll for quota resets, retry automatically or switch to
+change billing settings, poll for quota resets, retry model calls automatically or switch to
 an API key. Keep the computer awake during live calls. The wrapper now holds a
 per-paper run lock and terminates its owned process tree on timeout/interruption;
 power loss and laptop sleep can still leave the latest stage incomplete.
+
+## Validation status
+
+Offline tests use synthetic PDFs and fake Claude/Codex processes; they are not
+end-to-end model or quality validation:
+
+```powershell
+python -m unittest tests.test_claude_backend tests.test_uv_launcher tests.test_resume_incomplete tests.test_checkpoint_writes
+```
+
+They exercise schema transport, failure/permission handling, prerequisites,
+backend provenance, all pipeline stages, spaces/non-Git directories, persistent
+outputs, and recovery after simulated stage failures. Local package validation
+must use the newly built wheel, not GitHub. Real Ctrl+C, laptop sleep, web-tool
+permissions, long-paper quality and actual usage remain live-test gates. The limited
+checks do not establish compatibility on other platforms;
+macOS/Linux/WSL have not had live-Claude validation here.
+
+### Remaining validation limits
+
+Offline/mock checks do not establish source accuracy, report-body fidelity,
+cross-model quality equivalence or reliable unattended recovery. Treat real
+Ctrl+C, laptop sleep, web-tool permissions and long editor inputs as separate
+validation questions. macOS/Linux/WSL live compatibility is not established here.
+Keep usage credits off if required by your budget, and retain outputs after a
+session limit. Do not publish private run histories or manuscript-derived results.
 
 ## Feedback
 
@@ -168,10 +202,7 @@ request and does not verify remaining quota or server acceptance of saved login.
 Then try a paper you are permitted to send to Anthropic, keeping the computer awake.
 Higher subscription limits may help, but completion in one session is not guaranteed.
 
-Useful feedback: OS, Python/Claude versions, Git revision, model/effort, approximate
-paper length, completed/failed stage, whether a final report was produced, and
-source-checked examples of useful findings or false alarms. If comfortable, record
-before/after session and weekly percentages from Claude's usage page; logged USD
-estimates are not subscription usage. Do not post credentials, private papers or
-unredacted prompts/logs publicly. Web-enabled roles, editor output and interrupted
-recovery are the main remaining live test targets.
+Useful public feedback: OS, Python/Claude versions, Git revision, model/effort
+and a synthetic reproduction. Keep real-paper findings, metadata, run histories,
+usage records, prompts and logs private. Web-enabled roles, editor output and
+interrupted recovery remain important validation targets.

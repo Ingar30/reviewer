@@ -18,7 +18,9 @@ As of 1 October 2026, both models produced complete reports on the same 71-page
 development paper on Windows. GPT-6.1 Sol used a frozen runtime with interrupted
 reviewers resumed; Opus 5.5 required quota-related continuations and an updated
 editor handoff. These were not matched uninterrupted runs of identical software.
-The [Claude Code backend](claude_code.md) remains experimental and opt-in.
+Choose the [Claude Code backend](claude_code.md) with `--backend claude`;
+Opus 5.5 is its default and Sonnet 5.5 is its lower-cost option. Sonnet's
+paper-review quality has not yet been benchmarked here.
 
 Source checks found useful corrections and limitations in both reports. Sol
 retained important qualifications but missed a conditional numerical-consistency
@@ -55,6 +57,51 @@ python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --mod
 ```
 
 GPT-6 Luna has [lower published Codex credit rates](https://learn.chatgpt.com/docs/pricing#token-rates) than Sol. Selected-reviewer tests and the full-pipeline comparison found useful but uneven coverage. It remains an explicit budget choice, not a replacement default or a promise of Sol-equivalent results.
+
+## Luna xhigh versus Sol 6.1 high - 2026-10-02
+
+Luna is cheaper, but it is not clearly better value when missed corrections matter.
+A fresh matched pilot ran three reviewers (cross-references, numerical checks and
+claim-evidence alignment) per profile on the same 71-page development paper.
+Both used identical current prompts, source-hash-checked parsed evidence and the
+same saved parser preflight, with authenticated Codex CLI 0.159.0 on Windows.
+All six live jobs completed and passed canonical validation; there were no retries.
+
+| Three reviewers combined | GPT-6 Luna / xhigh | GPT-6.1 Sol / high |
+| --- | ---: | ---: |
+| Uncached input tokens | 379,649 | 461,462 |
+| Cached input tokens | 3,337,216 | 6,134,912 |
+| Output tokens, including reasoning | 73,034 | 49,720 |
+| Estimated Standard credits | 2.70 | 50.84 |
+| Distinct frozen checklist issues covered | 2 of 9 | 7 of 9 |
+
+Luna used about **19 times fewer credits**. Sol caught additional source-confirmed
+unit, instrument-definition, cross-reference and claim-scope problems. Both
+appropriately left some calculations unverifiable; Sol also raised an overstated
+covariate concern that was not accepted as a confirmed defect. Finding count or
+schema validity alone was not used as a quality score.
+
+These are [Standard-rate credit equivalents](https://learn.chatgpt.com/docs/pricing#token-rates),
+not bills or measured subscription quota. Rates checked 2 October, per million
+uncached/cached/output tokens: Luna 2.5/0.25/12.5; Sol 6.1 50/2.5/250.
+Two separate access probes add 0.045 and 0.913 credits respectively. No API-key
+calls or billing-setting changes were made.
+
+The checklist was frozen before the new responses and graded against sources by
+the coordinating assistant, not independent blinded human assessors. This was
+one previously examined paper, one attempt per role/profile, with parallel jobs;
+caching and service load were not controlled. It did not test literature search,
+the editor, Sol at lower efforts than `high`, or a matched Sol `xhigh` baseline.
+The coverage counts are not general model accuracy estimates.
+
+**Practical choice:** use Luna when minimizing usage is the priority; consider
+Sol 6.1 at `high` when broader coverage matters. Keep the existing `xhigh` default
+for now: this pilot does not establish the quality or savings of lowering effort
+across a complete pipeline.
+
+```powershell
+python scripts/review_paper.py --backend codex --model gpt-6.1-sol --reasoning-effort high --pdf "inputs/my-paper.pdf"
+```
 
 ## Historical GPT-6 Sol/Luna full-pipeline comparison - 2026-09-23
 

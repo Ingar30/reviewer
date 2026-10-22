@@ -63,6 +63,8 @@ class DerivedReportTests(unittest.TestCase):
     def test_downstream_change_runs_only_editor_and_preserves_parent(self):
         before = hashes(self.parent)
         calls = len(list(Path(self.env['REVIEWER_TEST_CALLS']).glob('*.json')))
+        # Equivalent root spellings must not rewrite accepted parent provenance.
+        self.args.parent_workspace = self.parent / 'inputs' / '..'
         p = self.runtime / 'prompts/templates/editor_report.txt'
         p.write_bytes(p.read_bytes() + b'\nPrefer compact narrative treatments.\n')
         report = self.invoke()
@@ -72,6 +74,7 @@ class DerivedReportTests(unittest.TestCase):
         work = report.parents[2] / 'work/synthetic'
         lineage = json.loads((work / 'derivation.json').read_text())
         self.assertEqual(lineage['status'], 'complete')
+        self.assertEqual(lineage['parent_workspace'], str(self.parent.resolve()))
         self.assertEqual(lineage['changed_downstream_resources'], ['prompts/templates/editor_report.txt'])
         self.assertEqual(lineage['report_sha256'], digest(report))
         self.assertFalse((work / 'resume_checkpoint.json').exists())
@@ -132,7 +135,8 @@ class DerivedReportTests(unittest.TestCase):
                          (parent / 'work/synthetic/resume_checkpoint.json').read_bytes())
         self.assertEqual((report.parents[2] / 'inputs/source.pdf').read_bytes(), original)
         lineage = json.loads((work / 'derivation.json').read_text())
-        self.assertEqual(lineage['parent_files'][str(external)], digest(external))
+        # The pipeline records the resolved source, not a Windows short-path alias.
+        self.assertEqual(lineage['parent_files'][str(external.resolve())], digest(external))
         self.args.output_workspace = self.case / 'rejected-child'
         for path in (external, parent / 'inputs/source.pdf'):
             with self.subTest(path=path):

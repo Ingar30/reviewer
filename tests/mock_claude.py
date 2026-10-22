@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import sys
 import uuid
+from mock_responses import review_payload, editor_payload
 
 
 def main():
@@ -44,11 +45,12 @@ def main():
         if os.environ.get("REVIEWER_TEST_STOP") == role:
             print("MOCK quota stop", file=sys.stderr)
             return 75
-        payload = {"reviewer": role, "paper_id": paper, "run_status": "ok",
-                   "summary": "MOCK audit for launch testing only.", "findings": [], "notes": []}
+        payload = review_payload(Path.cwd(), paper, role)
     else:
         if os.environ.get("REVIEWER_TEST_STOP") == "editor":
             return 74
+        payload = editor_payload(json.loads(Path(f"work/{paper}/editor/normalized_bundle.json").read_text(encoding="utf-8")))
+        response["structured_output"] = payload
         headings = ["Executive Summary", "Highest-Priority Cross-Agent Findings",
                     "Suggested Revision Priorities", "Additional Findings",
                     "Appendix: Review Scope and Limitations", "Appendix: Traceability Map"]

@@ -48,17 +48,19 @@ class EnvironmentSetupTests(unittest.TestCase):
                 self.assertFalse(self.target.exists())
 
     def test_authorized_setup_only_uses_new_venv_and_canonical_requirements(self):
+        # Exercise equivalent spellings while checking exact canonical commands.
+        destination = self.root / "plugin" / ".." / self.target.name
         with mock.patch("prepare_work_environment.doctor", return_value=MISSING), \
                 mock.patch("prepare_work_environment.setup_command", side_effect=["", "", json.dumps(READY)]) as command:
-            result = prepare(self.source, self.target, allow_install=True)
+            result = prepare(self.source / ".." / "runtime", destination, allow_install=True)
         self.assertTrue(result["installed"])
         commands = [call.args[0] for call in command.call_args_list]
-        self.assertEqual(commands[0], [sys.executable, "-I", "-m", "venv", "--copies", str(self.target)])
-        self.assertTrue(Path(commands[1][0]).is_relative_to(self.target))
+        self.assertEqual(commands[0], [sys.executable, "-I", "-m", "venv", "--copies", str(self.target.resolve())])
+        self.assertTrue(Path(commands[1][0]).is_relative_to(self.target.resolve()))
         self.assertIn("--only-binary=:all:", commands[1])
-        self.assertIn(str(self.source / "requirements.txt"), commands[1])
+        self.assertIn(str(self.source.resolve() / "requirements.txt"), commands[1])
         self.assertNotIn("--upgrade", commands[1])
-        self.assertEqual(commands[2][-2:], [str(self.source / "scripts/work_plugin.py"), "doctor"])
+        self.assertEqual(commands[2][-2:], [str(self.source.resolve() / "scripts/work_plugin.py"), "doctor"])
 
     def test_existing_or_plugin_paths_are_never_modified(self):
         self.target.mkdir()

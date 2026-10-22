@@ -152,8 +152,15 @@ def report_min_chars(bundle: dict | None = None, override: int | None = None) ->
     return 0 if successful_empty_bundle(bundle) else MIN_REPORT_CHARS
 
 
-def report_failures(text: str, *, bundle: dict | None = None, min_chars: int | None = None) -> list[str]:
+def report_failures(text: str, *, bundle: dict | None = None, min_chars: int | None = None,
+                    decisions: dict | None = None) -> list[str]:
     failures = []
+    if decisions is not None:
+        from editor_decisions import decision_errors, render
+        failures.extend(decision_errors(decisions, bundle))
+        if not failures and render(decisions, bundle) != text:
+            failures.append("Report differs from deterministic rendering of editorial decisions")
+        min_chars = 0  # Accountable treatment, not padding, is the current contract.
     min_chars = report_min_chars(bundle, min_chars)
     if len(text.strip()) < min_chars:
         failures.append(f"report is too short: {len(text.strip())} chars < {min_chars}")
@@ -170,16 +177,17 @@ def report_failures(text: str, *, bundle: dict | None = None, min_chars: int | N
     if successful_empty_bundle(bundle):
         if not text.lstrip().startswith("# Multi-Agent Paper Review Report"):
             failures.append("missing report title")
-        # An empty finding roster justifies brevity, not a headings-only stub.
-        content_headings = [*DEFAULT_REQUIRED_HEADINGS, TRACEABILITY_APPENDIX_HEADING,
-                            *(heading for heading in REVIEW_SCOPE_HEADINGS if heading in text)]
-        for heading in content_headings:
-            section = heading_section_text(text, heading)
-            if section and not any(
-                line.strip() and not re.match(r"^\s*#{1,6}(?:\s|$)", line)
-                for line in section[len(heading):].splitlines()
-            ):
-                failures.append(f"empty report section: {heading}")
+    # Required sections need content, whether it comes from an introduction or
+    # rendered treatments. Finding IDs elsewhere do not rescue a headings-only stub.
+    content_headings = [*DEFAULT_REQUIRED_HEADINGS, TRACEABILITY_APPENDIX_HEADING,
+                        *(heading for heading in REVIEW_SCOPE_HEADINGS if heading in text)]
+    for heading in content_headings:
+        section = heading_section_text(text, heading)
+        if section and not any(
+            line.strip() and not re.match(r"^\s*#{1,6}(?:\s|$)", line)
+            for line in section[len(heading):].splitlines()
+        ):
+            failures.append(f"empty report section: {heading}")
     # A genuinely empty validated bundle has no identifiers to cite. Do not force
     # an editor to invent a finding merely to satisfy the smoke check.
     expects_identifiers = bundle is None or bundle.get("canonical_findings") != []
@@ -209,6 +217,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-check that an editor output is a real report.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--bundle", default=None, help="Optional normalized bundle for traceability coverage checks.")
+    parser.add_argument("--decisions", default=None, help="Validate current structured decisions and exact rendered prose.")
     parser.add_argument("--min-chars", type=int, default=None,
                         help="Override length floor; default 2000 except successful no-findings bundles.")
     args = parser.parse_args()
@@ -225,7 +234,8 @@ def main() -> int:
             raise FileNotFoundError(f"Bundle not found: {bundle_path}")
         bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
 
-    failures = report_failures(text, bundle=bundle, min_chars=args.min_chars)
+    decisions = json.loads(Path(args.decisions).read_text(encoding="utf-8")) if args.decisions else None
+    failures = report_failures(text, bundle=bundle, min_chars=args.min_chars, decisions=decisions)
 
     if failures:
         print("INVALID")

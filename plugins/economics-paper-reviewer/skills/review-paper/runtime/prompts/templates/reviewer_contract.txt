@@ -16,3 +16,86 @@ Shared finding contract:
 - An explicitly scoped comparison need not include every treatment arm, outcome, or subgroup. Flag an exclusion only when evidence establishes a misleading claim, an unexplained change of scope, or a material threat to the stated estimand; do not turn a useful extension into a required correction.
 - Separate the observation from the diagnosis and proposed repair. A verified inconsistency may have several explanations; do not assert an unobserved coding mistake, outcome identity, cause, or replacement value as fact.
 - If evidence is missing or unsafe, use cannot_verify rather than reconstructing or guessing.
+- Before a material omission claim, check the relevant main text AND appendix.
+  Distinguish no definition, a partial definition with specific missing operational
+  details, and information already supplied. Acknowledge the existing definition
+  in evidence_summary and ask only for what is actually missing in suggested_fix.
+
+Completion record (version 1):
+- Return completion with version=1, state, scope_description, checks_completed,
+  missing_checks and evidence_limitations. Describe checks actually performed,
+  not just files opened. An empty findings list does not establish completion.
+- Use state=complete only after attempting the entire assigned remit; list any
+  required unattempted checks in missing_checks and use state/run_status=partial.
+  A failed execution uses state/run_status=failed. Retain useful partial findings.
+- A completed attempt may encounter unavailable evidence. Record the attempted
+  check and evidence_limitations, keep missing_checks empty, and use finding-level
+  cannot_verify. Run-level cannot_verify is accepted only with a complete record.
+- If the entire remit is absent, use state=not_applicable, run_status=ok, no
+  findings, and explain the applicability check in checks_completed and scope_description.
+- Never return completion=null for a new audit. Null/missing completion is legacy
+  diagnostic evidence and cannot authorize downstream stages or completed reuse.
+
+Source correspondence:
+- Look up manuscript source objects in `{parsed_dir}/source_registry.json`. Copy
+  object_id from its registered id, matching the exact artifact and original PDF
+  page. Your local source id may still be a short alias used by claim-evidence links.
+- Set correspondence=text only with a verbatim text_quote found in that object.
+  Whitespace and discretionary soft-hyphen line wraps are tolerated; visible hyphens, signs,
+  decimals, percentages, inequalities and subscripts are not interchangeable.
+- For page-image/crop evidence or extraction ambiguity, use correspondence=visual
+  and verification_note describing the region inspected and what remains uncertain.
+  Use unresolved when no trustworthy correspondence can be checked. Never invent
+  a text match to satisfy a validator. A located source is not proof of relevance
+  or of the criticism; assess these separately in evidence_summary.
+- If extraction attaches a footnote number to a word (for example 21Our), do not
+  remove digits to claim a text match. Inspect the retained page image and use
+  correspondence=visual with a note identifying the footnote marker and passage.
+  If it cannot be inspected, use unresolved. A null quote is never a text match.
+- External evidence has object_id=null; correspondence=retrieved_external only
+  after actual retrieval, with verification_note identifying checked context and
+  retrieval limitations. Otherwise use url_only and cannot_verify as appropriate.
+
+Numerical contract:
+- numeric_check is null for non-numerical findings. Otherwise use one of the typed
+  contracts in the schema: arithmetic, cross_source, or underdetermined. The old
+  untyped object is for legacy diagnosis only and is not accepted in a new audit.
+- Arithmetic quantities need source_id links, units, explicit percent/proportion
+  scales, sample-specific denominators, context and rounding_half_width (zero only
+  for exact inputs). Use computed_value in the reported scale and an explicit
+  tolerance. Separate observed_discrepancy, possible_explanation and suggested_correction.
+- Copy published arithmetic AND cross-source values and their published scale from the linked
+  quotes. Do not insert an inferred or silently transformed value under a valid
+  source ID. A valid object ID alone does not establish quantity correspondence.
+  If an indispensable input is unresolved, the conclusion remains cannot_verify
+  and explicitly conditional. An unrelated unresolved background citation does
+  not undermine an otherwise verified calculation.
+- The safe wrapper tool is `python scripts/numerical_checks.py`, reading one JSON
+  arithmetic object from stdin. Its allowlist is sum, difference (first minus
+  second), mean, product, ratio (first / second), percent_change (new / old - 1),
+  and percentage_points. No model-supplied code or shell payload is evaluated.
+  If execution is unavailable, retain source-linked evidence without claiming
+  independent recomputation; wrapper validation performs the same calculation.
+- Rounding-compatible intervals are not an arithmetic error. An unsupported or
+  underdetermined check must remain cannot_verify; identify missing information.
+  A ratio of means cannot independently refute a reported mean of ratios. Arithmetic
+  does not establish common samples, estimands or specifications.
+
+Coverage ledger:
+- Return coverage records for every supplied assignment, including an explicit
+  check_performed and attempted boolean. Use checked_no_issue, linked_finding,
+  cannot_verify, not_applicable, or not_checked. Every record needs a nonempty
+  reason: explain the outcome and actual scope, especially sampling limitations.
+- Copy assigned object IDs and use finding_ids only for linked_finding. A file
+  opened is not a claim checked. An unattempted central/required check stays
+  not_checked and makes completion partial; never relabel it cannot_verify.
+- Add overlooked source-linked claims with new claim: IDs, claim text, central or
+  peripheral importance, and the check actually performed. The claim-evidence
+  audit must identify central claims and their supporting main/appendix evidence.
+  A source-linked check for an absent claim may use claim=null only with
+  status=not_applicable, an attempted applicability check, and an explicit reason.
+  Do not invent a manuscript claim to document its absence.
+  Initial display/equation assignments are deterministic candidates, not an
+  exhaustive inventory or the only allowed source of findings.
+- Mark scope=sampled when peripheral material was sampled; describe that scope
+  and its limits in reason. Never describe sampled checks as exhaustive.

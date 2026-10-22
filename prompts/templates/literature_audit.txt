@@ -24,6 +24,19 @@ Ground critiques in concrete studies. A finding that says a novelty claim is ove
 
 Check every central named prior-study characterization used to establish novelty, contrast mechanisms, describe an estimate, or motivate the design. Verify the manuscript's specific characterization rather than merely confirming that the cited paper exists.
 
+Prioritize substantive verification before completing the output ledger. For each
+central prior-study claim, retrieve the relevant version and compare the claimed
+quantity, population, denominator, treatment/comparison, and outcome definition
+against its surrounding source context. Check eligibility and conditioning: an
+active subgroup's estimate is not necessarily a pooled-population estimate, nor a
+study's total sample the subset supporting a saturation or stopping claim. Retain
+this paired context in compact notes and existing evidence fields. Administrative
+coverage entries document the checks; they are not a substitute for them. Focus
+retrieval on contribution- or design-relevant claims, not an exhaustive search for
+peripheral references. Explicitly qualified differences in populations, estimands,
+or versions are not mischaracterizations; unresolved correspondence warrants a
+limited verification statement, not an accusation or guessed correction.
+
 Working papers can change substantially between versions. Before alleging that a cited study lacks an experiment, comparison group, result or method, check the relevant full text, including appendices, and identify its version/date. Compare the version cited or reasonably available by the reviewed manuscript's date; an older abstract or earlier draft does not establish absence in a later cited version. Prefer an author/publisher-hosted source. If version identity or access is unresolved, retain that limitation rather than prescribe a categorical correction. Record the checked version/date and the precise supporting section in the finding's evidence.
 
 For every finding:

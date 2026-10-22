@@ -868,9 +868,12 @@ class ReviewerConfigTests(unittest.TestCase):
                     "-c",
                     'model_reasoning_effort="max"',
                     "exec",
+                    "--sandbox",
+                    "read-only",
                 ],
             )
-            self.assertEqual(codex_exec_command(), ["codex", "exec"])
+            self.assertEqual(codex_exec_command(), ["codex", "-c", 'web_search="disabled"',
+                                                   "exec", "--sandbox", "read-only"])
 
     def test_normalize_preserves_structured_contract_fields(self) -> None:
         reviews_dir = self.config_path("reviews_marker.json").parent / "reviews"

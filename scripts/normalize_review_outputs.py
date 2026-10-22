@@ -562,6 +562,7 @@ def normalize(paper_id: str, reviews_dir: Path, reviewers: list[ReviewerConfig])
                 "finding_count": len(data.get("findings", [])),
                 "summary": data.get("summary"),
                 "notes": retained_notes,
+                "completion": data.get("completion"),
             }
         )
 
@@ -643,8 +644,25 @@ def main() -> int:
     args = parser.parse_args()
 
     reviewers = load_reviewers_config(args.reviewers_config)
+    from validate_review_json import validate_review_output
+    from review_coverage import ledger
+    from evidence_registry import review_evidence_checks
+    repo = Path(__file__).resolve().parents[1]
+    schema = read_json(repo / "schemas/reviewer_output.schema.json")
+    review_data = {}
+    for reviewer in reviewers:
+        data = read_json(Path(args.reviews_dir) / reviewer.output)
+        errors = validate_review_output(data, schema, reviewers, repo=repo,
+            expected_reviewer=reviewer.name, paper_id=args.paper_id, require_complete=True)
+        if errors:
+            raise ValueError("Cannot normalize unfinished/invalid review: " + "; ".join(errors))
+        review_data[reviewer.name] = data
     bundle = normalize(args.paper_id, Path(args.reviews_dir), reviewers)
     write_json(Path(args.output), bundle)
+    write_json(Path(args.output).with_name("coverage_ledger.json"), ledger(review_data))
+    write_json(Path(args.output).with_name("evidence_checks.json"), {
+        "version": 1, "reviewers": {name: review_evidence_checks(data, repo)
+                                    for name, data in review_data.items()}})
     print(f"Wrote normalized bundle: {args.output}")
     return 0
 

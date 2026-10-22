@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from render_report_pdf import PDFExportError, inline, normalized, render_report_pdf, table_cells
 from work_plugin import ReviewRun, WorkError, read_json, restore
 from tests.test_work_plugin import SOURCE, WorkRunFixture, empty_review, save_candidate, synthetic_report
+from tests.mock_responses import editor_payload
 
 
 class ReportPDFTests(unittest.TestCase):
@@ -133,7 +134,7 @@ class PDFDeliveryTests(WorkRunFixture, unittest.TestCase):
         while True:
             jobs = self.run.next_tasks(3)["jobs"]
             if jobs[0]["kind"] == "editor":
-                save_candidate(jobs[0], synthetic_report(read_json(self.run.paths.bundle_path)))
+                save_candidate(jobs[0], editor_payload(read_json(self.run.paths.bundle_path)))
                 self.assertEqual(self.run.accept("editor")["status"], "accepted")
                 break
             for job in jobs:

@@ -106,7 +106,7 @@ def prepare(config_path: Path, output: Path) -> dict:
         ):
             raise ValueError("Each case needs unique canonical substantive reviewer roles")
         failures = validate_review_output(read(preflight), schema, reviewers, repo=source,
-                                         expected_reviewer="parser_quality_auditor", paper_id=paper_id)
+                                          expected_reviewer="parser_quality_auditor", paper_id=paper_id, require_complete=True)
         if failures:
             raise ValueError("Invalid frozen preflight: " + "; ".join(failures))
         enforce_preflight_gate(catalog["parser_quality_auditor"], preflight)
@@ -269,7 +269,7 @@ def run_job(plan_path: Path, job_id: str, *, allow_live: bool = False) -> dict:
         if profile["backend"] == "claude":
             save_claude_output(result.stdout_path, output, schema_path)
         failures = validate_review_output(read(output), read(schema_path), reviewers, repo=workspace,
-                                         expected_reviewer=reviewer.name, paper_id=paper)
+                                          expected_reviewer=reviewer.name, paper_id=paper, require_complete=True)
         if failures:
             raise ValueError("Review validation failed: " + "; ".join(failures))
         if any(not (workspace / name).is_file() or digest(workspace / name) != sha for name, sha in frozen.items()):

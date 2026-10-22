@@ -21,7 +21,8 @@ from build_work_plugin import (  # noqa: E402
     PLUGIN_NAME, RUNTIME_PATH, build, check_bundle, make_private_marketplace, runtime_payload,
 )
 from check_final_report import report_failures  # noqa: E402
-from work_plugin import MODES, ReviewRun, WorkError, doctor, main, parse_json, read_json, restore, write_json  # noqa: E402
+from work_plugin import MODES, ReviewRun, WorkError, confined, doctor, main, parse_json, read_json, restore, write_json  # noqa: E402
+from tests.mock_responses import review_payload, editor_payload
 
 PLUGIN = REPO / "plugins" / PLUGIN_NAME
 SOURCE = PLUGIN / RUNTIME_PATH
@@ -29,11 +30,12 @@ TEMP = Path(tempfile.gettempdir()) / "reviewer-plugin-tests"
 
 
 def empty_review(run, name, status="ok"):
-    return {"reviewer": name, "paper_id": run.state["paper_id"], "run_status": status,
-            "summary": "No material issue found in this synthetic test fixture.", "findings": [], "notes": []}
+    return review_payload(run.root, run.state["paper_id"], name, status)
 
 
 def finding(run, prefix="CLAIM", number=1, issue_type="manuscript_issue"):
+    registry = read_json(run.paths.parsed_dir / "source_registry.json")
+    object_id = next(o["id"] for o in registry["objects"] if o["path"] == "pages/page_001.md")
     return {
         "id": f"{prefix}-{number:03d}", "category": "claim_consistency",
         "finding_summary": "The claimed increase conflicts with the reported decrease.",
@@ -45,7 +47,8 @@ def finding(run, prefix="CLAIM", number=1, issue_type="manuscript_issue"):
         "source_objects": [{"id": "source-1", "type": "text", "label": "Results",
                             "path": f"work/{run.state['paper_id']}/parsed/pages/page_001.md",
                             "page": 1, "page_label": "1", "section": "Results",
-                            "text_quote": "The estimate is -2.5 percent.", "url": None}],
+                            "text_quote": "The estimate is -2.5 percent.", "url": None,
+                            "object_id": object_id, "correspondence": "text", "verification_note": None}],
         "claim_evidence_links": [{"claim_text": "The estimate supports an increase.",
                                   "source_object_ids": ["source-1"], "relation": "contradicts", "note": None}],
         "numeric_check": None, "suggested_fix": "Describe the signed estimate consistently."}
@@ -151,6 +154,29 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.run.resume()
         self.assertEqual(self.run.next_tasks(3)["jobs"], [])
 
+    def test_failed_empty_preflight_cannot_dispatch_router(self):
+        job = self.run.next_tasks()["jobs"][0]
+        data = empty_review(self.run, job["task"])
+        data.update(run_status="failed")
+        data["completion"]["state"] = "failed"
+        save_candidate(job, data)
+        self.assertEqual(self.run.accept(job["task"])["status"], "retry")
+        self.assertEqual(self.run.state["active_reviewers"], [])
+        self.assertNotIn("reviewer_selector", self.run.state["tasks"])
+
+    def test_partial_review_with_findings_is_preserved_but_not_completed(self):
+        self.route()
+        job = self.run.next_tasks()["jobs"][0]
+        data = empty_review(self.run, job["task"])
+        reviewer = next(r for r in self.run.reviewers if r.name == job["task"])
+        data.update(run_status="partial", findings=[finding(self.run, prefix=reviewer.id_prefix)])
+        data["completion"].update(state="partial", missing_checks=["Unattempted appendix checks"])
+        save_candidate(job, data)
+        before = Path(job["candidate_file"]).read_bytes()
+        self.assertEqual(self.run.accept(job["task"])["status"], "retry")
+        self.assertEqual(Path(job["candidate_file"]).read_bytes(), before)
+        self.assertFalse(self.run.paths.report_path.exists())
+
     def assert_invalid_candidate_retries(self, job, payload):
         candidate = Path(job["candidate_file"])
         candidate.write_bytes(payload)
@@ -162,7 +188,7 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.run = ReviewRun(self.root, SOURCE)
         self.assertEqual(self.run.task(job["task"])["attempts"][-1]["status"], "invalid")
         self.assertFalse(self.run.task(job["task"])["attempts"][-1].get("output"))
-        self.assertNotIn(candidate.relative_to(self.root).as_posix(), self.run.state["sealed"])
+        self.assertNotIn(candidate.relative_to(self.root.resolve()).as_posix(), self.run.state["sealed"])
         if job["kind"] == "selector":
             self.assertEqual(self.run.state["active_reviewers"], [])
             self.assertFalse(self.run.paths.selected_reviewers_config_path.exists())
@@ -419,6 +445,24 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.assertTrue(any("Web search" in e for e in errors))
         self.assertEqual(self.run.validate_review(empty_review(self.run, "literature_auditor", "cannot_verify"), "literature_auditor"), [])
 
+    def test_equivalent_root_spelling_preserves_containment_and_tamper_checks(self):
+        alternate = self.root / "work" / ".."
+        self.assertNotEqual(alternate, self.root)
+        run = ReviewRun(alternate, SOURCE)
+        self.assertEqual(run.root, self.root.resolve())
+        job = run.next_tasks()["jobs"][0]
+        self.assertTrue(Path(job["candidate_file"]).is_relative_to(self.root.resolve()))
+        with self.assertRaises(WorkError):
+            confined(run.root, "../outside")
+        source = run.paths.parsed_dir / "pages/page_001.md"
+        original = source.read_bytes()
+        try:
+            source.write_bytes(original + b"tampered")
+            with self.assertRaises(WorkError):
+                run.next_tasks()
+        finally:
+            source.write_bytes(original)
+
     def test_changed_pdf_parsed_or_prompt_refuses_reuse(self):
         for path in [self.root / "inputs/paper.pdf", self.run.paths.parsed_dir / "pages/page_001.md",
                      self.run.paths.prompts_dir / "parser_quality_audit.txt"]:
@@ -511,7 +555,7 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.assertEqual(self.run.accept("editor")["status"], "retry")
         self.assertFalse(self.run.paths.report_path.exists())
         editor = self.run.next_tasks()["jobs"][0]
-        save_candidate(editor, synthetic_report(bundle))
+        save_candidate(editor, editor_payload(bundle))
         self.assertEqual(self.run.accept("editor")["status"], "accepted")
         self.assertEqual(self.run.next_tasks()["status"], "complete")
         archive = self.folder / "final-checkpoint.zip"

@@ -1,0 +1,151 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "paper_id": {
+      "type": "string"
+    },
+    "packet_sha256": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "failed"
+      ]
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonical_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "narrowed",
+              "unsupported",
+              "unresolved"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "strongest_alternative": {
+            "type": "string"
+          },
+          "observation": {
+            "type": "string"
+          },
+          "diagnosis": {
+            "type": "string"
+          },
+          "remedy": {
+            "type": "string"
+          },
+          "surviving_claim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "object_id": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "quote": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "correspondence": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "visual",
+                    "unresolved"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "object_id",
+                "page",
+                "quote",
+                "correspondence",
+                "note"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "editor_fidelity": {
+            "type": "string",
+            "enum": [
+              "faithful",
+              "not_faithful",
+              "unresolved",
+              "not_applicable"
+            ]
+          },
+          "editor_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "outcome",
+          "reason",
+          "strongest_alternative",
+          "observation",
+          "diagnosis",
+          "remedy",
+          "surviving_claim",
+          "evidence",
+          "editor_fidelity",
+          "editor_reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "paper_id",
+    "packet_sha256",
+    "status",
+    "results",
+    "limitations"
+  ],
+  "additionalProperties": false
+}

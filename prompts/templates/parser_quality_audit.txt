@@ -28,6 +28,13 @@ Focus on parser defects that could poison downstream reviewers:
 - figure/table extraction failures
 - inventory contradictions, such as visible captions or embedded images missing from structured inventories
 
+Overall readiness: if no trustworthy source representation or retained fallback
+supports substantive review, use run_status=cannot_verify and mark assigned_remit
+cannot_verify with the concrete reason, even if the audit itself finished. This
+blocks substantive review. A local unreadable display need not block an otherwise
+usable paper: keep run_status=ok, identify the safe fallback or explicitly excluded
+scope, and retain the particular limitation. Never infer replacement content.
+
 Artifact interpretation rules:
 - Use the manifest and directory listings to locate artifact files; do not guess word/block filenames. Distinguish an inventoried file from evidence you actually inspected. Do not certify visual fidelity from an inventory alone: inspect representative retained images for image-only pages, table alignment, and repaired glyphs, and state any remaining unverified classes or page ranges.
 - For OCR-recommended pages or uncaptioned embedded images, inspect the retained `page_images/page_NNN.png` files before concluding that their content is unavailable. These full-page images remain evidence even when native text extraction is empty and no separate figure object was created. Missing OCR text or a missing figure inventory entry is not, by itself, a missing visual fallback.

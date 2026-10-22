@@ -1,0 +1,151 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "paper_id": {
+      "type": "string"
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string",
+            "description": "Block introduction; may be empty only when valid nonempty finding treatments render in this block. Required sections must contain meaningful content."
+          }
+        },
+        "required": [
+          "id",
+          "section",
+          "markdown"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonical_id": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "included",
+              "merged",
+              "rejected",
+              "narrowed",
+              "appendix_only"
+            ]
+          },
+          "block_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "treatment": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "surviving_claim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retained_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "qualifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "canonical_id",
+          "disposition",
+          "block_ids",
+          "destination",
+          "treatment",
+          "reason",
+          "surviving_claim",
+          "retained_evidence",
+          "qualifications"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "semantic_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "canonical_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "faithful",
+              "not_faithful",
+              "unresolved"
+            ]
+          },
+          "assessor": {
+            "type": "string",
+            "enum": [
+              "editor_model"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "verdict",
+          "assessor",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "paper_id",
+    "blocks",
+    "decisions",
+    "semantic_checks"
+  ],
+  "additionalProperties": false
+}

@@ -1,6 +1,7 @@
 """Acceptance-path regressions; synthetic sources, no manuscript fixtures/calls."""
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -257,17 +258,34 @@ class RepairIntegrationTests(unittest.TestCase):
         schema.parent.mkdir()
         schema.write_bytes((REPO/'schemas/editor_decisions.schema.json').read_bytes())
         calls=[]
+        started_at = 1_700_000_000.0
         def call(label, *args, **kwargs):
             if label=='editor':
                 calls.append(kwargs['input_text'])
                 artifact=editor_payload(empty)
                 if len(calls)==1:artifact['blocks'][0]['markdown']='| Broken | Header |'
-                (paths.editor_dir/'editor_decisions.json').write_text(json.dumps(artifact))
+                output = paths.editor_dir/'editor_decisions.json'
+                output.write_text(json.dumps(artifact))
+                # Model elapsed execution explicitly: immediate Windows writes
+                # can round below time.time() by one floating-point tick.
+                os.utime(output, (started_at + len(calls), started_at + len(calls)))
             return RunResult(label,0,paths.log_dir/'out',paths.log_dir/'err')
         args=SimpleNamespace(backend='codex', model='unchanged', reasoning_effort='xhigh', agent_timeout_minutes=1,max_repair_calls=1)
-        with mock.patch('review_paper.run_required',side_effect=call), mock.patch('review_paper.agent_exec_command',return_value=['mock']):
+        with mock.patch('review_paper.run_required',side_effect=call), mock.patch('review_paper.agent_exec_command',return_value=['mock']), \
+                mock.patch('review_paper.time.time', return_value=started_at):
             run_editor(args,self.root,paths,paths.log_dir)
         self.assertEqual(len(calls),2)
         self.assertTrue(paths.report_path.exists())
         self.assertIn('matching delimiter row',calls[1])
         self.assertIn('Broken', (paths.work_root/'repairs/01/previous.json').read_text())
+
+    def test_freshness_rejects_missing_and_older_output(self):
+        from review_paper import require_fresh_file
+        output = self.root/'freshness.json'
+        with self.assertRaises(FileNotFoundError):
+            require_fresh_file(output, 0, 'candidate')
+        output.write_text('{}')
+        written_at = output.stat().st_mtime
+        with self.assertRaisesRegex(RuntimeError, 'stale'):
+            require_fresh_file(output, written_at + 1, 'candidate')
+        require_fresh_file(output, written_at, 'candidate')

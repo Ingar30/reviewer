@@ -67,7 +67,9 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
     caller.mkdir(parents=True)
     pdf = caller / "paper with spaces.pdf"
     synthetic_pdf(pdf)
-    workspace = caller / "persistent workspace"
+    # The launcher resolves the workspace; keep the complete canonical path in
+    # the cwd assertion even when the caller uses a Windows short-path alias.
+    workspace = (caller / "persistent workspace").resolve()
 
     def run(args, *, expected=0, extra=None, choose_backend=False):
         backend_args = ["--backend", backend] if choose_backend else []

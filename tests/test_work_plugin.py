@@ -21,7 +21,7 @@ from build_work_plugin import (  # noqa: E402
     PLUGIN_NAME, RUNTIME_PATH, build, check_bundle, make_private_marketplace, runtime_payload,
 )
 from check_final_report import report_failures  # noqa: E402
-from work_plugin import MODES, ReviewRun, WorkError, doctor, main, parse_json, read_json, restore, write_json  # noqa: E402
+from work_plugin import MODES, ReviewRun, WorkError, confined, doctor, main, parse_json, read_json, restore, write_json  # noqa: E402
 from tests.mock_responses import review_payload, editor_payload
 
 PLUGIN = REPO / "plugins" / PLUGIN_NAME
@@ -188,7 +188,7 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         self.run = ReviewRun(self.root, SOURCE)
         self.assertEqual(self.run.task(job["task"])["attempts"][-1]["status"], "invalid")
         self.assertFalse(self.run.task(job["task"])["attempts"][-1].get("output"))
-        self.assertNotIn(candidate.relative_to(self.root).as_posix(), self.run.state["sealed"])
+        self.assertNotIn(candidate.relative_to(self.root.resolve()).as_posix(), self.run.state["sealed"])
         if job["kind"] == "selector":
             self.assertEqual(self.run.state["active_reviewers"], [])
             self.assertFalse(self.run.paths.selected_reviewers_config_path.exists())
@@ -444,6 +444,24 @@ class WorkPluginTests(WorkRunFixture, unittest.TestCase):
         errors = self.run.validate_review(empty_review(self.run, "literature_auditor"), "literature_auditor")
         self.assertTrue(any("Web search" in e for e in errors))
         self.assertEqual(self.run.validate_review(empty_review(self.run, "literature_auditor", "cannot_verify"), "literature_auditor"), [])
+
+    def test_equivalent_root_spelling_preserves_containment_and_tamper_checks(self):
+        alternate = self.root / "work" / ".."
+        self.assertNotEqual(alternate, self.root)
+        run = ReviewRun(alternate, SOURCE)
+        self.assertEqual(run.root, self.root.resolve())
+        job = run.next_tasks()["jobs"][0]
+        self.assertTrue(Path(job["candidate_file"]).is_relative_to(self.root.resolve()))
+        with self.assertRaises(WorkError):
+            confined(run.root, "../outside")
+        source = run.paths.parsed_dir / "pages/page_001.md"
+        original = source.read_bytes()
+        try:
+            source.write_bytes(original + b"tampered")
+            with self.assertRaises(WorkError):
+                run.next_tasks()
+        finally:
+            source.write_bytes(original)
 
     def test_changed_pdf_parsed_or_prompt_refuses_reuse(self):
         for path in [self.root / "inputs/paper.pdf", self.run.paths.parsed_dir / "pages/page_001.md",

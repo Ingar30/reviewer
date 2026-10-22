@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from reviewer_config import ReviewerConfig, load_reviewers_config
+from review_acceptance import acceptance_errors
+from strict_json import read_json
 
 
 def path_label(parts: list[Any]) -> str:
@@ -30,6 +33,8 @@ def is_cannot_verify(finding: dict[str, Any]) -> bool:
 def source_provenance_errors(data: dict[str, Any], repo: Path) -> list[str]:
     errors: list[str] = []
     paper_id = str(data.get("paper_id") or "")
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", paper_id):
+        return ["Invalid paper_id: expected a confined manuscript identifier"]
     allowed_roots = [(repo / "work" / paper_id / "parsed").resolve()]
     manifest_path = allowed_roots[0] / "manifest.json"
     page_count = None
@@ -176,6 +181,11 @@ def semantic_errors(
         ):
             if not finding.get("numeric_check"):
                 errors.append(f"{label}.numeric_check is required for verifiable numerical_auditor findings")
+        numeric = finding.get("numeric_check")
+        if isinstance(numeric, dict) and not any(
+            value is not None and value != "" and value != [] for value in numeric.values()
+        ):
+            errors.append(f"{label}.numeric_check must contain substantive evidence, not null placeholders")
 
     if repo is not None:
         errors.extend(source_provenance_errors(data, repo))
@@ -184,12 +194,38 @@ def semantic_errors(
 
 def validate_review_output(data, schema: dict, reviewers, *, repo: Path,
                           expected_reviewer: str | None = None,
-                          paper_id: str | None = None) -> list[str]:
+                          paper_id: str | None = None, require_complete: bool = False) -> list[str]:
     """Shared schema, identity, semantic and provenance checks, without a subprocess."""
     from jsonschema import Draft202012Validator
 
+    # Read legacy output for diagnosis without rewriting its bytes or inventing a
+    # completion guarantee. Runtime acceptance below deliberately refuses it.
+    try:
+        diagnostic = copy.deepcopy(data)
+    except RecursionError:
+        return ["Review JSON exceeds supported nesting depth"]
+    if isinstance(diagnostic, dict):
+        schema = copy.deepcopy(schema)
+        # Fresh model output always supplies a reason. Retained exhaustive checks
+        # may have null reasons; coverage_errors still requires actual reasons for
+        # sampled checks, exclusions and limitations. Never invent historical text.
+        schema["properties"]["coverage"]["items"]["properties"]["reason"] = {"type": ["string", "null"]}
+        if not require_complete:
+            # Historical contracts are readable for diagnosis only. The model-
+            # facing schema no longer invites legacy numerical placeholders.
+            schema["properties"]["findings"]["items"]["properties"]["numeric_check"]["anyOf"].append(
+                {"$ref": "#/$defs/numeric_check"})
+        if "completion" in schema.get("properties", {}):
+            diagnostic.setdefault("completion", None)
+        if not require_complete and "coverage" in schema.get("properties", {}):
+            diagnostic.setdefault("coverage", [])
+        if not require_complete:
+            for finding in diagnostic.get("findings", []):
+                for source in finding.get("source_objects", []):
+                    for key in ("object_id", "correspondence", "verification_note"):
+                        source.setdefault(key, None)
     failures = [f"{path_label(list(err.path))}: {err.message}"
-                for err in sorted(Draft202012Validator(schema).iter_errors(data), key=lambda e: str(list(e.path)))]
+                for err in sorted(Draft202012Validator(schema).iter_errors(diagnostic), key=lambda e: str(list(e.path)))]
     if failures:
         return failures
     if expected_reviewer is not None and data.get("reviewer") != expected_reviewer:
@@ -197,6 +233,21 @@ def validate_review_output(data, schema: dict, reviewers, *, repo: Path,
     if paper_id is not None and data.get("paper_id") != paper_id:
         failures.append("Output paper identity does not match this paper.")
     failures.extend(semantic_errors(data, reviewers, repo=repo))
+    if failures:
+        return failures
+    if require_complete:
+        failures.extend(acceptance_errors(data))
+        from review_coverage import coverage_errors
+        failures.extend(coverage_errors(data, repo / "work" / data["paper_id"] / "parsed"))
+        from evidence_registry import review_evidence_checks
+        failures.extend(error for check in review_evidence_checks(data, repo) for error in check["errors"])
+        from numerical_checks import numeric_errors, quantity_source_errors
+        for finding in data.get("findings", []):
+            if finding.get("numeric_check"):
+                failures.extend(numeric_errors(finding["numeric_check"],
+                    {s["id"] for s in finding["source_objects"]}, cannot_verify=is_cannot_verify(finding)))
+                failures.extend(quantity_source_errors(finding["numeric_check"], finding["source_objects"],
+                                                      cannot_verify=is_cannot_verify(finding)))
     return failures
 
 
@@ -205,16 +256,18 @@ def main() -> int:
     parser.add_argument("--schema", required=True)
     parser.add_argument("--input", required=True)
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
+    parser.add_argument("--diagnostic", action="store_true", help="Inspect legacy/partial evidence without claiming audit completion.")
     args = parser.parse_args()
 
     schema_path = Path(args.schema)
     input_path = Path(args.input)
 
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    data = json.loads(input_path.read_text(encoding="utf-8"))
+    data = read_json(input_path)
     reviewers = load_reviewers_config(args.reviewers_config)
 
-    failures = validate_review_output(data, schema, reviewers, repo=Path(__file__).resolve().parents[1])
+    failures = validate_review_output(data, schema, reviewers, repo=Path(__file__).resolve().parents[1],
+                                      require_complete=not args.diagnostic)
 
     if failures:
         print("INVALID")

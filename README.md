@@ -185,7 +185,11 @@ when no choice has been saved.
 Existing review flags still work. Resume with the same workspace, paper ID and
 runtime: new runs support `--resume-incomplete` to reuse validated completed
 reviewers after preflight/routing; `--resume-after-preflight` reuses preflight but reruns substantive reviews;
-`--refresh-editor --paper-id paper --run-editor` reuses completed reviewer outputs.
+`--refresh-editor --paper-id paper --run-editor` reuses completed reviewer outputs with current acceptance receipts and unchanged runtime/evidence.
+For a new child synthesis without replacing the parent, use
+`--derive-from /path/to/completed-parent --paper-id paper --workspace /path/to/new-child`.
+This runs only the editor after strict upstream compatibility checks; see
+[derived synthesis](docs/evidence_gates.md#new-derived-synthesis-from-completed-evidence-cli).
 Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recovery.
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
 Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
@@ -281,7 +285,7 @@ If a run stops after a valid parser-quality preflight, resume without rerunning 
 python scripts/review_paper.py --pdf "inputs/my-paper.pdf" --paper-id "my-paper" --resume-after-preflight
 ```
 
-If all selected reviewer JSON files already exist, rebuild the editor inputs and rerun only the editor:
+If all selected reviewer JSON files have current completion receipts and unchanged runtime/evidence, rebuild the editor inputs and rerun only the editor:
 
 ```powershell
 python scripts/refresh_editor.py --paper-id "my-paper" --run-editor
@@ -353,3 +357,12 @@ For optional, source-adjudicated model comparisons, see the [benchmark exercise]
 ## License
 
 MIT License. See `LICENSE.md`.
+
+### Evidence and completion contracts
+
+New runs distinguish process success from completed checks, bind findings to source
+objects, and render editor-authored prose from accountable dispositions. Legacy
+outputs remain diagnostic, not implicitly completed. See [evidence gates and migration](docs/evidence_gates.md)
+for coverage ledgers, bounded arithmetic, optional shadow verification, permissions
+limitations and a synthetic worked example. Model defaults and the reviewer roster
+are unchanged.

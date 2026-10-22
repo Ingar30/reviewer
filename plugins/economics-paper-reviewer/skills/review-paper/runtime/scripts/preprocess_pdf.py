@@ -3835,6 +3835,8 @@ def main() -> int:
         },
     }
     write_json(parsed_dir / "manifest.json", manifest)
+    from evidence_registry import build_registry
+    build_registry(parsed_dir)
 
     print(json.dumps(
         {

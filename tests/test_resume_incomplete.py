@@ -81,8 +81,14 @@ def exercise_selective_resume(folder, backend, command=None, runtime=None):
     report = workspace / "outputs/paper-with-spaces/report.md"
     assert "MOCK report" in report.read_text()
     before = len(executions())
+    # Simulate a crash after the completed receipt but before manifest publication.
+    manifest_path = work / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["status"] = "running"
+    manifest_path.write_text(json.dumps(manifest))
     run(["--resume-incomplete"])
     assert len(executions()) == before  # A completed checkpoint costs no call.
+    assert json.loads(manifest_path.read_text())["status"] == "complete"
     assert all(p.read_bytes() == content for p, content in saved.items())
     assert json.loads((workspace / SETTINGS_FILE).read_text())["backend"] == other_backend
     return {"backend": backend, "model_calls": before, "retained_siblings": 3,

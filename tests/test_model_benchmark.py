@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import benchmark_models as benchmark
 import benchmark_scoring as scoring
 from review_paper import RunResult
+from tests.mock_responses import review_payload
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -29,10 +30,13 @@ class BenchmarkTests(unittest.TestCase):
             "summary": {"page_count": 1},
         })
         (self.work / "parsed/full_text.md").write_text("Synthetic parsed fixture only.")
-        benchmark.write(self.work / "reviews/parser_quality_auditor.json", {
-            "reviewer": "parser_quality_auditor", "paper_id": "paper-a", "run_status": "ok",
-            "summary": "MOCK parser preflight", "findings": [], "notes": [],
-        })
+        (self.work / "parsed/pages").mkdir()
+        (self.work / "parsed/pages/page_001.md").write_text("Synthetic predictive claim.")
+        benchmark.write(self.work / "parsed/page_index.json", [])
+        from evidence_registry import build_registry
+        build_registry(self.work / "parsed")
+        benchmark.write(self.work / "reviews/parser_quality_auditor.json",
+                        review_payload(self.source, "paper-a", "parser_quality_auditor"))
         self.config = {"format": 1, "repeats": 2, "schedule_seed": 17,
                        "profiles": [
                            {"id": "sol", "backend": "codex", "model": "gpt-6-sol", "effort": "xhigh"},
@@ -51,7 +55,7 @@ class BenchmarkTests(unittest.TestCase):
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
         self.assertNotIn("--ignore-rules", command)
         role = "numerical_auditor" if 'reviewer = "numerical_auditor"' in input_text else "claim_evidence_auditor"
-        payload = {"reviewer": role, "paper_id": "paper-a", "run_status": "ok", "summary": "MOCK", "findings": [], "notes": []}
+        payload = review_payload(cwd, "paper-a", role)
         log_dir.mkdir(parents=True)
         stdout, stderr = log_dir / "benchmark.stdout.log", log_dir / "benchmark.stderr.log"
         if "--print" in command:

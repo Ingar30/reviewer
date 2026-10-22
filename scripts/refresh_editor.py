@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from backend_settings import read_run_manifest, resolve_backend
 from review_paper import enforce_preflight_gate, agent_exec_command, run_required, codex_project_defaults
 from claude_backend import DEFAULT_MODEL, EFFORTS, check_claude, require_same_backend, save_claude_output
 from reviewer_config import load_reviewers_config
+from resume_review import ReviewCheckpoint, digest, atomic_write_json, run_lease
 
 
 def repo_root() -> Path:
@@ -22,6 +24,18 @@ def require_paths(paths: dict[str, Path]) -> None:
     missing = [f"{name}: {path}" for name, path in paths.items() if not path.exists()]
     if missing:
         raise FileNotFoundError("Editor refresh prerequisites are missing:\n- " + "\n- ".join(missing))
+
+
+def archive_editor_products(report: Path, editor_dir: Path, editor_input: Path, log_dir: Path) -> Path:
+    import tempfile
+    log_dir.mkdir(parents=True, exist_ok=True)
+    # Atomically reserve a short unique directory. A nested 32-character UUID
+    # pushed otherwise valid Windows workspaces past MAX_PATH during refresh.
+    attempt_log = Path(tempfile.mkdtemp(prefix="editor-", dir=log_dir))
+    for old in [report, *editor_dir.glob("*.json"), editor_input]:
+        if old.is_file():
+            shutil.copy2(old, attempt_log / (old.name + ".previous"))
+    return attempt_log
 
 
 def run_command(command: list[str], cwd: Path, *, input_text: str | None = None) -> None:
@@ -67,9 +81,7 @@ def mark_run_manifest_complete(
     )
     if editor_settings:
         manifest["refreshed_editor"] = editor_settings
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    atomic_write_json(manifest_path, manifest)
 
 
 def main() -> int:
@@ -79,6 +91,8 @@ def main() -> int:
     parser.add_argument("--backend", choices=("codex", "claude"), default=None,
                         help="Execution CLI; defaults to the saved run/workspace, then codex.")
     parser.add_argument("--paper-id", required=True)
+    parser.add_argument("--max-repair-calls", type=int, default=1,
+                        help="Per-paper extra call cap, including earlier repairs; at most one repair per stage.")
     parser.add_argument(
         "--run-editor",
         action="store_true",
@@ -102,10 +116,41 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.max_repair_calls < 0:
+        parser.error("--max-repair-calls must be nonnegative")
 
     repo = repo_root()
     paths = paper_run_paths(repo, args.paper_id)
+    with run_lease(paths.work_root):
+        before = paths.run_manifest_path.read_bytes() if paths.run_manifest_path.exists() else None
+        try:
+            return execute_refresh(args, repo, paths)
+        except BaseException as exc:
+            if paths.run_manifest_path.is_file() and paths.run_manifest_path.read_bytes() != before:
+                manifest = read_run_manifest(paths.run_manifest_path)
+                if manifest and manifest.get("status") == "editor_pending":
+                    manifest.update(status="interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
+                                    failure_type=type(exc).__name__)
+                    atomic_write_json(paths.run_manifest_path, manifest)
+            raise
+
+
+def execute_refresh(args, repo, paths):
     prior_manifest = read_run_manifest(paths.run_manifest_path)
+    checkpoint_path = paths.work_root / "resume_checkpoint.json"
+    if not prior_manifest or not checkpoint_path.is_file():
+        raise ValueError("Editor refresh requires current acceptance receipts. Keep legacy artifacts with their original runtime; completion is unconfirmed.")
+    saved = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    source = Path(prior_manifest["source_pdf"])
+    if not source.is_absolute():
+        source = repo / source
+    if not source.is_file() or digest(source) != prior_manifest.get("source_pdf_sha256"):
+        raise ValueError("Editor refresh refused: source PDF changed or missing.")
+    checkpoint = ReviewCheckpoint(repo, paths, saved.get("settings", {}))
+    checkpoint.load()
+    expected = {r.name for r in checkpoint.reviewers if r.stage == "review"}
+    if expected != set(checkpoint.data["accepted"]):
+        raise ValueError("Editor refresh refused: unfinished reviewers lack acceptance receipts.")
     args.backend, backend_source = resolve_backend(repo, args.backend, prior_manifest)
     require_same_backend(args.backend, prior_manifest)
     print(f"[backend] {args.backend} ({backend_source})")
@@ -149,6 +194,45 @@ def main() -> int:
             for reviewer in selected
         }
     )
+    # Preserve the prior completed synthesis, then explicitly mark this attempt
+    # incomplete before rebuilding any editor product. A preparation-only refresh
+    # must not leave an obsolete completion receipt attached to new inputs.
+    attempt_log = archive_editor_products(report, editor_dir, editor_input, paths.log_dir)
+    checkpoint.data.pop("report_sha256", None)
+    checkpoint.data.pop("editor_files", None)
+    checkpoint.save()
+    prior_manifest.update(status="editor_pending", editor_refresh_attempt=str(attempt_log.relative_to(repo)))
+    atomic_write_json(paths.run_manifest_path, prior_manifest)
+    prepare_editor_input(args.paper_id, repo, paths, selected)
+
+    if args.run_editor:
+        from review_paper import run_editor
+        args.agent_timeout_minutes = 45
+        run_editor(args, repo, paths, attempt_log)
+        checkpoint.complete()
+        mark_run_manifest_complete(
+            paths.run_manifest_path,
+            report,
+            repo,
+            [reviewer.name for reviewer in review_stage],
+            {"backend": args.backend,
+             "model": args.model or codex_project_defaults(repo).get("model"),
+             "reasoning_effort": args.reasoning_effort or codex_project_defaults(repo).get("model_reasoning_effort")},
+        )
+
+    print(f"editor input refreshed: {editor_input.relative_to(repo)}")
+    if args.run_editor:
+        print(f"report refreshed: {report.relative_to(repo)}")
+    else:
+        print("editor was not run; pass --run-editor to refresh the final report")
+    return 0
+
+
+def prepare_editor_input(paper_id, repo, paths, selected):
+    """Shared deterministic assembly for refresh and a new derived synthesis."""
+    parsed_dir, reviews_dir, prompts_dir = paths.parsed_dir, paths.reviews_dir, paths.prompts_dir
+    selected_config_relative = str(paths.selected_reviewers_config_path.relative_to(repo))
+    bundle, editor_prompt, editor_input = paths.bundle_path, paths.editor_prompt_path, paths.editor_input_path
     for reviewer in selected:
         run_command(
             [
@@ -170,7 +254,7 @@ def main() -> int:
             sys.executable,
             "scripts/normalize_review_outputs.py",
             "--paper-id",
-            args.paper_id,
+            paper_id,
             "--reviews-dir",
             str(reviews_dir.relative_to(repo)),
             "--output",
@@ -186,7 +270,7 @@ def main() -> int:
             sys.executable,
             "scripts/render_prompts.py",
             "--paper-id",
-            args.paper_id,
+            paper_id,
             "--parsed-dir",
             str(parsed_dir.relative_to(repo)),
             "--reviews-dir",
@@ -207,7 +291,7 @@ def main() -> int:
             sys.executable,
             "scripts/build_editor_input.py",
             "--paper-id",
-            args.paper_id,
+            paper_id,
             "--editor-prompt",
             str(editor_prompt.relative_to(repo)),
             "--bundle",
@@ -222,54 +306,6 @@ def main() -> int:
         repo,
     )
 
-    if args.run_editor:
-        editor_text = editor_input.read_text(encoding="utf-8")
-        if args.backend == "claude":
-            result = run_required(
-                "editor-refresh",
-                agent_exec_command(backend="claude", model=args.model,
-                                   reasoning_effort=args.reasoning_effort, output_path=report),
-                repo, paths.log_dir, input_text=editor_text, timeout_seconds=45 * 60,
-            )
-            save_claude_output(result.stdout_path, report)
-        else:
-            run_command(
-                [
-                    *codex_exec_command(args.model, args.reasoning_effort),
-                    "--output-last-message",
-                    str(report.relative_to(repo)),
-                    "-",
-                ],
-                repo,
-                input_text=editor_text,
-            )
-        run_command(
-            [
-                sys.executable,
-                "scripts/check_final_report.py",
-                "--input",
-                str(report.relative_to(repo)),
-                "--bundle",
-                str(bundle.relative_to(repo)),
-            ],
-            repo,
-        )
-        mark_run_manifest_complete(
-            paths.run_manifest_path,
-            report,
-            repo,
-            [reviewer.name for reviewer in review_stage],
-            {"backend": args.backend,
-             "model": args.model or codex_project_defaults(repo).get("model"),
-             "reasoning_effort": args.reasoning_effort or codex_project_defaults(repo).get("model_reasoning_effort")},
-        )
-
-    print(f"editor input refreshed: {editor_input.relative_to(repo)}")
-    if args.run_editor:
-        print(f"report refreshed: {report.relative_to(repo)}")
-    else:
-        print("editor was not run; pass --run-editor to refresh the final report")
-    return 0
 
 
 if __name__ == "__main__":

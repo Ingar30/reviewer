@@ -30,6 +30,7 @@ def fake_claude_environment(folder: Path) -> dict[str, str]:
     guard = folder / "offline process guard"
     guard.mkdir(parents=True)
     shutil.copyfile(REPO / "tests/mock_claude.py", guard / "mock_claude.py")
+    shutil.copyfile(REPO / "tests/mock_responses.py", guard / "mock_responses.py")
     (guard / "sitecustomize.py").write_text('''import os, shutil, subprocess, sys
 from pathlib import Path
 original_which = shutil.which
@@ -119,10 +120,10 @@ class ClaudeBackendTests(unittest.TestCase):
                                   True, "manuscript", "review", "mandatory")
         (self.folder / reviewer.prompt).write_text("offline prompt", encoding="utf-8")
         output = self.folder / reviewer.output
-        output.write_text("previous accepted review", encoding="utf-8")
         envelope = {"type": "result", "subtype": "success", "is_error": True,
                     "result": "You've hit your session limit SECRET"}
         for exit_code in (0, 1):
+            output.write_text("previous accepted review", encoding="utf-8")
             code = ("import json, sys; sys.stdin.read(); print(json.dumps(" + repr(envelope)
                     + ")); sys.exit(" + str(exit_code) + ")")
             terminal = io.StringIO()
@@ -132,7 +133,10 @@ class ClaudeBackendTests(unittest.TestCase):
                                      REPO / "schemas/reviewer_output.schema.json", self.folder, backend="claude")
                 result = wait_reviewer(*job, timeout_seconds=30)
             self.assertEqual(result.returncode, 1)
-            self.assertEqual(output.read_text(), "previous accepted review")
+            self.assertFalse(output.exists(), "A failed call must not leave an apparently fresh output")
+            archives = list(self.folder.glob("review.json.*.previous"))
+            self.assertEqual(len(archives), 1 if exit_code == 0 else 2)
+            self.assertTrue(all(p.read_text() == "previous accepted review" for p in archives))
             for text in (terminal.getvalue(), result.stderr_path.read_text(encoding="utf-8")):
                 self.assertIn("usage limit", text)
                 self.assertNotIn("SECRET", text)
@@ -176,10 +180,11 @@ class ClaudeBackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not none"):
             backend.claude_exec_command(reasoning_effort="none")
 
-    def test_legacy_codex_transport_unchanged(self):
+    def test_codex_transport_preserves_output_contract_with_restricted_tools(self):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch("review_paper.codex_command", return_value="codex"):
             self.assertEqual(agent_exec_command(output_path=Path("out.json"), schema_path=Path("schema.json")),
-                             ["codex", "exec", "--output-schema", "schema.json", "--output-last-message", "out.json", "-"])
+                             ["codex", "-c", 'web_search="disabled"', "exec", "--sandbox", "read-only",
+                              "--output-schema", "schema.json", "--output-last-message", "out.json", "-"])
 
     def test_backend_mismatch_and_legacy_manifest(self):
         backend.require_same_backend("codex", {"model": "gpt-5.6-sol"})

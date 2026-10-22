@@ -27,6 +27,7 @@ def fake_codex_environment(folder: Path, python: str = sys.executable) -> dict[s
     bin_dir.mkdir(parents=True)
     script = bin_dir / "mock_codex.py"
     shutil.copyfile(REPO / "tests/mock_codex.py", script)
+    shutil.copyfile(REPO / "tests/mock_responses.py", bin_dir / "mock_responses.py")
     if os.name == "nt":
         (bin_dir / "codex.cmd").write_text(f'@echo off\n"{python}" "{script}" %*\n', encoding="utf-8")
     else:
@@ -134,6 +135,7 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
         assert call["args"][call["args"].index("--model") + 1] == default_model
         if backend == "codex":
             assert "--skip-git-repo-check" in call["args"]
+            assert call["args"][call["args"].index("--sandbox") + 1] == "read-only"
         else:
             assert call["args"][call["args"].index("--permission-mode") + 1] == "dontAsk"
             assert "--strict-mcp-config" in call["args"]
@@ -141,7 +143,7 @@ def exercise_pipeline(command: list[str], folder: Path, env: dict[str, str], *, 
         assert Path(call["cwd"]) == workspace
         assert not any(flag in call["args"] for flag in (
             "--dangerously-bypass-approvals-and-sandbox", "--full-auto", "--ignore-rules", "--ignore-user-config",
-            "--sandbox", "--ask-for-approval", "--add-dir",
+            "--ask-for-approval", "--add-dir",
         ))
     return {"workspace": str(workspace), "report": str(report), "mock_exec_calls": len(executions),
             "preflight_reused": True, "reviews_reused_for_editor": True}
@@ -211,9 +213,10 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["stdout"], subprocess.DEVNULL)
             self.assertEqual(run.call_args.kwargs["stderr"], subprocess.DEVNULL)
 
-    def test_legacy_codex_command_is_unchanged_without_launcher(self):
+    def test_checkout_codex_command_requests_read_only_and_disabled_search(self):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch("review_paper.codex_command", return_value="codex"):
-            self.assertEqual(codex_exec_command(), ["codex", "exec"])
+            self.assertEqual(codex_exec_command(), ["codex", "-c", 'web_search="disabled"',
+                                                   "exec", "--sandbox", "read-only"])
 
     def test_codex_double_blocks_real_claude(self):
         env = fake_codex_environment(self.folder)

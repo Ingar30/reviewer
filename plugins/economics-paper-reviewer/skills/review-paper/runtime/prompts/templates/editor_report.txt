@@ -5,10 +5,12 @@ You will receive:
 2. a lossless normalized editor bundle, and
 3. a compact provenance index for the validated reviewer JSON files.
 
-Produce the final markdown report for paper_id "{paper_id}".
+Author the report prose and structured editorial decisions for paper_id "{paper_id}".
+Return JSON matching schemas/editor_decisions.schema.json. The deterministic
+renderer assembles your prose into the final Markdown without rewriting it.
 
 Hard rules:
-- The output must be the final markdown report itself.
+- The output must be the structured editorial artifact, not a free-form Markdown report.
 - Do not write a note saying where the report was saved.
 - Do not include process/tool/session notes.
 - Do not emit replacement-question sequences such as ?? or ???; if source text contains characters that may render unreliably, paraphrase or normalize the quote to readable ASCII.
@@ -18,6 +20,7 @@ Hard rules:
 - Preserve numerical and quotation fidelity during synthesis. Before finalizing, check every reported coefficient, standard error, interval, significance statement, sample count, unit, and direct quote against its specific supplied source evidence. Never add or alter these details from memory, another column, a severity label, or statistical convention. If a detail is absent or conflicting, omit it or state the uncertainty; do not fill it in.
 - A recomputation is a correction only when the estimand, aggregation, sample and denominator match. Ratios of averages need not equal averages of ratios; relative percentages and percentage-point changes can both be correct. Do not prescribe a replacement number when its definition is unverified.
 - Missing display rows or documentation do not prove that the underlying estimation omitted a variable or procedure. An explicitly scoped comparison need not show every arm. Distinguish requests for disclosure from demonstrated errors and optional extensions.
+- For material omission claims, inspect the relevant main text and appendix before drafting. Distinguish nothing defined, a partial definition with missing operational details, and information already supplied. Acknowledge what the source does define; ask only for genuinely missing details. Do not turn an unspecified observation window into an undefined event. Check this in semantic_checks for both the diagnosis and proposed correction.
 - When the evidence proves an inconsistency but not its cause, ask the authors to reconcile it. Do not assert which outcome, coding decision, sample or specification they actually used, or mandate a speculative repair.
 - Shortening a finding must not remove premises needed for its conclusion. Preserve the conditioning, comparison group, aggregation and model terms on which a numerical contradiction depends; an intercept alone need not equal a sample mean. If a concise faithful explanation is unavailable, retain the qualification rather than strengthen the claim.
 - Keep measurement and interpretation distinct in both the diagnosis and the proposed replacement wording: a coded mention share is not the share holding a belief, and nonmention is not measured disagreement. An exponentiated log coefficient concerns a multiplicative/geometric estimand conditional on the logarithm and outcome coding, not automatically arithmetic-mean levels or a causal effect.
@@ -61,7 +64,7 @@ Hard rules:
 - Use Suggested Revision Priorities as a short sequence, not a second full discussion of the headline findings. Start with corrections possible from existing evidence, then necessary qualifications or documentation, and put optional analyses last.
 - Use Additional Findings for issues not elevated to confirmed corrections. Divide it into ### Material Qualifications and ### Exploratory Interpretation and Development. Do not organize either subsection by agent.
 - Avoid repetition across the executive summary, headline findings, revision sequence, additional findings, cannot-verify table, and appendices. State a headline issue fully once; elsewhere cross-reference it briefly or add only a genuinely distinct dimension. Preserve complete source coverage in the traceability appendix rather than repeating prose.
-- Include a final Appendix: Traceability Map table that maps every canonical finding in the normalized bundle to its source finding IDs.
+- Supply decisions for the generated final Appendix: Traceability Map, accounting for every canonical finding and its source IDs.
 
 Suggested report structure:
 # Multi-Agent Paper Review Report
@@ -92,16 +95,18 @@ Suggested report structure:
 
 ## Appendix: Traceability Map
 
-In Additional Findings, prefer a markdown table with these columns:
-| Area | Location | Issue | Suggested revision |
+In Additional Findings, prefer concise, finding-specific narrative treatments under
+shared thematic blocks. Give the location, supported concern and smallest adequate
+revision together. Do not create a separate one-row table for every finding.
+Use a table only when a genuine comparison is clearer in rows; keep the whole table
+in one treatment and explicitly merge only findings that support the same correction.
 
-In Items Marked Cannot Verify, distinguish a manuscript disclosure gap from a limitation of evidence available to this review. Do not infer that information is absent, a procedure was not followed, or a law or policy was violated merely because the reviewer could not access documentation. Ask for the smallest disclosure needed to evaluate the manuscript's claim. Prefer a markdown table with these columns:
-| Item | What is established | What remains unavailable | Proportionate next step |
+In Items Marked Cannot Verify, distinguish a manuscript disclosure gap from a limitation of evidence available to this review. Do not infer that information is absent, a procedure was not followed, or a law or policy was violated merely because the reviewer could not access documentation. Ask for the smallest disclosure needed to evaluate the manuscript's claim. Prefer short narrative items stating what is established, what remains unavailable, and the proportionate next step. Cross-reference an issue already discussed fully rather than repeating it.
 
-When copyedit_issue findings exist, include a markdown table under the appendix heading with these columns:
-| Location | Current text | Issue | Suggested correction |
-
-Use one row per grammar or copyediting finding. If no copyedit_issue findings exist, omit the appendix.
+When copyedit_issue findings exist, use compact list items in the grammar appendix:
+location, current wording, correction and a short explanation where needed. Preserve
+each finding's correction and traceability without repeating a table header for it.
+If no copyedit_issue findings exist, omit the appendix.
 
 When external sources are named as evidence in the report body, include a compact table under the external-sources appendix with these columns:
 | Source | Type | Used for | URL or identifier |
@@ -110,9 +115,45 @@ Use only source details present in source_objects or claim_evidence_links in the
 
 If no external sources are named as evidence in the report body, omit the appendix.
 
-The Traceability Map appendix must be the only place where canonical and source IDs are printed. Include every canonical finding in the normalized bundle, even if the finding is otherwise summarized briefly. Use this markdown table:
-| Report section | Finding | Canonical ID | Source finding IDs |
-
-Use exactly one row per canonical finding and exactly one canonical ID in that row. Copy its complete source-ID mapping from the deterministic brief's Traceability Map Rows: repeat the reviewer prefix for every source ID, never abbreviate it, and never combine mappings from different canonical findings. Related findings may share a discussion in the report body, but their traceability rows must remain separate.
+The renderer generates the Traceability Map from decisions; do not author its table.
+Use exact canonical IDs in decisions and semantic_checks, never in rendered prose.
 
 Use the deterministic editor brief first for organization. Use the normalized editor bundle at `{editor_bundle_path}` as the authoritative source for canonical IDs, per-source-finding details, grouped evidence, quotations, and context. The reviewer-file index is provenance, not a third evidence copy.
+
+Structured editorial artifact (version 1):
+- blocks contains report sections in reading order, with stable lowercase IDs,
+  section titles without the ## prefix, and your Markdown prose. Do not include
+  the report title or the traceability appendix: both are rendered deterministically.
+  A block's markdown introduction may be empty when its finding treatments supply
+  the content. Do not add filler introductions. Every block must render nonempty
+  prose or treatments, and every required section must contain meaningful content.
+  Do not put top-level headings inside block prose. Third-level headings are allowed.
+  The same restriction applies to decision treatments. Keep each Markdown table
+  complete in ONE block or treatment, including its header, delimiter row and rows;
+  never leave a standalone header in a block and put its rows in other treatments.
+- decisions contains exactly one disposition for EVERY canonical finding:
+  included, merged, rejected, narrowed, or appendix_only. There is no silent omission.
+- included/narrowed/appendix_only names exactly one existing block_id and supplies
+  finding-specific treatment. That treatment is rendered after the block prose:
+  put its full substantive discussion there, not a generic promise to discuss it.
+  narrowed also supplies surviving_claim. appendix_only must name an appendix block
+  and justify why the issue is minor, peripheral or unresolved. Keep material
+  source limitations visible where they change the main conclusions.
+- merged names a destination canonical finding, with empty block_ids and treatment.
+  Account explicitly for retained_evidence and qualifications in the destination's
+  treatment; destinations must terminate in included/narrowed/appendix_only, never
+  rejected, unknown or cyclic. Reviewer disagreement is not erased by merging.
+- rejected supplies a source-based reason; block_ids is empty, destination and
+  surviving_claim are null, and treatment is empty. Do not include an unsupported
+  accusation merely to satisfy coverage. All dispositions need a specific reason.
+- semantic_checks must assess EVERY consequential (high/medium substantive) finding,
+  including rejected, narrowed and merged findings. Identify assessor=editor_model,
+  never human or independent_model for your self-check. Inspect actual treatment,
+  evidence preservation, qualifications, severity and proportionality. A generic
+  paragraph or an ID in traceability is not substantive coverage. In particular,
+  "may use different samples" must not become "uses inconsistent estimates".
+  Return verdict=not_faithful or unresolved when you cannot justify faithful treatment;
+  these drafts remain diagnostic, not a completed report. This is model judgment,
+  not deterministic proof or independent human adjudication.
+- Finding IDs belong only in decision/assessment fields; never insert them in
+  block prose or treatment. The renderer generates exact traceability mappings.

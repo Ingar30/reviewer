@@ -153,12 +153,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workspace", default="reviewer-workspace")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--refresh-editor", action="store_true")
+    parser.add_argument("--derive-from", help="Completed parent workspace; create a new editor/report in --workspace.")
     parser.add_argument("--pdf")
     parser.add_argument("--paper-id")
     parser.add_argument("--reviewers-config")
     args, forwarded = parser.parse_known_args(argv)
     runtime = bundled_runtime()
-    script = "refresh_editor.py" if args.refresh_editor else "review_paper.py"
+    script = "derive_report.py" if args.derive_from else ("refresh_editor.py" if args.refresh_editor else "review_paper.py")
     if args.paper_id is not None:
         forwarded.extend(["--paper-id", args.paper_id])
     if "--help" in forwarded or "-h" in forwarded:
@@ -168,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
             "  --backend NAME    codex or claude; otherwise saved run/workspace, then codex\n"
             "  --check           Check resources, dependencies and selected CLI login; no review\n"
             "  --refresh-editor  Use the existing editor-refresh helper and its options\n"
+            "  --derive-from DIR Create a child synthesis from completed, compatible evidence\n"
             "Relative input paths are resolved from your current directory.\n",
             flush=True,
         )
@@ -177,13 +179,17 @@ def main(argv: list[str] | None = None) -> int:
         validate_workspace_location(workspace, runtime)
         runtime_files(runtime)
         settings = backend_settings(runtime)
+        if args.derive_from and (args.refresh_editor or args.pdf or args.reviewers_config or not args.paper_id):
+            raise ValueError("--derive-from requires --paper-id and a fresh --workspace; do not combine it with --pdf, --reviewers-config or --refresh-editor.")
+        parent = Path(args.derive_from).expanduser().resolve() if args.derive_from else None
         paper_id = args.paper_id
-        if not args.refresh_editor and (args.paper_id or args.pdf):
+        if not args.refresh_editor and not parent and (args.paper_id or args.pdf):
             paper_id = settings.slugify(args.paper_id or Path(args.pdf).stem)
         manifest = None
         if paper_id:
-            manifest_path = workspace / "work" / paper_id / "run_manifest.json"
-            if not manifest_path.resolve().is_relative_to((workspace / "work").resolve()):
+            manifest_root = parent or workspace
+            manifest_path = manifest_root / "work" / paper_id / "run_manifest.json"
+            if not manifest_path.resolve().is_relative_to((manifest_root / "work").resolve()):
                 raise ValueError("Paper ID escapes the workspace.")
             manifest = settings.read_run_manifest(manifest_path)
         backend, backend_source = settings.resolve_backend(workspace, args.backend, manifest)
@@ -198,6 +204,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"OK: bundled resources, Python dependencies and {backend} login checked.\nWorkspace: {workspace}")
             print("No review run; model access, quota and live sandbox behavior were not tested.")
             return 0
+        if parent:
+            # Do not stage over the parent or populate the child before compatibility
+            # checks. The canonical helper owns fresh child creation and provenance.
+            env = os.environ.copy()
+            env["ECONOMICS_REVIEWER_NON_GIT"] = "1"
+            return subprocess.run(
+                [sys.executable, str(runtime / "scripts" / script), *forwarded,
+                 "--parent-workspace", str(parent), "--output-workspace", str(workspace)],
+                cwd=Path.cwd(), env=env,
+            ).returncode
         if not args.refresh_editor and not args.pdf:
             raise ValueError("--pdf is required (or use --help / --check / --refresh-editor).")
         inputs = {}

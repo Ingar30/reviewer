@@ -28,6 +28,7 @@ sys.path.insert(1, str(REPO))
 import fitz  # noqa: E402
 import work_plugin as runtime  # noqa: E402
 from tests.test_work_plugin import empty_review, finding, selection, synthetic_report  # noqa: E402
+from tests.mock_responses import editor_payload  # noqa: E402
 
 
 def require(condition, message):
@@ -224,7 +225,7 @@ class StressRun:
             if job["kind"] == "selector":
                 response = selection(run)
             elif job["kind"] == "editor":
-                response = synthetic_report(runtime.read_json(run.paths.bundle_path), lite=mode == "lite").encode("utf-8")
+                response = editor_payload(runtime.read_json(run.paths.bundle_path), lite=mode == "lite")
             else:
                 response = empty_review(run, name)
             accepted = self.submit(run, job, response)

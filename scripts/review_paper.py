@@ -17,7 +17,8 @@ from pathlib import Path
 
 from pipeline_paths import paper_run_paths
 from backend_settings import read_run_manifest, remember_backend, resolve_backend, slugify
-from resume_review import ReviewCheckpoint, run_lease
+from resume_review import ReviewCheckpoint, run_lease, atomic_write_json, preflight_receipt
+from review_acceptance import require_complete
 from claude_backend import (
     DEFAULT_MODEL as CLAUDE_DEFAULT_MODEL, EFFORTS as CLAUDE_EFFORTS,
     check_claude, claude_exec_command, claude_failure_hint, require_same_backend, save_claude_output,
@@ -96,8 +97,7 @@ def git_metadata(repo: Path) -> dict[str, object]:
 
 
 def write_run_manifest(path: Path, data: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(path, data)
 
 
 def codex_command() -> str:
@@ -114,12 +114,16 @@ def codex_exec_command(
     command = [codex_command()]
     if search:
         command.append("--search")
+    else:
+        command.extend(["-c", 'web_search="disabled"'])
     if model:
         command.extend(["--model", model])
     if reasoning_effort:
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     command.append("exec")
-    # Only the optional packaged launcher opts in; sandbox/approval flags are unchanged.
+    # Model tools may read evidence, never publish or modify it. The CLI itself
+    # writes --output-last-message outside the model tool sandbox.
+    command.extend(["--sandbox", "read-only"])
     if os.environ.get("ECONOMICS_REVIEWER_NON_GIT") == "1":
         command.append("--skip-git-repo-check")
     return command
@@ -237,12 +241,14 @@ def start_reviewer(
     model: str | None = None,
     reasoning_effort: str | None = None,
     backend: str = "codex",
+    *, prompt_override: str | None = None,
 ) -> tuple[ReviewerConfig, subprocess.Popen[str], Path, Path, float]:
     prompt_path = prompts_dir / reviewer.prompt
     output_path = reviews_dir / reviewer.output
     stdout_path = log_dir / f"{reviewer.name}.stdout.log"
     stderr_path = log_dir / f"{reviewer.name}.stderr.log"
-    prompt_text = prompt_path.read_text(encoding="utf-8")
+    prompt_text = prompt_override if prompt_override is not None else prompt_path.read_text(encoding="utf-8")
+    archive_previous_output(output_path, log_dir)
 
     command = agent_exec_command(
         backend=backend, model=model, reasoning_effort=reasoning_effort, search=reviewer.search,
@@ -321,6 +327,14 @@ def require_fresh_file(path: Path, started_at: float, label: str) -> None:
         raise RuntimeError(f"{label} is stale and was not regenerated in this run: {path}")
 
 
+def archive_previous_output(path: Path, log_dir: Path) -> None:
+    """Existence after a call cannot be satisfied by a same-second stale file."""
+    if path.exists():
+        from uuid import uuid4
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path.replace(log_dir / (path.name + "." + uuid4().hex + ".previous"))
+
+
 def plausible_editor_report(text: str, *, bundle: dict | None = None) -> bool:
     stripped = text.strip()
     if len(stripped) < report_min_chars(bundle):
@@ -378,9 +392,10 @@ def finding_label(finding: dict) -> str:
 
 
 def enforce_preflight_gate(reviewer: ReviewerConfig, output_path: Path) -> None:
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    require_complete(data)
     if reviewer.name != "parser_quality_auditor":
         return
-    data = json.loads(output_path.read_text(encoding="utf-8"))
     blockers, warnings = parser_quality_gate_findings(data)
     for finding in warnings:
         print(f"[warn] parser quality: {finding_label(finding)}")
@@ -417,6 +432,7 @@ def run_reviewer_selector(
 ) -> tuple[dict, float]:
     selection_dir.mkdir(parents=True, exist_ok=True)
     output_path = selection_dir / SELECTOR_OUTPUT
+    archive_previous_output(output_path, log_dir)
     prompt_text = render_selector_prompt(
         repo,
         paper_id,
@@ -460,9 +476,23 @@ def run_reviewer_batch(
     timeout_seconds: float | None = None,
     backend: str = "codex",
     on_result=None,
+    max_repair_calls: int = 0,
 ) -> float:
     if not reviewers:
         return time.time() - 1.0
+    from resume_review import digest, runtime_snapshot
+    parsed = prompts_dir.parent / "parsed"
+    def evidence_snapshot():
+        snapshot = {**runtime_snapshot(repo), **{str(p): digest(p) for p in parsed.rglob("*") if p.is_file()}}
+        manifest = parsed / "manifest.json"
+        if manifest.is_file():
+            source = json.loads(manifest.read_text(encoding="utf-8")).get("source_pdf")
+            if source:
+                source = Path(source)
+                source = source if source.is_absolute() else repo / source
+                snapshot[str(source)] = digest(source)
+        return snapshot
+    frozen = evidence_snapshot()
     reviewer_started_at = time.time() - 1.0
     for start in range(0, len(reviewers), max_parallel):
         batch = reviewers[start : start + max_parallel]
@@ -475,7 +505,33 @@ def run_reviewer_batch(
                 ))
             for item in running:
                 result = wait_reviewer(*item, timeout_seconds=timeout_seconds)
+                if evidence_snapshot() != frozen:
+                    raise ValueError("Runtime or source evidence changed during reviewer execution; not accepted.")
+                reviewer = item[0]
+                output = reviews_dir / reviewer.output
+                if result.returncode == 0:
+                    errors = reviewer_output_errors(output, reviewer, repo, parsed.parent.name, schema_path)
+                    if errors:
+                        from stage_repair import reserve_repair
+                        repair = reserve_repair(parsed.parent, reviewer.name, max_repair_calls, output, errors,
+                            (prompts_dir / reviewer.prompt).read_text(encoding="utf-8"), repo) if output.is_file() else None
+                        if repair:
+                            repair_dir, prompt = repair
+                            print(f"[repair] {reviewer.name}: one additional call; errors retained in {repair_dir}")
+                            retry = start_reviewer(reviewer, repo, prompts_dir, reviews_dir, schema_path.relative_to(repo),
+                                repair_dir, model, reasoning_effort, backend, prompt_override=prompt)
+                            try:
+                                result = wait_reviewer(*retry, timeout_seconds=timeout_seconds)
+                            finally:
+                                stop_process(retry[1])
+                            if result.returncode == 0:
+                                errors = reviewer_output_errors(output, reviewer, repo, parsed.parent.name, schema_path)
+                        if errors:
+                            (log_dir / (reviewer.name + ".validation.json")).write_text(json.dumps(errors, indent=2)+"\n", encoding="utf-8")
+                            print(f"[invalid] {reviewer.name}: " + "; ".join(errors))
                 reviewer_results.append(result)
+                if evidence_snapshot() != frozen:
+                    raise ValueError("Runtime or source evidence changed during reviewer execution; not accepted.")
                 if on_result:
                     on_result(item[0], result, reviewer_started_at)
         finally:
@@ -495,6 +551,16 @@ def run_reviewer_batch(
             )
             raise RuntimeError(f"Reviewer run failed: {failures}")
     return reviewer_started_at
+
+
+def reviewer_output_errors(path, reviewer, repo, paper_id, schema_path):
+    from strict_json import read_json
+    from validate_review_json import validate_review_output
+    try:
+        return validate_review_output(read_json(path), read_json(schema_path), [reviewer], repo=repo,
+            expected_reviewer=reviewer.name, paper_id=paper_id, require_complete=True)
+    except (OSError, ValueError) as exc:
+        return [str(exc)]
 
 
 def render_prompts_command(
@@ -582,6 +648,8 @@ def main() -> int:
         help="Continue validating remaining reviewer outputs after a reviewer-output validation error.",
     )
     parser.add_argument("--reviewers-config", default="config/reviewers.json")
+    parser.add_argument("--max-repair-calls", type=int, default=1,
+                        help="Total extra output-repair calls for this paper (default 1, 0 disables); at most one per stage, including resumes.")
     parser.add_argument(
         "--resume-incomplete", action="store_true",
         help="Reuse validated completed reviewers with identical PDF, settings and runtime; retry only unfinished stages.",
@@ -648,6 +716,8 @@ def main() -> int:
 
     if args.max_parallel_reviewers < 1:
         raise ValueError("--max-parallel-reviewers must be at least 1")
+    if args.max_repair_calls < 0:
+        raise ValueError("--max-repair-calls must be nonnegative")
     if args.agent_timeout_minutes <= 0 or args.selector_timeout_minutes <= 0:
         raise ValueError("agent timeouts must be greater than zero")
 
@@ -663,7 +733,18 @@ def main() -> int:
 
     paper_id = slugify(args.paper_id or pdf_path.stem)
     with run_lease(repo / "work" / paper_id):
-        return execute_pipeline(args, repo, pdf_path, paper_id)
+        manifest_path = paper_run_paths(repo, paper_id).run_manifest_path
+        previous = manifest_path.read_bytes() if manifest_path.exists() else None
+        try:
+            return execute_pipeline(args, repo, pdf_path, paper_id)
+        except BaseException as exc:
+            # Do not alter old evidence on a rejected recovery attempt.
+            if manifest_path.exists() and manifest_path.read_bytes() != previous:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest.update(status="interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
+                                stopped_at_utc=utc_now(), failure_type=type(exc).__name__)
+                write_run_manifest(manifest_path, manifest)
+            raise
 
 
 def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
@@ -738,6 +819,7 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
             raise RuntimeError(
                 "Cannot resume: parsed artifacts do not record the current source PDF hash"
             )
+        preflight_receipt(repo, paths, checkpoint_settings, preflight_reviewers, reuse=True)
     claude_version = check_claude(repo) if args.backend == "claude" else None
     if explicit_backend is not None and not args.resume_after_preflight and not preserve_preference:
         remember_backend(repo, args.backend)
@@ -762,6 +844,12 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         "resumed_after_preflight": args.resume_after_preflight,
         "python": sys.version,
         "git": git_metadata(repo),
+        "capabilities": {
+            "requested": {"model_tools": "read-only", "non_search_roles": "web_search disabled"},
+            "effective": "host-dependent; requested capabilities are not an enforcement receipt",
+            "isolation": "degraded: read-only execution does not isolate absolute-path reads or connected tools",
+            "inference": "cloud-backed; disabling search does not make inference local",
+        },
     }
     if claude_version:
         run_manifest["backend_version"] = claude_version
@@ -845,6 +933,7 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
             args.max_parallel_reviewers,
             args.agent_timeout_minutes * 60,
             args.backend,
+            max_repair_calls=args.max_repair_calls,
         )
         preflight_errors = validate_reviewer_batch(
             preflight_reviewers,
@@ -859,6 +948,9 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         )
         if preflight_errors:
             raise RuntimeError("Preflight reviewer validation/gate failed: " + "; ".join(preflight_errors))
+
+    if not args.resume_after_preflight:
+        preflight_receipt(repo, paths, checkpoint_settings, preflight_reviewers)
 
     selection, _selection_started_at = run_reviewer_selector(
         repo,
@@ -935,6 +1027,7 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         args.agent_timeout_minutes * 60,
         args.backend,
         on_result=checkpoint.accept,
+        max_repair_calls=args.max_repair_calls,
     )
     validation_errors = validate_reviewer_batch(
         standard_reviewers,
@@ -951,6 +1044,7 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         raise RuntimeError("Reviewer validation failed: " + "; ".join(validation_errors))
 
     finish_review(args, repo, paths, log_dir)
+    checkpoint.complete()
     run_manifest.update(
         {
             "status": "complete", "completed_at_utc": utc_now(),
@@ -960,7 +1054,6 @@ def execute_pipeline(args, repo: Path, pdf_path: Path, paper_id: str) -> int:
         }
     )
     write_run_manifest(paths.run_manifest_path, run_manifest)
-    checkpoint.complete()
     print(f"[done] report: {report_path.relative_to(repo)}")
     print(f"[logs] {log_dir.relative_to(repo)}")
     return 0
@@ -970,6 +1063,11 @@ def resume_incomplete(args, repo, paths, settings) -> int:
     checkpoint = ReviewCheckpoint(repo, paths, settings)
     checkpoint.load()  # Fail closed before changing saved artifacts or calling a model.
     if checkpoint.data.get("report_sha256"):
+        manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("status") != "complete":
+            manifest.update(status="complete", completed_at_utc=utc_now(),
+                            recovered_completion_receipt=True)
+            write_run_manifest(paths.run_manifest_path, manifest)
         print(f"[done] completed report retained: {paths.report_path.relative_to(repo)}")
         return 0
     if args.backend == "claude":
@@ -980,12 +1078,17 @@ def resume_incomplete(args, repo, paths, settings) -> int:
     missing = [r for r in checkpoint.reviewers
                if r.stage == "review" and r.name not in checkpoint.data["accepted"]]
     log_dir = checkpoint.attempt_dir()
+    manifest = json.loads(paths.run_manifest_path.read_text(encoding="utf-8"))
+    manifest.update(status="running", resumed_at_utc=utc_now(),
+                    resume_attempt=str(log_dir.relative_to(repo)))
+    write_run_manifest(paths.run_manifest_path, manifest)
     print(f"[resume] retained {len(checkpoint.data['accepted'])} reviewers; {len(missing)} unfinished")
     run_reviewer_batch(
         missing, repo, paths.prompts_dir, paths.reviews_dir,
         repo / "schemas/reviewer_output.schema.json", log_dir,
         settings["model"], args.reasoning_effort, args.max_parallel_reviewers,
         args.agent_timeout_minutes * 60, args.backend, on_result=checkpoint.accept,
+        max_repair_calls=args.max_repair_calls,
     )
     if any(r.name not in checkpoint.data["accepted"] for r in missing):
         raise RuntimeError("Unfinished reviewers failed validation; see retained attempt logs.")
@@ -1048,26 +1151,42 @@ def finish_review(args, repo, paths, log_dir):
         log_dir,
     )
 
-    editor_started_at = time.time() - 1.0
+    run_editor(args, repo, paths, log_dir)
+
+
+def run_editor(args, repo, paths, log_dir):
+    """One editorial contract for fresh runs and editor-only refresh."""
+    bundle_path, editor_input_path, report_path = paths.bundle_path, paths.editor_input_path, paths.report_path
     editor_input = editor_input_path.read_text(encoding="utf-8")
-    editor_result = run_required(
-        "editor",
-        agent_exec_command(
-            backend=args.backend, model=args.model, reasoning_effort=args.reasoning_effort,
-            output_path=report_path.relative_to(repo),
-        ),
-        repo,
-        log_dir,
-        input_text=editor_input,
-        timeout_seconds=args.agent_timeout_minutes * 60,
-    )
-    if args.backend == "claude":
-        save_claude_output(editor_result.stdout_path, report_path)
-    require_fresh_file(report_path, editor_started_at, "final report")
-    recover_editor_report_if_needed(
-        report_path, editor_result.stderr_path,
-        bundle=json.loads(bundle_path.read_text(encoding="utf-8")),
-    )
+    decisions_path = paths.editor_dir / "editor_decisions.json"
+    archive_previous_output(decisions_path, log_dir)
+    editor_started_at = time.time()
+    editor_schema = repo / "schemas/editor_decisions.schema.json"
+    from editor_decisions import assemble
+    active_log, prompt = log_dir, editor_input
+    for attempt in range(2):
+        editor_started_at = time.time()
+        editor_result = run_required(
+            "editor", agent_exec_command(backend=args.backend, model=args.model,
+                reasoning_effort=args.reasoning_effort, output_path=decisions_path.relative_to(repo),
+                schema_path=editor_schema), repo, active_log, input_text=prompt,
+            timeout_seconds=args.agent_timeout_minutes * 60,
+        )
+        try:
+            if args.backend == "claude":
+                save_claude_output(editor_result.stdout_path, decisions_path, editor_schema)
+            require_fresh_file(decisions_path, editor_started_at, "editor decisions")
+            assemble(decisions_path, bundle_path, report_path, editor_schema)
+            break
+        except (ValueError, OSError) as exc:
+            from stage_repair import reserve_repair
+            repair = reserve_repair(paths.work_root, "editor", getattr(args, "max_repair_calls", 1),
+                decisions_path, [str(exc)], editor_input, repo) if attempt == 0 and decisions_path.is_file() else None
+            if repair is None:
+                raise
+            active_log, prompt = repair
+            archive_previous_output(decisions_path, active_log)
+            print(f"[repair] editor: one additional call; rejected draft retained in {active_log}")
 
     check_result = run_required(
         "check-final-report",
@@ -1078,6 +1197,7 @@ def finish_review(args, repo, paths, log_dir):
             str(report_path.relative_to(repo)),
             "--bundle",
             str(bundle_path.relative_to(repo)),
+            "--decisions", str(decisions_path.relative_to(repo)),
         ],
         repo,
         log_dir,

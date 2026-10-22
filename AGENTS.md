@@ -16,7 +16,7 @@ The normal workflow is:
 10. Store and validate reviewer JSON outputs under `work/<paper_id>/reviews/`.
 11. Conservatively normalize reviewer outputs into a precision-first, lossless editor bundle that preserves every source finding's details and avoids merging distinct concerns.
 12. Build editor input from a deterministic brief, the lossless normalized bundle, and a compact provenance index for the validated reviewer JSON files. Do not duplicate raw reviewer JSON or truncate evidence.
-13. Run the editor to write the final markdown report under `outputs/<paper_id>/report.md`.
+13. Run the editor to author structured editorial decisions/prose, then validate and deterministically render the final Markdown under `outputs/<paper_id>/report.md`.
 14. Smoke-check the final report.
 
 ## Canonical file locations
@@ -41,7 +41,7 @@ The normal workflow is:
 - Users may explicitly override the model and reasoning through wrapper flags. `gpt-6-luna` with `xhigh` reasoning is the optional lower-cost alternative, not a replacement default. Selected reviewers have been compared on three papers, followed by one complete GPT-6 Sol/Luna pipeline comparison. Luna had material coverage gaps and required manual continuation after a sleep-related timeout; structural report checks did not establish semantic completeness. See `docs/model_profiles.md` for the limited evidence and credit estimates, not measured quota usage. Keep effective settings explicit in the run manifest and distinguish historical GPT-5.6 evidence from current comparisons.
 - Substantive reviewers must read the parser-quality output and route around unsafe deterministic artifacts. If no trustworthy deterministic fallback exists, use `cannot_verify`; never generate or infer repaired text, signs, cells, values, or formulas.
 - Internal reviewer agents return structured JSON only.
-- Only the editor writes the final markdown report.
+- Only the editor authors substantive final-report prose; deterministic code validates and renders its editorial artifact and traceability.
 - If preprocessing artifacts are missing or clearly poor, fail clearly instead of guessing.
 - Editor-only refresh is allowed when parsed artifacts, all selected reviewer JSON files, and the selected reviewer config already exist. Revalidate the reviews, rebuild the precision-first lossless bundle and provenance-only editor input, rerun only the editor, and then smoke-check the final report.
 

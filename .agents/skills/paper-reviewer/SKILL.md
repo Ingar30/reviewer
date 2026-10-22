@@ -42,10 +42,10 @@ The pipeline stages are:
 12. Validate each reviewer JSON output under `work/<paper_id>/reviews/`.
 13. Conservatively normalize reviewer outputs into a precision-first, lossless `work/<paper_id>/editor/normalized_bundle.json`. Preserve every source finding's details and do not merge findings merely because they share a quote or path.
 14. Build `work/<paper_id>/editor/editor_input.md` from the deterministic editor brief, the lossless bundle, and a compact provenance index. Validate the source reviewer JSON files, but do not duplicate them in the editor input or truncate evidence.
-15. Run the editor to write `outputs/<paper_id>/report.md`.
+15. Run the editor to author `work/<paper_id>/editor/editor_decisions.json`; validate dispositions and deterministically render its prose to `outputs/<paper_id>/report.md`.
 16. Smoke-check the final report with `scripts/check_final_report.py --bundle work/<paper_id>/editor/normalized_bundle.json`.
 
-The supported quality defaults are `gpt-6-sol`, `xhigh` reasoning for substantive reviewers and the editor, and `high` for parser-quality preflight and applicability routing. GPT-6 Luna (`gpt-6-luna`) is an optional lower-cost override using the same workflow. Selected reviewer tests and one complete pipeline comparison found uneven Luna coverage; Sol remains the default. The full comparison required manual Luna recovery after a sleep-related timeout, and structural report checks did not establish semantic completeness. It is not a general accuracy or unattended-recovery benchmark. There is one public workflow rather than separate static and dynamic modes.
+The supported quality defaults are `gpt-6.1-sol`, `xhigh` reasoning for substantive reviewers and the editor, and `high` for parser-quality preflight and applicability routing. GPT-6 Luna (`gpt-6-luna`) is an optional lower-cost override using the same workflow. Selected reviewer tests and one complete pipeline comparison found uneven Luna coverage; Sol remains the default. The full comparison required manual Luna recovery after a sleep-related timeout, and structural report checks did not establish semantic completeness. It is not a general accuracy or unattended-recovery benchmark. There is one public workflow rather than separate static and dynamic modes.
 
 ## Editor-only refresh
 If parsed artifacts, all selected reviewer JSON files, and `work/<paper_id>/selection/selected_reviewers.json` already exist, use `scripts/refresh_editor.py --paper-id <paper_id>` to resume synthesis without rerunning reviewers. The helper:
@@ -56,11 +56,11 @@ If parsed artifacts, all selected reviewer JSON files, and `work/<paper_id>/sele
 
 Do not use editor-only refresh when reviewer evidence, parser artifacts, or reviewer selection needs to change. Correct or rerun invalid reviewer output first; the helper will refuse to synthesize it.
 
-Use editor-only refresh to test narrowly scoped editor prompt changes against the same evidence bundle before changing the full workflow. This is especially useful for checking whether report emphasis improved without changing reviewer evidence, such as when adjusting how parser/preprocessing caveats are surfaced in prose.
+Current editor-only refresh requires unchanged runtime resources and current acceptance receipts. Retain older runs with their original runtime; do not invent completion records or rewrite checkpoint hashes. See `docs/evidence_gates.md` in ordinary checkouts for migration and optional shadow-verification details.
 
 ## Critical rules
 - Internal reviewers return JSON only.
-- The editor is the only component that emits final markdown.
+- The editor authors all substantive report prose; the shared deterministic renderer writes Markdown and its traceability map from validated editorial decisions.
 - Literature and reference verification require web search when enabled.
 - Never guess missing evidence; use `cannot_verify`.
 - Preserve exact source locations whenever possible.
@@ -74,7 +74,7 @@ Use editor-only refresh to test narrowly scoped editor prompt changes against th
 - Treat `scripts/check_final_report.py` as a structure and traceability smoke check, not as independent verification that external sources are real or current.
 - Treat every conditional specialist as a full-quality reviewer. Skip one only when a high-confidence classification shows that its entire remit is materially absent. The theory-logic specialist checks formal validity and assumption-to-result logic; the universal model/equation auditor separately checks notation, definitions, and text-equation consistency.
 - If a reviewer's assigned scope is absent, return `run_status: ok` with an empty findings array. Do not turn the absence of an empirical design, formal model, dataset, experiment, or other method into a criticism.
-- If `codex exec --output-last-message` writes only a short acknowledgement for the editor, rely on the wrapper's recovery from the editor transcript and then rerun the final report checker.
+- A missing, stale or invalid editor-decisions object remains incomplete. Preserve diagnostics; do not promote a Markdown acknowledgement or transcript fragment.
 
 ## Output conventions
 - Parsed artifacts: `work/<paper_id>/parsed/`

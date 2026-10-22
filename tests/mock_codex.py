@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import uuid
+from mock_responses import review_payload, editor_payload
 
 
 def main():
@@ -34,13 +35,16 @@ def main():
                 for r in config if r.get("selection_policy") == "optional" and r.get("enabled", True)
             ], "skipped_optional_reviewers": [], "notes": ["MOCK; no scholarly validation."],
         }
+    elif output.name == "editor_decisions.json":
+        if os.environ.get("REVIEWER_TEST_STOP") == "editor":
+            return 74
+        payload = editor_payload(json.loads((output.parent / "normalized_bundle.json").read_text(encoding="utf-8")))
     elif output.suffix == ".json":
         reviewer = next(r for r in config if r["output"] == output.name)
         if os.environ.get("REVIEWER_TEST_STOP") == reviewer["name"]:
             print("MOCK quota stop", file=sys.stderr)
             return 75
-        payload = {"reviewer": reviewer["name"], "paper_id": paper_id, "run_status": "ok",
-                   "summary": "MOCK audit for launch testing only.", "findings": [], "notes": []}
+        payload = review_payload(Path.cwd(), paper_id, reviewer["name"])
     else:
         if os.environ.get("REVIEWER_TEST_STOP") == "editor":
             return 74

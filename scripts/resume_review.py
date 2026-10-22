@@ -6,16 +6,60 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import tempfile
 import time
 from uuid import uuid4
 
 from reviewer_config import load_reviewers_config
 from validate_review_json import validate_review_output
+from review_acceptance import POLICY_VERSION
+from strict_json import read_json
 
 
 def digest(path: Path) -> str:
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def runtime_snapshot(repo: Path) -> dict[str, str]:
+    files = {repo / "AGENTS.md", repo / ".codex/config.toml"}
+    for directory, suffixes in (("scripts", {".py"}), ("config", {".json"}),
+            ("schemas", {".json"}), ("prompts/templates", {".txt"}),
+            (".agents/skills/paper-reviewer", {".md", ".txt", ".json"})):
+        files.update(p for p in (repo / directory).rglob("*") if p.suffix in suffixes)
+    return {p.relative_to(repo).as_posix(): digest(p) for p in sorted(files) if p.is_file()}
+
+
+def preflight_receipt(repo, paths, settings, reviewers, *, reuse=False):
+    """Freeze evidence before routing; never promote an old finding-only gate."""
+    path = paths.work_root / "preflight_receipt.json"
+    files = dict(runtime_snapshot(repo))
+    for p in sorted(paths.parsed_dir.rglob("*")):
+        if p.is_file():
+            files[p.relative_to(repo).as_posix()] = digest(p)
+    schema = json.loads((repo / "schemas/reviewer_output.schema.json").read_text(encoding="utf-8"))
+    for reviewer in reviewers:
+        p = paths.reviews_dir / reviewer.output
+        data = read_json(p)
+        errors = validate_review_output(data, schema, reviewers, repo=repo,
+            expected_reviewer=reviewer.name, paper_id=settings["paper_id"], require_complete=True)
+        if errors:
+            raise ValueError("Preflight is incomplete/invalid: " + "; ".join(errors))
+        files[p.relative_to(repo).as_posix()] = digest(p)
+    current = {"format": 1, "acceptance_policy": POLICY_VERSION, "settings": settings, "files": files}
+    if reuse:
+        if not path.is_file() or json.loads(path.read_text(encoding="utf-8")) != current:
+            raise ValueError("Cannot resume preflight: missing legacy receipt or changed runtime, evidence, output or settings. Retain originals.")
+    else:
+        atomic_write_json(path, current)
+
+
+def atomic_write_json(path: Path, data) -> None:
+    """Reuse the checkpoint writer's bounded Windows replacement semantics."""
+    writer = ReviewCheckpoint.__new__(ReviewCheckpoint)
+    writer.path, writer.data = path, data
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer.save()
 
 
 @contextmanager
@@ -74,6 +118,12 @@ class ReviewCheckpoint:
         files.update(self.paths.reviews_dir / r.output for r in self.reviewers if r.stage == "preflight")
         config = Path(self.settings["reviewers_config"])
         files.add(config if config.is_absolute() else self.repo / config)
+        manifest = self.paths.parsed_dir / "manifest.json"
+        if manifest.is_file():
+            source = read_json(manifest).get("source_pdf")
+            if source:
+                source = Path(source)
+                files.add(source if source.is_absolute() else self.repo / source)
         # External reviewer configs are supported, keyed by their absolute path.
         return {(p.relative_to(self.repo).as_posix() if p.is_relative_to(self.repo) else str(p)): digest(p)
                 for p in sorted(files) if p.is_file()}
@@ -103,14 +153,16 @@ class ReviewCheckpoint:
                 time.sleep(0.1 * 2 ** attempt)
 
     def create(self):
-        self.data = {"format": 1, "settings": self.settings, "files": self.files(), "accepted": {}}
+        self.data = {"format": 2, "acceptance_policy": POLICY_VERSION,
+                     "settings": self.settings, "files": self.files(), "accepted": {}}
         self.save()
 
     def validate(self, reviewer):
         path = self.paths.reviews_dir / reviewer.output
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         errors = validate_review_output(data, self.schema, self.reviewers, repo=self.repo,
-                                       expected_reviewer=reviewer.name, paper_id=self.settings["paper_id"])
+                                       expected_reviewer=reviewer.name, paper_id=self.settings["paper_id"],
+                                       require_complete=True)
         if errors:
             raise ValueError(f"Invalid saved review {reviewer.name}: " + "; ".join(errors))
 
@@ -119,6 +171,7 @@ class ReviewCheckpoint:
         if result.returncode != 0 or not path.is_file() or path.stat().st_mtime < started_at:
             return
         try:
+            self.verify_inputs()
             self.validate(reviewer)
         except (OSError, ValueError) as exc:
             print(f"[checkpoint] not accepted: {exc}")
@@ -126,12 +179,18 @@ class ReviewCheckpoint:
         self.data["accepted"][reviewer.name] = digest(path)
         self.save()
 
+    def verify_inputs(self):
+        if self.data.get("files") != self.files():
+            raise ValueError("Runtime or manuscript evidence changed during the review; results are not accepted.")
+
     def load(self):
         if not self.path.is_file():
             raise ValueError("No selective-resume checkpoint. Use the original runtime and "
                              "--resume-after-preflight or --refresh-editor for older runs.")
         self.data = json.loads(self.path.read_text(encoding="utf-8"))
-        if self.data.get("format") != 1 or self.data.get("settings") != self.settings:
+        if self.data.get("format") != 2 or self.data.get("acceptance_policy") != POLICY_VERSION:
+            raise ValueError("Cannot resume: legacy acceptance policy. Keep the original runtime/artifacts; no completion is inferred.")
+        if self.data.get("settings") != self.settings:
             raise ValueError("Cannot resume: PDF, backend, model, effort or reviewer configuration differs.")
         if self.data.get("files") != self.files():
             raise ValueError("Cannot resume: runtime, parsed artifacts, selection, prompts or preflight changed.")
@@ -147,10 +206,14 @@ class ReviewCheckpoint:
         if self.data.get("report_sha256"):
             if digest(self.paths.report_path) != self.data["report_sha256"]:
                 raise ValueError("Cannot resume: completed report changed.")
+            if self.data.get("editor_files") != self.editor_files():
+                raise ValueError("Cannot resume: editorial decisions, evidence ledger or receipt changed.")
 
     def attempt_dir(self) -> Path:
-        folder = self.paths.log_dir / "resume" / uuid4().hex
-        folder.mkdir(parents=True)
+        # Keep enough path budget for long reviewer names on Windows. mkdtemp
+        # supplies collision-safe isolation without a nested 32-character UUID.
+        self.paths.log_dir.mkdir(parents=True, exist_ok=True)
+        folder = Path(tempfile.mkdtemp(prefix="resume-", dir=self.paths.log_dir))
         # Preserve unsuccessful or unreceipted candidates before rerunning them.
         candidates = [self.paths.reviews_dir / r.output for r in self.reviewers
                       if r.stage == "review" and r.name not in self.data["accepted"]]
@@ -162,5 +225,18 @@ class ReviewCheckpoint:
         return folder
 
     def complete(self):
+        self.verify_inputs()
+        if {r.name for r in self.reviewers if r.stage == "review"} != set(self.data["accepted"]):
+            raise ValueError("Cannot complete a report with unfinished reviewers.")
+        for reviewer in self.reviewers:
+            self.validate(reviewer)
+            if reviewer.stage == "review" and digest(self.paths.reviews_dir / reviewer.output) != self.data["accepted"][reviewer.name]:
+                raise ValueError("Accepted reviewer output changed before completion: " + reviewer.name)
+        self.data["editor_files"] = self.editor_files()
         self.data["report_sha256"] = digest(self.paths.report_path)
         self.save()
+
+    def editor_files(self):
+        names = ("editor_decisions.json", "editor_receipt.json", "normalized_bundle.json",
+                 "coverage_ledger.json", "evidence_checks.json")
+        return {name: digest(self.paths.editor_dir / name) for name in names}

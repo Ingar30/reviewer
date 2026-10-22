@@ -98,9 +98,8 @@ def finding_score(finding: dict[str, Any]) -> int:
     confidence = finding_confidence(finding)
     score = SEVERITY_POINTS.get(severity, 0) + CONFIDENCE_POINTS.get(confidence, 0)
 
-    source_reviewers = finding.get("source_reviewers") or []
-    if len(source_reviewers) > 1:
-        score += 12 + (len(source_reviewers) - 2) * 4
+    # Agreement remains visible in provenance, but correlated allegations do
+    # not acquire evidentiary weight merely by being repeated by several agents.
 
     if issue_class == "manuscript_issue":
         score += 15
@@ -682,6 +681,13 @@ def main() -> int:
         path = reviews_dir / filename
         require_file(path, f"reviewer output {filename}")
         review_json = read_json(path)
+        from validate_review_json import validate_review_output
+        schema = read_json(Path(__file__).resolve().parents[1] / "schemas/reviewer_output.schema.json")
+        errors = validate_review_output(review_json, schema, reviewers,
+            repo=Path(__file__).resolve().parents[1], expected_reviewer=reviewer.name,
+            paper_id=args.paper_id, require_complete=True)
+        if errors:
+            raise ValueError(f"Cannot synthesize unfinished/invalid {reviewer.name}: " + "; ".join(errors))
         if review_json.get("reviewer") != reviewer.name:
             raise ValueError(f"{path} has reviewer={review_json.get('reviewer')!r}, expected {reviewer.name!r}")
         if review_json.get("paper_id") != args.paper_id:

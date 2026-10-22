@@ -48,6 +48,14 @@ def render_review_prompts(
         output_path = output_dir / reviewer.prompt
         rendered = render_template(template_path.read_text(encoding="utf-8"), values)
         rendered = rendered.rstrip() + "\n\n" + reviewer_contract.strip() + "\n"
+        from review_coverage import assignments
+        parsed = Path(values["parsed_dir"])
+        if not parsed.is_absolute():
+            # output_dir may be absolute in the native host while CWD is elsewhere.
+            workspace = output_dir.resolve().parents[2]
+            parsed = workspace / parsed
+        rendered += "\nRequired coverage assignments (not an exhaustive claim inventory):\n" + json.dumps(
+            assignments(reviewer.name, parsed), ensure_ascii=False, indent=2) + "\n"
         output_path.write_text(rendered, encoding="utf-8")
         written.append(output_path)
 

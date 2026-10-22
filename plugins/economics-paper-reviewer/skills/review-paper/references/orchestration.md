@@ -78,7 +78,7 @@ start a new run directory; completed preprocessing and later stages are resumabl
    reasoning effort only when supported; inherit the user-selected host model.
 3. Each child writes **only** its assigned `candidate_file`. For reviewers and the
    router, the output is one complete JSON object matching the schema, no fences.
-   For the editor, it is the complete Markdown report, not a path acknowledgement.
+   For the editor, it is structured editorial JSON with prose and dispositions; the shared renderer assembles the Markdown report. Never submit a path acknowledgement.
    If the host returns content rather than writing a shared file, the parent saves
    that exact response to the assigned candidate without synthesizing or repairing
    it. The parent does not author findings or the report. Children do not spawn
@@ -232,3 +232,16 @@ This is a presentation-only export, not a checkpoint upgrade or a new review.
 Do not give the nontechnical user commands as their normal review result. Never
 invent a download link or claim installation, hosted execution, downloading or
 scientific verification was tested unless it actually occurred.
+
+## Optional shadow verification
+
+Only when explicitly requested, preselect at most five consequential findings with
+`shadow-prepare --workspace ... --ids ...`. Give one fresh native agent the returned
+packet, prompt, schema and packet hash; disable search and restrict reads to those
+candidates and manuscript context. Save only its assigned candidate JSON, then run
+`shadow-accept --workspace ...`. Keep this judgment separate from the main report.
+Do not invoke the CLI-only `verify_findings.py run` from this host.
+
+Read-only access is not proof of peer-read isolation. Request host-enforced read/tool
+restrictions where supported, report unavailable enforcement, and never claim that
+a separate working directory or prompt instruction proves containment.

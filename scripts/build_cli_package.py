@@ -12,6 +12,7 @@ CLI_ENTRYPOINTS = (
     "review_paper.py", "refresh_editor.py", "preprocess_pdf.py", "render_prompts.py",
     "validate_review_json.py", "normalize_review_outputs.py", "build_editor_input.py",
     "check_final_report.py", "check_environment.py", "render_report_pdf.py",
+    "numerical_checks.py", "verify_findings.py", "derive_report.py",
 )
 
 

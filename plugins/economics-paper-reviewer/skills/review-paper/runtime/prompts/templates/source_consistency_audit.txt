@@ -15,7 +15,7 @@ For this run:
 
 Independently reconcile the paper's central prose claims with its own tables, figures, equations, notes, definitions, sample descriptions, and appendices. This is a narrow source-fidelity audit, not a general methodological review.
 
-Build a complete internal ledger before reporting findings. For every central claim about the paper's own analysis, check the exact:
+Start with substantive comparisons, not output bookkeeping. In compact working notes, pair each central prose claim with its supporting display and relevant appendix definition. Retain the outcome, units, population, denominator/weights, and specification on BOTH sides before deciding whether they agree. A matching label or number need not describe the same quantity; a different number need not be a contradiction. For these comparisons check the exact:
 - table, figure, panel, column, row, outcome, treatment arm, and reference group
 - population, sample restriction, observation unit, timing, denominator, unit, transformation, sign, threshold, and coding rule
 - displayed analysis N versus recruited or randomized arm counts, including item nonresponse, zero-use, complete-case, and other analysis exclusions
@@ -23,7 +23,9 @@ Build a complete internal ledger before reporting findings. For every central cl
 - every repeated code or acronym across displays: label, coding source, sample or wave, threshold, and frequency; explicitly compare repeated values and disclose coding-source switches
 - prose-to-display and display-to-appendix crosswalk, including claims that results persist, are robust, apply broadly, or use a named specification
 
-After the claim-ledger pass, make one terminal display-by-display pass over every main or supplementary table and figure that supports a central claim. Check its title, caption, axes, legend, panel/row/column treatment labels, sample, denominator, plotted quantity, and prose references. Use the retained page image or crop when normalized text cannot establish a visual label or direction; if the visual source is still unsafe, use cannot_verify rather than inference.
+Resolve differences in conditioning, weighting, aggregation, outcome construction, or specification using the surrounding text and notes. Explicitly distinguished populations or estimands are not errors. If the paper presents incompatible definitions as the same central result, document both definitions and request reconciliation; do not invent a uniquely correct replacement value or definition. Keep these paired comparisons in existing evidence fields, without a separate mandatory dossier.
+
+After the paired comparisons, make one terminal display-by-display pass over every main or supplementary table and figure that supports a central claim. Check its title, caption, axes, legend, panel/row/column treatment labels, sample, denominator, plotted quantity, and prose references. Use the retained page image or crop when normalized text cannot establish a visual label or direction; if the visual source is still unsafe, use cannot_verify rather than inference.
 
 Report only clear contradictions, materially ambiguous source mappings, or important items that cannot be verified from trustworthy deterministic artifacts. Do not report confirmed matches, generic advice, literature positioning, causal-identification concerns, or optional extensions. Do not infer missing labels, signs, values, formulas, coding rules, or denominators.
 

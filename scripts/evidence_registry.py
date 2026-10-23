@@ -151,6 +151,22 @@ def check_source(source: dict, parsed: Path, registry: dict, *, paper_id: str) -
     if not quote_corresponds(quote, text):
         result["errors"].append("Quote/value does not correspond to registered source; inspect visual evidence explicitly")
         result["correspondence"] = "mismatch"
+        # A digit adjacent to prose may be a footnote, exponent or meaningful
+        # token. Do not guess, strip it, or silently certify a text mismatch.
+        # Point the repair at intact same-page visual evidence when available.
+        for visual in registry["objects"]:
+            if (visual["kind"] != "image_region" or page is None
+                    or visual["page"] != page):
+                continue
+            try:
+                image = safe_artifact(parsed, visual["path"])
+                if sha256(image) != visual["sha256"]:
+                    continue
+            except (OSError, ValueError):
+                continue
+            result.setdefault("visual_candidates", []).append({
+                "object_id": visual["id"],
+                "path": f"work/{paper_id}/parsed/{visual['path']}", "page": page})
     else:
         result["correspondence"] = "matched_text_not_adjudicated"
     return result
@@ -158,11 +174,38 @@ def check_source(source: dict, parsed: Path, registry: dict, *, paper_id: str) -
 
 def review_evidence_checks(data: dict, repo: Path) -> list[dict]:
     parsed = repo / "work" / data["paper_id"] / "parsed"
-    sources = [(f["id"], s) for f in data.get("findings", []) for s in f.get("source_objects", [])]
+    sources = [(f["id"], s, f"findings.{fi}.source_objects.{si}")
+               for fi, f in enumerate(data.get("findings", []))
+               for si, s in enumerate(f.get("source_objects", []))]
     if not sources:
         return []
     try:
         registry = json.loads((parsed / REGISTRY).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [{"errors": ["Source registry missing/invalid; reprocess in a new workspace, preserving legacy evidence."]}]
-    return [{"finding_id": fid, **check_source(s, parsed, registry, paper_id=data["paper_id"])} for fid, s in sources]
+        registry = None
+    return [{"reviewer": data.get("reviewer"), "finding_id": fid, "field": field,
+             "path": s.get("path"), "object_id": s.get("object_id"),
+             **(check_source(s, parsed, registry, paper_id=data["paper_id"]) if registry is not None
+                else {"source_id": s.get("id"), "errors": [
+                    "Source registry missing/invalid; reprocess in a new workspace, preserving legacy evidence."]})}
+            for fid, s, field in sources]
+
+
+def evidence_error_messages(checks: list[dict]) -> list[str]:
+    """Located repair feedback shared by CLI, native and optional adapters."""
+    messages = []
+    for check in checks:
+        label = (f"reviewer/stage={check.get('reviewer')} finding={check.get('finding_id')} "
+                 f"source={check.get('source_id')} object={check.get('object_id')} "
+                 f"field={check.get('field')} artifact={check.get('path')}")
+        for error in check["errors"]:
+            message = f"{label}: {error}"
+            if check.get("visual_candidates"):
+                candidates = "; ".join(f"{v['object_id']} at {v['path']} (PDF page {v['page']})"
+                                       for v in check["visual_candidates"])
+                message += (". Intact visual candidates (not yet inspected): " + candidates
+                            + ". Only after inspection, use correspondence=visual with an explicit "
+                            "verification_note identifying the image and what it establishes; otherwise "
+                            "retain unresolved/cannot_verify. Do not alter the quote to force a match.")
+            messages.append(message)
+    return messages

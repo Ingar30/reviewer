@@ -56,7 +56,9 @@ def source_provenance_errors(data: dict[str, Any], repo: Path) -> list[str]:
         for source_index, source in enumerate(finding.get("source_objects") or []):
             if not isinstance(source, dict):
                 continue
-            source_label = f"{label}.source_objects.{source_index}"
+            source_label = (f"reviewer/stage={data.get('reviewer')} finding={finding.get('id')} "
+                            f"source={source.get('id')} artifact={source.get('path')} "
+                            f"field={label}.source_objects.{source_index}")
             source_id = source.get("id")
             if isinstance(source_id, str):
                 if source_id in seen_source_ids:
@@ -238,16 +240,25 @@ def validate_review_output(data, schema: dict, reviewers, *, repo: Path,
     if require_complete:
         failures.extend(acceptance_errors(data))
         from review_coverage import coverage_errors
-        failures.extend(coverage_errors(data, repo / "work" / data["paper_id"] / "parsed"))
-        from evidence_registry import review_evidence_checks
-        failures.extend(error for check in review_evidence_checks(data, repo) for error in check["errors"])
+        try:
+            failures.extend(coverage_errors(data, repo / "work" / data["paper_id"] / "parsed"))
+        except (OSError, ValueError) as exc:
+            failures.append(f"reviewer/stage={data['reviewer']} field=coverage "
+                            f"artifact=work/{data['paper_id']}/parsed: {exc}")
+        from evidence_registry import evidence_error_messages, review_evidence_checks
+        failures.extend(evidence_error_messages(review_evidence_checks(data, repo)))
         from numerical_checks import numeric_errors, quantity_source_errors
         for finding in data.get("findings", []):
             if finding.get("numeric_check"):
-                failures.extend(numeric_errors(finding["numeric_check"],
-                    {s["id"] for s in finding["source_objects"]}, cannot_verify=is_cannot_verify(finding)))
-                failures.extend(quantity_source_errors(finding["numeric_check"], finding["source_objects"],
-                                                      cannot_verify=is_cannot_verify(finding)))
+                numeric_failures = numeric_errors(finding["numeric_check"],
+                    {s["id"] for s in finding["source_objects"]}, cannot_verify=is_cannot_verify(finding))
+                numeric_failures.extend(quantity_source_errors(finding["numeric_check"], finding["source_objects"],
+                                                               cannot_verify=is_cannot_verify(finding)))
+                sources = "; ".join(f"{s['id']} at {s.get('path') or s.get('url')}"
+                                    for s in finding["source_objects"])
+                failures.extend(f"reviewer/stage={data['reviewer']} finding={finding['id']} "
+                                f"field=numeric_check sources=[{sources}]: {error}"
+                                for error in numeric_failures)
     return failures
 
 

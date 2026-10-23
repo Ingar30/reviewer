@@ -5,6 +5,17 @@ This contract changes acceptance, not which allegations are presumed correct.
 
 ## Completion and recovery
 
+Quotation failures identify the reviewer, finding, source object, field and cited
+artifact. Intact registered images on the same page are offered as inspection
+candidates, not as automatic verification. In particular, attached footnote digits
+cannot safely be distinguished from exponents, subscripts or other meaningful
+text by stripping characters. Inspect the retained image; if it establishes the
+quotation, use the existing `visual` correspondence and an explicit verification
+note identifying that image and the observed boundary. Otherwise retain
+`unresolved`/`cannot_verify`. Visual correspondence remains an asserted inspection,
+not a deterministic text match or independent human validation. Preserve rejected
+outputs and source bytes; offline recovery creates a separately labelled artifact.
+
 New reviewer outputs require a version-1 `completion` record and a `coverage`
 ledger. Process success and JSON validity are prerequisites, not audit completion.
 `complete` and `not_applicable` can be accepted; partial/failed work stays diagnostic.

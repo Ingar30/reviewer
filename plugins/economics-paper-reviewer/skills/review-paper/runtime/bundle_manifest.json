@@ -36,7 +36,7 @@
     "scripts/build_editor_input.py": "f0ce4f65a09485dfd058b23240935a0dd9da0e7684eb2c2d80ea8fdf1f64133c",
     "scripts/check_final_report.py": "639521c51ad098f93cc982146bbdb4bbcfd72756ee29165a31edb68ca5fc6646",
     "scripts/editor_decisions.py": "d3f4bc524e724e1318d73bdf88f22e82ac1bd43064aac19cb263e443e522e4be",
-    "scripts/evidence_registry.py": "c4c03f13151adf880295cf311a877bc5e3d17beff94e647e4e5898ba3908d0e2",
+    "scripts/evidence_registry.py": "39e55d134299e24819f9c14df1810b73f09660a3e20ce790ab92345748217832",
     "scripts/finding_verification.py": "1d1e6754d054485841d2c03430f0f59b4b3d26a5db763174b8cb36eea2f3caa0",
     "scripts/normalize_review_outputs.py": "ac4d3a499f20e1712c02199d57f2f49cb8c3a1239fd577f572f6bfabddaae70c",
     "scripts/numerical_checks.py": "59f011e2aa7d6fdc4f23e667783706095d6a966dd35afc1e868fb2f6905e00f9",
@@ -50,7 +50,7 @@
     "scripts/reviewer_config.py": "b7976b416a20f43e1f38d76a754d0c48f2704bbebbd3f0e46b57e69152daf318",
     "scripts/reviewer_routing.py": "3006f0c3474cc2d0bb13b9edacefe15ade5b2420df8fcabcc2a1d4372484a37b",
     "scripts/strict_json.py": "61279cf80c3f148e80f100f284d966c6898c67bbcb80593e0897ad698bdc1e97",
-    "scripts/validate_review_json.py": "ee40a49d0a888f24fef2648f82a8799d5abad0be311c555825a6e8bb0ebe9e88",
+    "scripts/validate_review_json.py": "7dfbc265750b99715b0000b8f91c9a7ef6044b61679a9761fcef2a0efa94f6ac",
     "scripts/work_plugin.py": "4c35214f9322e6799ab74906b960c1019e79198b611fdae8143f2b7583a1d8f9"
   }
 }

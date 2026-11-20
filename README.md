@@ -39,7 +39,7 @@ You need:
 
 | Backend | Sign in | Default model | Lower-cost option |
 | --- | --- | --- | --- |
-| Codex | `codex login` | GPT-6.1 Sol | GPT-6 Luna |
+| Codex | `codex login` | GPT-6.2 Sol | GPT-6 Luna |
 | Claude Code | `claude auth login` | Opus 5.5 | Sonnet 5.5 |
 
 Use an up-to-date CLI. See [model options](docs/model_profiles.md) and
@@ -240,7 +240,7 @@ See [model choices, setup and resuming a review](docs/claude_code.md).
 
 ## Quality Defaults
 
-Each backend has its own default: **GPT-6.1 Sol** (`gpt-6.1-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) describe the available comparisons. The GPT-6.1 Sol live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
+Each backend has its own default: **GPT-6.2 Sol** (`gpt-6.2-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) distinguish targeted compatibility checks from full-pipeline quality evidence. Check client/account access before starting; never silently substitute another model.
 
 For a lower-cost Codex option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 

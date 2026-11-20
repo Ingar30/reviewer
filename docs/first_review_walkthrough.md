@@ -56,7 +56,7 @@ Your choice is remembered for new papers in this workspace. Later runs can omit
 the original command still uses Codex. Claude setup is covered in the
 [Claude guide](claude_code.md).
 
-Both commands use the same workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and subscription usage. Codex defaults to `gpt-6.1-sol`; Claude defaults to `claude-opus-5-5`. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
+Both commands use the same workflow: one parser-quality preflight, one conservative applicability decision, 8 universal review-stage auditors, every plausibly applicable conditional specialist, and one editor. Mixed, unknown, or lower-confidence classifications expand to the full 19-reviewer substantive roster. Reviewers run with bounded concurrency, but a full review can still take substantial time and subscription usage. Codex defaults to `gpt-6.2-sol`; Claude defaults to `claude-opus-5-5`. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for preflight and applicability routing.
 
 For lower-cost options, see [Codex model overrides](model_profiles.md) or
 [Claude model choices](claude_code.md#choose-a-model). Model and reasoning

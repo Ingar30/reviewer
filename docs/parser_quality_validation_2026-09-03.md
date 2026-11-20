@@ -40,10 +40,10 @@ Counts are baseline -> accepted implementation. Final `table_count` means canoni
 
 | Paper | Pages | Missing labels | Sections | Citation candidates | References | Canonical tables | Candidates | Unlabeled | Figures |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Faith Favors the Fortunate | 18 | 0 -> 0 | 4 -> 3 | 39 -> 15 | 31 | 3 -> 3 | 3 | 0 | 7 -> 7 |
-| Maren Ehrgott | 12 | 11 -> 0 | 3 -> 1 | 56 -> 56 | 163 | 12 -> 12 | 12 | 0 | 0 -> 0 |
-| Ong | 26 | 0 -> 0 | 5 -> 8 | 35 -> 35 | 66 | 5 -> 5 | 7 | 2 | 1 -> 6 |
-| Vincent Rost | 41 | 0 -> 0 | 27 -> 26 | 83 -> 54 | 43 | 13 -> 12 | 13 | 1 | 11 -> 11 |
+| Private sample A | 18 | 0 -> 0 | 4 -> 3 | 39 -> 15 | 31 | 3 -> 3 | 3 | 0 | 7 -> 7 |
+| Private sample B | 12 | 11 -> 0 | 3 -> 1 | 56 -> 56 | 163 | 12 -> 12 | 12 | 0 | 0 -> 0 |
+| Sample C | 26 | 0 -> 0 | 5 -> 8 | 35 -> 35 | 66 | 5 -> 5 | 7 | 2 | 1 -> 6 |
+| Private sample D | 41 | 0 -> 0 | 27 -> 26 | 83 -> 54 | 43 | 13 -> 12 | 13 | 1 | 11 -> 11 |
 | paper4 | 8 | 0 -> 0 | 8 -> 1 | 2 -> 2 | 29 | 1 -> 1 | 1 | 0 | 0 -> 0 |
 | paper9 | 12 | 12 -> 12 | 22 -> 22 | 33 -> 34 | 47 | 3 -> 3 | 3 | 0 | 4 -> 4 |
 | paper13 | 63 | 1 -> 1 | 27 -> 21 | 50 -> 50 | 63 | 21 -> 21 | 21 | 0 | 17 -> 17 |
@@ -51,7 +51,7 @@ Counts are baseline -> accepted implementation. Final `table_count` means canoni
 | paper21 | 116 | 2 -> 2 | 64 -> 62 | 52 -> 53 | 107 | 19 -> 18 | 19 | 1 | 23 -> 23 |
 | paper22 | 52 | 1 -> 1 | 27 -> 26 | 88 -> 88 | 133 | 0 -> 0 | 0 | 0 | 2 -> 2 |
 
-Lower citation counts for Faith, Vincent, and paper16 reflect removal of reference-list occurrences from the in-text citation inventory, not evidence loss. Compound citations such as `Becker (1973, 1974)` are now retained, and a unit fixture verifies that citations in a later appendix remain eligible after the reference-list boundary. On paper13, the final context-aware cleanup preserves the genuine footnote marker in `1Hsieh et al. (2019)`, leaving the citation count unchanged from baseline.
+Lower citation counts for Sample A, Sample D, and paper16 reflect removal of reference-list occurrences from the in-text citation inventory, not evidence loss. Compound citations such as `Becker (1973, 1974)` are now retained, and a unit fixture verifies that citations in a later appendix remain eligible after the reference-list boundary. On paper13, the final context-aware cleanup preserves the genuine footnote marker in `1Hsieh et al. (2019)`, leaving the citation count unchanged from baseline.
 
 ## What improved
 
@@ -59,8 +59,8 @@ Lower citation counts for Faith, Vincent, and paper16 reflect removal of referen
 
 Raw page text remains immutable. Repeated headers, footers, and vertical margin notices are removed only from normalized prose and written to `layout_artifacts.json` with their source text, geometry, signature, page, and reason.
 
-- Maren: 12 repeated footers and 11 repeated headers are recorded.
-- Ong: 25 repeated headers and 25 vertical Wiley notices are recorded. The normalized pages contain no Wiley agreement/terms contamination.
+- Sample B: 12 repeated footers and 11 repeated headers are recorded.
+- Sample C: 25 repeated headers and 25 vertical Wiley notices are recorded. The normalized pages contain no Wiley agreement/terms contamination.
 - paper4: 7 repeated headers and 7 repeated footers are recorded.
 - Printed page-label tokens are removed from normalized prose only when supported by edge geometry plus either explicit PDF label metadata or a reconciled run of at least three consecutive geometric labels. Exact-block and mixed-block cases are distinguished in provenance so a mixed block is never discarded.
 - Paper21's four verified contamination examples on pages 54, 55, 65, and 73 no longer inject `52`, `53`, `7`, or `15` into surrounding prose. Numeric values such as `-10.53` and `53.0` remain unchanged.
@@ -69,15 +69,15 @@ Detection uses geometry, recurrence, digit-normalized signatures, and PDF label 
 
 ### Page labels
 
-Geometric header/footer labels are accepted only when they form a run of at least three consecutive Arabic or Roman labels. This recovered Maren's `01` through `12`; a final overlap test also verifies that short labels are removed when they share a recurring publisher-footer block whose lines are reordered in normalized text. On paper9, isolated candidates on physical pages 4, 6, 8, and 11 were rejected and retained as rejected-candidate provenance instead of being promoted to page labels.
+Geometric header/footer labels are accepted only when they form a run of at least three consecutive Arabic or Roman labels. This recovered Sample B's `01` through `12`; a final overlap test also verifies that short labels are removed when they share a recurring publisher-footer block whose lines are reordered in normalized text. On paper9, isolated candidates on physical pages 4, 6, 8, and 11 were rejected and retained as rejected-candidate provenance instead of being promoted to page labels.
 
 ### Tables and figures
 
 Caption matching now supports a split label and title on the same geometric row, plus the common all-uppercase, unpunctuated convention such as `TABLE 1  Descriptive statistics`. The uppercase rule is typographically bounded; sentence-like `Figure 1 shows the estimates` remains rejected.
 
-- Maren retains canonical table labels 1 through 12.
-- Ong recovers table labels 1 through 5 and figure labels 1 through 6.
-- Vincent's false cover-design table remains visible as an unlabeled candidate but is excluded from the canonical count, which falls from 13 to 12.
+- Sample B retains canonical table labels 1 through 12.
+- Sample C recovers table labels 1 through 5 and figure labels 1 through 6.
+- Sample D's false cover-design table remains visible as an unlabeled candidate but is excluded from the canonical count, which falls from 13 to 12.
 - Paper21's five figures on 90-degree rotated pages use an explicit `full_page_rotated_fallback`; each saved crop is byte-identical to its 72-DPI full page image and therefore no longer omits upper or right panels.
 - Explicit multi-panel tables retain later panel markers during caption-region extraction. When at least two distinct `Panel <label>` rows are present, the visual fallback uses a provenance-labelled `full_page_multi_panel_fallback`; this preserves later panels and notes without claiming that structured cells are correct.
 - Wrapped captions are complete for paper21 Figure A.17 and paper22 Figures 1 and 2. The same general fix also completes paper9 Figures 3 and 4.
@@ -87,20 +87,20 @@ The first live paper21 preflight incorrectly described the full-page Figure A.3 
 
 ### Glyphs and normalization
 
-Unresolved control glyphs are now reported with font, character code, bounding box, and origin. Ong's affected pages are 7, 8, 11, 14, 15, 16, and 19. Maren's recurring header control glyph is likewise preserved in provenance even though the header is excluded from normalized prose.
+Unresolved control glyphs are now reported with font, character code, bounding box, and origin. Sample C's affected pages are 7, 8, 11, 14, 15, 16, and 19. Sample B's recurring header control glyph is likewise preserved in provenance even though the header is excluded from normalized prose.
 
-Soft hyphens are removed only from normalized prose and counted in page diagnostics. Vincent's three source soft hyphens, on pages 1 and 41, remain in raw evidence and no longer survive in normalized page files.
+Soft hyphens are removed only from normalized prose and counted in page diagnostics. Sample D's three source soft hyphens, on pages 1 and 41, remain in raw evidence and no longer survive in normalized page files.
 
 ### Sections and reading order
 
-The parser now rejects several general classes of false headings, including letter-spaced metadata, initial lists, generic editorial metadata, math-operator strings, overlong appendix sentences, repeated chart categories, multi-panel chart labels, and sample-size rows containing repeated numeric cells. This removes the false `2 Groups 3 Groups` heading in Vincent, six `N ...` rows in paper13, the paper22 multi-panel chart line, and seven repeated running-header headings in paper4. Ong's eight final headings correspond to visible document sections.
+The parser now rejects several general classes of false headings, including letter-spaced metadata, initial lists, generic editorial metadata, math-operator strings, overlong appendix sentences, repeated chart categories, multi-panel chart labels, and sample-size rows containing repeated numeric cells. This removes the false `2 Groups 3 Groups` heading in Sample D, six `N ...` rows in paper13, the paper22 multi-panel chart line, and seven repeated running-header headings in paper4. Sample C's eight final headings correspond to visible document sections.
 
-An initially broader reading-order divergence rule overflagged Faith and Vincent during step testing. It was narrowed before acceptance to severe first-page divergence plus existing multi-column and landscape conditions.
+An initially broader reading-order divergence rule overflagged Sample A and Sample D during step testing. It was narrowed before acceptance to severe first-page divergence plus existing multi-column and landscape conditions.
 
 ## Remaining limitations
 
 1. **Table cell structure remains the highest substantive risk.** Caption coverage is much better, but merged headers, signs, and cell alignment can still be unsafe. Canonical means caption-grounded, not numerically verified.
-2. **Section recall is still uneven.** Maren exposes real numbered headings in source text but the section inventory retains only `References`. The accepted structural guards fix the verified false positives without attempting a larger typography-scoring rewrite.
+2. **Section recall is still uneven.** Sample B exposes real numbered headings in source text but the section inventory retains only `References`. The accepted structural guards fix the verified false positives without attempting a larger typography-scoring rewrite.
 3. **Mathematical extraction is diagnostic, not reconstructive.** Exact glyph locations are now available, but missing or ambiguous mathematical symbols are deliberately not guessed.
 4. **The parser cannot recover absent source material.** A cited online appendix or supplement that is not included in the input package must remain `cannot_verify`; this is an intake-completeness issue, not a text-repair problem.
 5. **Image-only pages remain conservative.** OCR is recommended where appropriate but is not installed or silently invoked by the default workflow. Paper21 Figure A.7 retains unresolved source-font control-glyph provenance and must be checked visually.
@@ -114,7 +114,7 @@ Use caption-bounded regions, compare PyMuPDF and pdfplumber output, cluster cell
 
 ### 2. Make section recognition typography-aware
 
-Score candidates using body-region position, font size/weight relative to nearby prose, numbering continuity, whitespace, and recurrence. This should address Maren's missed headings without growing a lexical exception list. Keep deterministic evidence explaining every accepted or rejected candidate.
+Score candidates using body-region position, font size/weight relative to nearby prose, numbering continuity, whitespace, and recurrence. This should address Sample B's missed headings without growing a lexical exception list. Keep deterministic evidence explaining every accepted or rejected candidate.
 
 ### 3. Add equation-focused evidence artifacts
 

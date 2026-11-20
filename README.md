@@ -39,7 +39,7 @@ You need:
 
 | Backend | Sign in | Default model | Lower-cost option |
 | --- | --- | --- | --- |
-| Codex | `codex login` | GPT-6.1 Sol | GPT-6 Luna |
+| Codex | `codex login` | GPT-6.2 Sol | GPT-6 Luna |
 | Claude Code | `claude auth login` | Opus 5.5 | Sonnet 5.5 |
 
 Use an up-to-date CLI. See [model options](docs/model_profiles.md) and
@@ -194,6 +194,10 @@ Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recov
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
 Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
 
+Offline package checks cover Windows x64/Python 3.12; they do not establish
+scientific quality or reliable unattended recovery. See
+[validation and local-package testing](docs/uv_validation.md).
+
 ## Claude Code setup
 
 `--backend claude` uses the **same pipeline, review prompts and validators**,
@@ -235,13 +239,17 @@ See [model choices, setup and resuming a review](docs/claude_code.md).
 
 ## Quality Defaults
 
-Each backend has its own default: **GPT-6.1 Sol** (`gpt-6.1-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) describe the available comparisons. The GPT-6.1 Sol live test used Codex CLI 0.159.0; update an older CLI if the model is unavailable.
+Each backend has its own default: **GPT-6.2 Sol** (`gpt-6.2-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. See [model options and validation limits](docs/model_profiles.md); structural validation does not establish scientific quality. Check client/account access before starting; never silently substitute another model.
 
 For a lower-cost Codex option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
 ```powershell
 python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
+
+Lower-cost settings are not a promise of equivalent coverage. You can explicitly
+select another model or effort for a run; see
+[model options and validation limits](docs/model_profiles.md).
 
 To deliberately use another combination:
 

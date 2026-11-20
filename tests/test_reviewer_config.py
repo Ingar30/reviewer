@@ -1157,6 +1157,7 @@ class ReviewerConfigTests(unittest.TestCase):
         self.assertEqual(numeric_signature("The reported share is 32%."), [("32%", None)])
 
     def test_sparse_semantic_overlap_needs_independent_support(self) -> None:
+        # Invented program/region examples; not findings about a real manuscript.
         unrelated_base = finding(
             finding_summary=(
                 "The manuscript excludes regions that later adopted training policies "

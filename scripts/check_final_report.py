@@ -106,6 +106,8 @@ def traceability_failures(text: str, bundle: dict) -> list[str]:
             for source in finding.get("source_findings", [])
             if source.get("reviewer") and source.get("id")
         }
+        if str(canonical_id) in expected_by_canonical:
+            failures.append(f"duplicate canonical identifier in bundle: {canonical_id}")
         expected_by_canonical[str(canonical_id)] = source_ids
         expected_source_ids.update(source_ids)
 
@@ -118,16 +120,36 @@ def traceability_failures(text: str, bundle: dict) -> list[str]:
     for source_id in sorted(actual_source_ids - expected_source_ids):
         failures.append(f"unknown source finding identifier in traceability appendix: {source_id}")
 
-    table_rows = [line for line in appendix.splitlines() if line.strip().startswith("|")]
+    # Identity belongs to the designated fields, not explanatory prose. A reason
+    # may cite another known ID without creating a second disposition or mapping.
+    table_rows = []
+    columns = None
+    for line in appendix.splitlines():
+        if not line.strip().startswith("|"):
+            if line.strip():
+                columns = None
+            continue
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        if "Canonical ID" in cells and "Source finding IDs" in cells:
+            columns = (cells.index("Canonical ID"), cells.index("Source finding IDs"))
+            continue
+        if columns is None or max(columns) >= len(cells):
+            continue
+        if all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+            continue
+        ids = CANONICAL_ID_RE.findall(cells[columns[0]])
+        if len(ids) != 1:
+            failures.append("traceability row requires exactly one canonical identifier in its Canonical ID column")
+        table_rows.append((ids, set(SOURCE_ID_RE.findall(cells[columns[1]]))))
     for canonical_id, expected_sources in expected_by_canonical.items():
-        matching_rows = [row for row in table_rows if canonical_id in CANONICAL_ID_RE.findall(row)]
+        matching_rows = [row for row in table_rows if canonical_id in row[0]]
         if not matching_rows:
             failures.append(f"missing canonical identifier from traceability table: {canonical_id}")
             continue
         if len(matching_rows) != 1:
             failures.append(f"canonical identifier must appear in exactly one traceability row: {canonical_id}")
             continue
-        row_sources = set(SOURCE_ID_RE.findall(matching_rows[0]))
+        row_sources = matching_rows[0][1]
         for source_id in sorted(expected_sources - row_sources):
             failures.append(f"missing source finding identifier from {canonical_id} row: {source_id}")
         for source_id in sorted(row_sources - expected_sources):

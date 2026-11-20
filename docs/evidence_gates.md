@@ -168,9 +168,8 @@ The optional shadow pass and source-based human assessment address that remainin
 uncertainty. Reviewer agreement remains in provenance but adds no ranking bonus.
 
 The paired source-comparison instructions are provisional discovery guidance.
-Limited matched development cases show both useful distinctions and missed or
-lost qualifications; synthesis and structural checks do not establish a discovery
-gain or uniformly improved review quality.
+Synthesis and structural checks do not establish a discovery gain or uniformly
+improved review quality; consequential findings still require source checking.
 
 ## Optional bounded shadow verification
 

@@ -194,9 +194,8 @@ Keep the original wheel or pin a Git commit (`...reviewer.git@COMMIT`) for recov
 Changed runtime resources and unrelated nonempty workspaces are not overwritten.
 Codex sandbox, approval and trust rules are unchanged; no bypass is enabled.
 
-Tested on Windows x64/Python 3.12, including live reviews. A sleep-interrupted
-GPT-6 run required manual recovery; unattended recovery is not established.
-Other platforms have not had live-review validation here. See
+Offline package checks cover Windows x64/Python 3.12; they do not establish
+scientific quality or reliable unattended recovery. See
 [validation and local-package testing](docs/uv_validation.md).
 
 ## Claude Code setup
@@ -240,7 +239,7 @@ See [model choices, setup and resuming a review](docs/claude_code.md).
 
 ## Quality Defaults
 
-Each backend has its own default: **GPT-6.2 Sol** (`gpt-6.2-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. The [model notes](docs/model_profiles.md) distinguish targeted compatibility checks from full-pipeline quality evidence. Check client/account access before starting; never silently substitute another model.
+Each backend has its own default: **GPT-6.2 Sol** (`gpt-6.2-sol`) for Codex and **Opus 5.5** (`claude-opus-5-5`) for Claude. Both use `xhigh` reasoning for substantive reviewers and the editor and `high` for parser-quality preflight and applicability routing. See [model options and validation limits](docs/model_profiles.md); structural validation does not establish scientific quality. Check client/account access before starting; never silently substitute another model.
 
 For a lower-cost Codex option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 
@@ -248,12 +247,9 @@ For a lower-cost Codex option, explicitly select **GPT-6 Luna** (`gpt-6-luna`):
 python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf" --model gpt-6-luna --reasoning-effort xhigh
 ```
 
-Luna is the lowest-cost tested Codex option, but not an equivalent-coverage replacement.
-In a small three-reviewer comparison, Luna at `xhigh` used about 19 times fewer
-estimated Standard credits than GPT-6.1 Sol at `high`, but missed more source-checked
-issues. For broader coverage with less reasoning than the default, try Sol with
-`--reasoning-effort high`. See [model comparisons](docs/model_profiles.md#luna-xhigh-versus-sol-61-high---2026-10-02)
-for the limited evidence; this was not a full-pipeline comparison.
+Lower-cost settings are not a promise of equivalent coverage. You can explicitly
+select another model or effort for a run; see
+[model options and validation limits](docs/model_profiles.md).
 
 To deliberately use another combination:
 

@@ -1100,13 +1100,13 @@ class ReviewerConfigTests(unittest.TestCase):
         percent_wording = finding(
             id="CEA-101",
             finding_summary=(
-                "The text reports 57.2 percent agreement, but Figure 4 displays 27 percent."
+                "The text reports 64.5 percent agreement, but Figure 4 displays 32 percent."
             ),
-            claim_text="The reported agreement rate is 57.2 percent.",
+            claim_text="The reported agreement rate is 64.5 percent.",
         )
         self.assertTrue(
             should_merge(
-                group_for("The text reports 57.2% agreement, but Figure 4 displays 27%."),
+                group_for("The text reports 64.5% agreement, but Figure 4 displays 32%."),
                 "claim_evidence_auditor",
                 percent_wording,
                 "manuscript_issue",
@@ -1115,16 +1115,16 @@ class ReviewerConfigTests(unittest.TestCase):
         formula_wording = finding(
             id="NUM-101",
             finding_summary=(
-                "The manuscript reports coefficients on log(1+kW) as percentage changes in kW, "
-                "so its 8%, 13%, 10%, 6%, and 12% statements use the wrong scale."
+                "The manuscript reports coefficients on log(1+units) as percentage changes in units, "
+                "so its 9%, 14%, 11%, 7%, and 15% statements use the wrong scale."
             ),
-            claim_text="The five coefficients imply changes of 8%, 13%, 10%, 6%, and 12%.",
+            claim_text="The five coefficients imply changes of 9%, 14%, 11%, 7%, and 15%.",
         )
         self.assertTrue(
             should_merge(
                 group_for(
-                    "The manuscript interprets coefficients on log(1+kW) as percentage changes "
-                    "in kW, although those coefficients require baseline kW for conversion."
+                    "The manuscript interprets coefficients on log(1+units) as percentage changes "
+                    "in units, although those coefficients require baseline units for conversion."
                 ),
                 "model_equation_auditor",
                 formula_wording,
@@ -1154,18 +1154,19 @@ class ReviewerConfigTests(unittest.TestCase):
             numeric_signature("The 2SLS and 3D checks report -1.11."),
             [("1.11", "-")],
         )
-        self.assertEqual(numeric_signature("The reported share is 27%."), [("27%", None)])
+        self.assertEqual(numeric_signature("The reported share is 32%."), [("32%", None)])
 
     def test_sparse_semantic_overlap_needs_independent_support(self) -> None:
+        # Invented program/region examples; not findings about a real manuscript.
         unrelated_base = finding(
             finding_summary=(
-                "The manuscript excludes cantons that later adopted expropriation reforms "
-                "and interprets the larger estimate as the effect of private rights absent "
-                "reform, although reform status is a post-1815, potentially endogenous event."
+                "The manuscript excludes regions that later adopted training policies "
+                "and interprets the larger estimate as the effect of program eligibility absent "
+                "reform, although reform status is a post-baseline, potentially endogenous event."
             ),
             claim_text=(
-                "Restricting the RDD sample to cantons that did not implement expropriation "
-                "reforms identifies the effect of private rights in the absence of "
+                "Restricting the RDD sample to regions that did not implement expropriation "
+                "reforms identifies the effect of program eligibility in the absence of "
                 "institutional adjustment."
             ),
         )
@@ -1183,12 +1184,12 @@ class ReviewerConfigTests(unittest.TestCase):
         clustering_finding = finding(
             id="ROB-004",
             finding_summary=(
-                "The reform-effect and reform-by-private-rights significance claims lack "
-                "inference clustered at the canton level where reforms are assigned."
+                "The reform-effect and reform-by-eligible-program significance claims lack "
+                "inference clustered at the region level where reforms are assigned."
             ),
             claim_text=(
-                "Expropriation reforms increased water-energy generation, and the positive "
-                "effect is entirely driven by private-rights cantons."
+                "Training policies increased synthetic output, and the positive "
+                "effect is entirely driven by eligible-program regions."
             ),
         )
         self.assertFalse(
@@ -1203,11 +1204,11 @@ class ReviewerConfigTests(unittest.TestCase):
         true_base = finding(
             finding_summary=(
                 "The post-event analysis and Table 7 cluster standard errors at the "
-                "district-year level even though both treatments are assigned at the canton level."
+                "site-year level even though both treatments are assigned at the region level."
             ),
             claim_text=(
-                "District-year clustering provides assignment-consistent inference for the "
-                "canton-level water-rights and reform treatments."
+                "Site-year clustering provides assignment-consistent inference for the "
+                "region-level eligibility and reform treatments."
             ),
         )
         true_group = {
@@ -1220,13 +1221,13 @@ class ReviewerConfigTests(unittest.TestCase):
         true_paraphrase = finding(
             id="ID-007",
             finding_summary=(
-                "Panel and reform regressions cluster at district-year even though institutional "
-                "exposure is assigned at canton and outcomes repeat over time, so their reported "
+                "Panel and reform regressions cluster at site-year even though institutional "
+                "exposure is assigned at region and outcomes repeat over time, so their reported "
                 "inference does not allow treatment-level or serial dependence."
             ),
             claim_text=(
                 "The reported uncertainty for the panel event studies and Table 7 supports "
-                "statistically reliable conclusions about canton-level institutional treatments."
+                "statistically reliable conclusions about region-level institutional treatments."
             ),
         )
         self.assertTrue(
@@ -1245,11 +1246,11 @@ class ReviewerConfigTests(unittest.TestCase):
                 "issue_class": "manuscript_issue",
                 "page": 7,
                 "finding_summary": (
-                    "The conclusion turns an effect of information about fewer audits on stated "
-                    "responses into claims about actual audit reductions."
+                    "The conclusion turns an effect of information about fewer checks on stated "
+                    "responses into claims about actual check reductions."
                 ),
                 "claim_text": (
-                    "Reduced audit activity itself lowers public trust and secures public support."
+                    "Reduced check activity itself lowers customer trust and secures customer support."
                 ),
             },
             {
@@ -1258,10 +1259,10 @@ class ReviewerConfigTests(unittest.TestCase):
                 "page": 7,
                 "finding_summary": (
                     "The policy conclusion generalizes an information-treatment effect to the "
-                    "effect of maintaining actual audit levels."
+                    "effect of maintaining actual check levels."
                 ),
                 "claim_text": (
-                    "Maintaining normal audit levels is important for securing public support."
+                    "Maintaining normal check levels is important for securing customer support."
                 ),
             },
         ]
@@ -1273,18 +1274,18 @@ class ReviewerConfigTests(unittest.TestCase):
         tradeoff_finding = finding(
             id="MAG-003",
             finding_summary=(
-                "The manuscript favors maintaining normal audit capacity without measuring the "
+                "The manuscript favors maintaining normal check capacity without measuring the "
                 "policy trade-offs or support threshold needed to justify that prescription."
             ),
             claim_text=(
-                "The treatment effects demonstrate that maintaining normal audit levels is "
-                "important to secure public support."
+                "The treatment effects demonstrate that maintaining normal check levels is "
+                "important to secure customer support."
             ),
             location={
                 "page": 7,
                 "page_label": "7",
                 "section": "Conclusion",
-                "text_quote": "maintaining normal audit levels",
+                "text_quote": "maintaining normal check levels",
                 "precision": "exact",
             },
         )
@@ -1409,22 +1410,22 @@ class ReviewerConfigTests(unittest.TestCase):
         findings = [
             finding(
                 id="CEA-001",
-                finding_summary="The historical index is described as direct discrimination even though it is only a proxy for the local racial environment.",
-                claim_text="The historical index measures discrimination directly.",
+                finding_summary="The synthetic score is described as direct individual exposure even though it is only a proxy for the simulated local environment.",
+                claim_text="The synthetic score measures individual exposure directly.",
                 location=shared_location,
                 source_objects=[shared_source],
             ),
             finding(
                 id="CONSIST-001",
-                finding_summary="The paper presents the historical discrimination index as direct exposure despite defining it as a proxy for the local environment.",
-                claim_text="The historical index identifies direct discrimination exposure.",
+                finding_summary="The paper presents the synthetic environment score as direct exposure despite defining it as a proxy for the local environment.",
+                claim_text="The synthetic score identifies direct individual exposure exposure.",
                 location=shared_location,
                 source_objects=[shared_source],
             ),
             finding(
                 id="VALID-001",
-                finding_summary="The study generalizes from selected military pilots to all highly skilled Black Americans.",
-                claim_text="The pilot evidence applies to all highly skilled Black Americans.",
+                finding_summary="The study generalizes from selected simulated facilities to all simulated facilities.",
+                claim_text="The facility evidence applies to all simulated facilities.",
                 location=shared_location,
                 source_objects=[shared_source],
             ),
@@ -2191,8 +2192,8 @@ class ReviewerConfigTests(unittest.TestCase):
     def test_shareable_repo_check_rejects_private_artifacts(self) -> None:
         paths = [
             "inputs/paper.pdf",
-            "work/paper1/reviews/numerical_auditor.json",
-            "outputs/paper1/report.md",
+            "work/synthetic-paper/reviews/numerical_auditor.json",
+            "outputs/synthetic-paper/report.md",
             "data/raw/survey.csv",
             "data/paper/raw/table.csv",
         ]
@@ -2853,10 +2854,10 @@ class ReviewerConfigTests(unittest.TestCase):
         )
         self.assertEqual(
             remove_layout_artifact_text(
-                '1Hsieh et al. (2019) footnote\n1\nOther material\n1\n',
+                '1Example et al. (2020) footnote\n1\nOther material\n1\n',
                 end_artifact,
             ),
-            '1Hsieh et al. (2019) footnote\n1\nOther material\n',
+            '1Example et al. (2020) footnote\n1\nOther material\n',
         )
 
     def test_soft_hyphen_is_removed_only_from_normalized_text(self) -> None:

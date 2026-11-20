@@ -35,7 +35,6 @@ existing evidence directory. Clean-install and legacy setup checks are separate.
 Host: Windows x64, Python 3.12.10, uv 0.12.17. Automated model calls were mocked;
 deterministic PDF processing, routing checks, validation and report assembly were
 real. No manuscript or private logs are included in the package or this record.
-The live review below used GPT-5.6 Sol; it does not benchmark the newer GPT-6 Sol default.
 
 | Check | Result |
 | --- | --- |
@@ -49,16 +48,6 @@ The live review below used GPT-5.6 Sol; it does not benchmark the newer GPT-6 So
 | Existing PowerShell setup and Python launch without uv | Fresh setup passed; full synthetic pipeline completed with 22 mocked calls |
 | Generated-resource drift and repository hygiene | Passed; generated resources unchanged |
 
-The user separately completed a **live review** of a 71-page PDF from an unrelated
-Windows directory containing spaces, using the tested local wheel. A deterministic
-cross-check confirmed all 20 reviewer outputs validated, 145 source findings were
-accounted for in 122 canonical findings, prompts/editor input matched reconstruction,
-and the final report passed consistency checks. Effective permissions were
-**read-only / on-request**. All 590 live artifact files were unchanged by the audit,
-which made no new model calls. Six reviewers reported partial coverage; parser
-preflight had six warnings and no blockers. This was execution/integrity validation,
-not an independent scientific re-review or fresh verification of every citation.
-
 ## Additional validation - 2026-09-23
 
 The GPT-6-default release passed all 200 offline tests, fresh source/wheel builds,
@@ -67,18 +56,12 @@ mocked Codex calls each. Ordinary Python launch checks passed without uv. Ubuntu
 [CI passed](https://github.com/Ingar30/reviewer/actions/runs/35857500591), and an
 exact-commit Git-source uvx install and `--help` passed outside Git.
 
-Separately, both GPT-6 models completed the [71-page live comparison](model_profiles.md#recorded-full-pipeline-comparison---2026-09-23)
-using the tested local wheel. The source paper and existing results were preserved.
-Luna required manual continuation after laptop sleep and a wrapper timeout; this
-was not an unattended-recovery pass. No paper, report or private session log is published.
-
 ## Limits and recovery
 
 - macOS, Linux, Windows ARM and other Python versions were not tested locally.
   `setup.sh` is unchanged but was not executed on this Windows host.
-- Automated recovery tests use mocked stage failures. The later live sleep/timeout
-  case required manual recovery and exposed incomplete Windows process-tree cleanup;
-  reliable unattended recovery, reboot, disk-full and concurrent same-paper runs
+- Automated recovery tests use mocked stage failures. Reliable unattended
+  recovery, reboot, disk-full and concurrent same-paper runs
   remain unvalidated. Do not launch a duplicate while an old review process is active.
 - Git-source installation/help passed for the recorded commit; this does not
   validate every future Git revision. No PyPI publication is needed.

@@ -16,6 +16,7 @@ Do not commit or paste:
 - source PDFs or other copyrighted/private papers
 - `work/` artifacts, logs, rendered prompts, or reviewer JSON
 - `outputs/` reports
+- real-paper identities, metadata, findings, measurements, comparisons and run histories, including pseudonymized tables
 - API keys, tokens, passwords, credentials, or authenticated CLI config
 
 When opening issues or pull requests, use synthetic fixtures, public-domain examples, or short non-sensitive snippets. Do not paste private manuscript text into public discussion threads.
@@ -45,3 +46,8 @@ Run `python -m unittest` before opening a pull request.
 - Update README or docs when commands, reviewer behavior, or privacy expectations change.
 - Run `python -m unittest`.
 - Run `python scripts/check_shareable_repo.py --include-untracked` before sharing local changes that might include new files.
+
+Public examples and regression fixtures must be independently invented. Replacing
+author names with sample labels does not make private evidence publishable.
+Path/secret-name checks are not semantic privacy certification; inspect complete
+files, commit history, PR diffs, comments and release assets before publication.

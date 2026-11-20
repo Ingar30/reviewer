@@ -15,14 +15,13 @@ and authentication are described in [Claude Code](claude_code.md).
 
 | Phase | Design | Scheduled model sessions |
 | --- | --- | ---: |
-| Pilot | One long paper; numerical, claim-evidence and reference auditors; three profiles; one repeat | 9 |
-| Development panel | Three papers; ten paper-role pairs; three profiles; two repeats | 60 |
-| Held-out confirmation | At least two previously unused papers, plus clean/seeded synthetic controls | Set after pilot |
+| Pilot | A small approved set of paper-role pairs and explicit profiles | Freeze before dispatch |
+| Development panel | Repeated matched tasks across an approved range of paper types | Approve separately |
+| Held-out confirmation | Previously unused papers and clean/seeded synthetic controls | Approve separately |
 | Full-pipeline confirmation | Finalists run the existing complete wrapper on the same papers in fresh workspaces | Up to 22 stages per model/paper before retries |
 
-The proposed development panel spans a long interviews paper (four roles), a
-long empirical paper (three roles), and a short theory paper (three roles).
-Keep actual paper paths, reference notes and results private. Previously examined
+Choose paper types and roles to test the intended use; this guide does not
+authorize a particular campaign. Keep paper paths, reference notes and results private. Previously examined
 papers are development cases, not an unseen test set. Do not count pilot runs as
 extra independent panel repetitions. Historical GPT-5.6 outputs are context only:
 they used different runs/settings and are neither a matched candidate nor truth.
@@ -177,7 +176,7 @@ and [cache accounting](https://platform.claude.com/docs/en/build-with-claude/pro
 Preserve raw counters and rate-table date if later calculating an estimate. Do
 not equate Codex credits with Claude USD, or cross-provider token counts with
 identical text/budget. Include failed/retried work; label unreported usage as a
-lower-bound gap. The pilot measures only three reviewer tasks, not whole-paper
+lower-bound gap. A role-level pilot measures selected reviewer tasks, not whole-paper
 cost. Use the long-paper full-pipeline confirmation for an actual stage-by-stage
 estimate; do not multiply short-paper cost linearly by page count. Keep sleep,
 outages and manual intervention separate from normal elapsed time.

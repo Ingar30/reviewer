@@ -55,8 +55,7 @@ in `./reviewer-workspace/`, outside installation/cache directories. Optionally u
 `--workspace DIR` to choose another folder; its name does not select a backend.
 Use a separate workspace for Codex/Claude comparisons. Existing workspaces remain
 tied to their original runtime and are not silently upgraded.
-Keep Windows workspace paths reasonably short: a deeply nested trial failed
-during PDF copying, while a shorter path containing spaces passed.
+Keep Windows workspace paths reasonably short to avoid path-length limits.
 For reproducible testing/recovery, pin the Git revision (`reviewer.git@COMMIT`) and
 keep the same revision, workspace, paper ID and model when resuming.
 
@@ -79,8 +78,8 @@ to the whole review and does not change your default. Keep the same model when
 resuming; use a new paper ID or workspace to compare models.
 
 Haiku 4.5 (`--model claude-haiku-4-5-20251001`) is cheaper still, but is currently
-a testing option: a short-paper trial needed retries for review metadata and
-report traceability before passing. Sonnet remains the suggested budget option.
+a testing option without a general quality-equivalence claim. Sonnet remains
+the suggested budget option.
 
 ## Behavior and limitations
 
@@ -184,42 +183,17 @@ backend provenance, all pipeline stages, spaces/non-Git directories, persistent
 outputs, and recovery after simulated stage failures. Local package validation
 must use the newly built wheel, not GitHub. Real Ctrl+C, laptop sleep, web-tool
 permissions, long-paper quality and actual usage remain live-test gates. The limited
-live checks below do not establish compatibility on other platforms;
+checks do not establish compatibility on other platforms;
 macOS/Linux/WSL have not had live-Claude validation here.
 
-### Live evidence and remaining limits
+### Remaining validation limits
 
-Windows / Claude Code 2.1.281 / Opus 5.5:
-
-| Check | Result |
-| --- | --- |
-| Subscription login, text/image reads and structured reviewer output | Passed after refreshing an expired login |
-| One-line synthetic PDF | All 22 live stages completed; zero findings and the final report validated. This tests workflow, not substantive review quality |
-| 71-page qualitative-interviews paper | All 20 audits, including preflight, and the final editor completed across session-limit continuations; final structural checks passed on 30 September 2026. This was mixed-runtime recovery, not a clean single-version run |
-| Additional single-version local-wheel trial, 1 October | Preflight, routing and three substantive reviewers completed before a subscription limit. Outputs/checkpoint were retained; the extra run was stopped, not counted as another complete pipeline |
-| Source-grounded quality | The completed report contains useful corrections but also source-version errors and lost qualifications. Structural success does not establish semantic completeness, accuracy or cross-model equivalence |
-| Clean local-wheel installation, spaces/non-Git paths and persistence | Mocked acceptance passed; these checks do not consume model usage or establish model quality |
-
-The **30 September** long-paper continuation reused hash-checked accepted audits through a private
-validation helper. This is **not** the public resume command and does not establish
-unattended interruption recovery. Accepted workspaces keep their original runtime;
-the large-editor continuation explicitly uses a newer builder/prompt. It is a
-recovery validation, not a clean single-version full run or matched model benchmark.
-
-The completed web-enabled audits used both Opus and a reported Haiku helper in
-Claude Code's usage metadata. Comparisons therefore measure the CLI workflow,
-not an isolated base model. The large editor handoff has completed once. The new
-public selective resume passes mocked clean-wheel tests, including successful
-sibling retention and changed-input rejection. A two-page Haiku 4.5 trial on
-2 October also completed all 19 substantive reviews and the editor through live
-selective continuations after explicit runtime migrations. Sixteen original
-valid reviews were retained unchanged; metadata and traceability errors were
-resolved by model reruns, not manual repairs or weaker validation. This was
-recovery evidence, not a clean first-pass run or a quality benchmark.
-Reliable unattended long-paper recovery, report-body fidelity and a fresh single-version
-completed long run remain validation gaps, not claims
-established by the completed reports. macOS/Linux/WSL remain untested here. Keep Usage
-credits OFF and retain outputs if a session limit is hit.
+Offline/mock checks do not establish source accuracy, report-body fidelity,
+cross-model quality equivalence or reliable unattended recovery. Treat real
+Ctrl+C, laptop sleep, web-tool permissions and long editor inputs as separate
+validation questions. macOS/Linux/WSL live compatibility is not established here.
+Keep usage credits off if required by your budget, and retain outputs after a
+session limit. Do not publish private run histories or manuscript-derived results.
 
 ## Feedback
 
@@ -228,10 +202,7 @@ request and does not verify remaining quota or server acceptance of saved login.
 Then try a paper you are permitted to send to Anthropic, keeping the computer awake.
 Higher subscription limits may help, but completion in one session is not guaranteed.
 
-Useful feedback: OS, Python/Claude versions, Git revision, model/effort, approximate
-paper length, completed/failed stage, whether a final report was produced, and
-source-checked examples of useful findings or false alarms. If comfortable, record
-before/after session and weekly percentages from Claude's usage page; logged USD
-estimates are not subscription usage. Do not post credentials, private papers or
-unredacted prompts/logs publicly. Web-enabled roles, editor output and interrupted
-recovery are the main remaining live test targets.
+Useful public feedback: OS, Python/Claude versions, Git revision, model/effort
+and a synthetic reproduction. Keep real-paper findings, metadata, run histories,
+usage records, prompts and logs private. Web-enabled roles, editor output and
+interrupted recovery remain important validation targets.

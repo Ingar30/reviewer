@@ -51,3 +51,8 @@ tmp/
 # Local Codex/OpenAI CLI runtime state; keep only project config tracked
 .codex/*
 !.codex/config.toml
+
+# Retired internal evaluation records must stay in ignored private storage
+/docs/parser_quality_validation_2026-09-03.md
+/docs/limitations_branch_recommendations.md
+/docs/release_readiness_2026-09-01.md

@@ -2,6 +2,10 @@
 
 This audit maps the repository-sharing goal to concrete local evidence.
 
+Path and secret-name checks are limited mechanical guards, not certification that
+documentation or fixtures contain no confidential derived evidence. Follow the
+full-file and history review in `docs/public_release_checklist.md` before publishing.
+
 ## Objective
 
 Make the reviewer setup easy for other researchers to clone, run, fork, and improve while keeping papers and generated review artifacts out of GitHub.

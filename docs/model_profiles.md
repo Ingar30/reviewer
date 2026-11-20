@@ -2,15 +2,45 @@
 
 ## Codex model default
 
-The Codex backend uses `gpt-6.1-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`. Claude has its own [default and model choices](claude_code.md#choose-a-model). Choose a backend on your first review; the workspace remembers it for new papers, and existing papers retain their original backend.
+The Codex backend uses `gpt-6.2-sol` with `xhigh` reasoning for substantive reviewers and the editor. Parser-quality preflight and applicability routing use `high`. Claude has its own [default and model choices](claude_code.md#choose-a-model). Choose a backend on your first review; the workspace remembers it for new papers, and existing papers retain their original backend.
 
 ```powershell
 python scripts/review_paper.py --backend codex --pdf "inputs/my-paper.pdf"
 ```
 
-[GPT-6.1 Sol supports the retained reasoning settings](https://developers.openai.com/api/docs/models/gpt-6.1-sol). One complete long-paper run and targeted source checks support this practical default, not a general accuracy ranking. No new API-key requirement is introduced; reviews still use authenticated Codex CLI.
+Client/account access was checked with authenticated Codex CLI 0.170.0 on 20 November 2026. A minimal live probe reported `gpt-6.2-sol` and `xhigh`, matching the requested settings. No API key, billing change or automatic model substitution is introduced.
 
-Use an up-to-date Codex CLI and an account with model access. The GPT-6.1 Sol run used CLI 0.159.0; 0.158.0 rejected its access probe here. If a model is unavailable, update Codex and check account access rather than silently substituting another model. To retain the previous default explicitly, use `--model gpt-6-sol`. Existing packaged workspaces retain their original runtime/defaults; use a new workspace for the new version.
+Use an up-to-date Codex CLI and an account with model access. If the model is unavailable, check those prerequisites rather than silently substituting another model. To select the previous default explicitly, use `--model gpt-6.1-sol`. Existing packaged workspaces retain their original runtime/defaults; use a new workspace for the new version. Native plugin agents inherit the host model; a CLI default does not force a native-host model change.
+
+## GPT-6.2 Sol: targeted compatibility check, 2026-11-20
+
+Three existing specialist assignments (numerical, claim-evidence and literature)
+were rerun at `xhigh`, with unchanged scientific prompts, parsed evidence and
+accepted parser preflight. A separate editor-only check used the exact saved
+accepted panel and editor input. The comparators were historical GPT-6.1 Sol
+`xhigh` outputs, not fresh controls. Generators did not receive those competing
+outputs or assessment notes.
+
+All three specialists and the editor ultimately passed the ordinary evidence,
+completion and report checks. The claim-evidence output required one bounded
+repair of two arithmetic records; the failed response was preserved and validation
+was not relaxed. Including the minimal access probe, this used **six model-stage
+calls**. No full panel or additional evaluator was run. Preflight/router defaults
+remain `high`; their new-model dispatch was checked offline, not with new live
+preflight/router calls.
+
+The repair returned a complete replacement, not a mechanically edited record:
+it reworded other findings and retained the two affected calculations as conditional
+verification questions. The replacement's substantive changes were inspected.
+
+Source spot-checks found useful additional within-role coverage and avoidance of
+an earlier false table allegation. The editor retained the main advice and important
+qualifications. Some additions were already covered elsewhere in the old panel,
+and a known source-reconciliation omission remained. These previously examined
+papers, different run dates/client versions, and implementing-assistant assessment
+do not establish general superiority, error-free review or hands-off reliability.
+Keep source checking and bounded repair; this is a practical model refresh with
+limited compatibility evidence, not a new scientific-review method.
 
 ## GPT-6.1 Sol and optional Opus 5.5: bounded evidence
 
